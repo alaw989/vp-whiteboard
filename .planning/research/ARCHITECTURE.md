@@ -1,663 +1,712 @@
-# Architecture Patterns
+# Architecture Research: File-Based Collaborative Markup Tools
 
-**Domain:** Real-time collaborative engineering whiteboard
-**Researched:** 2026-02-09
-**Overall confidence:** HIGH
+**Domain:** File-based collaborative markup tools
+**Researched:** 2026-02-10
+**Confidence:** HIGH
 
-## Recommended Architecture
+## Executive Summary
 
-### High-Level Architecture Diagram
+File-based collaborative markup tools extend standard collaborative whiteboards by adding document-centric workflows: uploading files (PDFs, images), rendering them as canvas backgrounds, capturing annotations as markup layers, and exporting marked-up documents. The architecture follows a layered approach where documents become background layers on an infinite canvas, with annotations stored separately as CRDT-based vector elements.
+
+Existing VP Whiteboard architecture (Yjs + Konva + Supabase) already handles the collaborative canvas layer. Adding file-based markup requires extending this with: file upload/presigned URL handling, document rendering (PDF.js for PDFs, native Image for images), background layer management in Konva, and export workflows (canvas + document composite). Session management uses unique board identifiers in shareable URLs with no authentication barrier for guest access.
+
+## Standard Architecture
+
+### System Overview
 
 ```
-+-------------------+     +-------------------+     +-------------------+
-|                   |     |                   |     |                   |
-|   Web Browser     |<--->|   Web Browser     |<--->|   Web Browser     |
-|   (React/Vue)     |     |   (React/Vue)     |     |   (React/Vue)     |
-|   + Yjs CRDT      |     |   + Yjs CRDT      |     |   + Yjs CRDT      |
-+-------------------+     +-------------------+     +-------------------+
-         |                        |                        |
-         |                        |                        |
-         +------------------------+------------------------+
-                                    | WebSocket
-                                    v
-+---------------------------------------------------------------+
-|                    Load Balancer (Nginx/Traefik)              |
-+---------------------------------------------------------------+
-         |                        |                        |
-         v                        v                        v
-+----------------+     +----------------+     +----------------+
-|   Node.js      |     |   Node.js      |     |   Node.js      |
-|   WebSocket    |     |   WebSocket    |     |   WebSocket    |
-|   Server #1    |     |   Server #2    |     |   Server #3    |
-+----------------+     +----------------+     +----------------+
-         |                        |                        |
-         +------------------------+------------------------+
-                                    | Pub/Sub
-                                    v
-+---------------------------------------------------------------+
-|                      Redis (Presence + Message Bus)           |
-+---------------------------------------------------------------+
-         |                        |                        |
-         v                        v                        v
-+----------------+     +----------------+     +----------------+
-|   PostgreSQL   |     |  Object Store  |     |   Auth Service |
-|   (Metadata)   |     |  (DO Spaces)  |     |   (JWT)        |
-+----------------+     +----------------+     +----------------+
++-----------------------------------------------------------------------+
+|                           Client Layer                                |
++-----------------------------------------------------------------------+
+|  +---------------------+  +---------------------+  +-----------------+
+|  |   Upload Component  |  |   Document Viewer   |  |  Markup Canvas  |
+|  |   (drag-drop UI)    |  |   (PDF.js + Image)  |  |   (Konva + Yjs) |
+|  +----------+----------+  +----------+----------+  +--------+--------+
+|             |                        |                     |
+|             v                        v                     v |
++-----------------------------------------------------------------------+
+|  +---------------------+  +---------------------+  +-----------------+
+|  |   File Manager      |  |   Layer Manager     |  |  Export Service |
+|  | (CRUD operations)    |  | (z-order, lock)     |  | (PNG, PDF merge)|
+|  +----------+----------+  +----------+----------+  +--------+--------+
++-----------------------------------------------------------------------+
+|                                |                                       |
+|                                | HTTP/WebSocket                        |
+|                                v                                       |
++-----------------------------------------------------------------------+
+|                           Server Layer                                |
++-----------------------------------------------------------------------+
+|  +---------------------+  +---------------------+  +-----------------+
+|  |   Upload Handler    |  |   Session Manager   |  |  WebSocket Relay |
+|  | (validation, store)  |  | (URL routing)       |  |   (Yjs sync)     |
+|  +----------+----------+  +----------+----------+  +--------+--------+
+|             |                        |                     |
+|             v                        v                     v |
++-----------------------------------------------------------------------+
+|  +---------------------+  +---------------------+  +-----------------+
+|  |  Object Storage     |  |   Metadata Store    |  |   Presence DB   |
+|  | (Supabase Storage)  |  |   (PostgreSQL)      |  |   (Redis/Supa)  |
+|  +---------------------+  +---------------------+  +-----------------+
++-----------------------------------------------------------------------+
 ```
 
-## Component Boundaries
+### Component Boundaries
 
 | Component | Responsibility | Communicates With |
-|-----------|---------------|-------------------|
-| **Client (Yjs)** | Local CRDT state, UI rendering, offline support | WebSocket Server, Object Store (direct) |
-| **WebSocket Server** | Connection management, message relay, auth validation | Client, Redis, PostgreSQL |
-| **Redis Pub/Sub** | Cross-server message distribution, presence tracking | WebSocket Servers (all instances) |
-| **PostgreSQL** | User auth, board metadata, permissions, version history | WebSocket Server |
-| **Object Storage** | File uploads (images, blueprints, exports), CRDT snapshots | Client (signed URLs), WebSocket Server |
-| **Load Balancer** | TLS termination, connection distribution, health checks | All WebSocket Servers |
+|-----------|----------------|-------------------|
+| **Upload Component** | File selection, drag-drop UI, validation preview, progress tracking | File Manager (API), Object Storage (direct) |
+| **Document Viewer** | Renders PDF pages as canvas backgrounds using PDF.js, image rendering | Layer Manager (background registration) |
+| **Markup Canvas** | Konva stage for annotations, Yjs CRDT sync for collaboration | Layer Manager, WebSocket Relay |
+| **Layer Manager** | Z-order management, document locking, background layer lifecycle | Document Viewer, Markup Canvas |
+| **File Manager** | File CRUD operations, metadata persistence, file list | Server API, Object Storage |
+| **Export Service** | Merges document + annotations, generates output files | Document Viewer, Markup Canvas |
+| **Session Manager** | Generates shareable URLs, session routing, guest access | Server API, client routing |
+| **Upload Handler** | Server-side validation, presigned URL generation, metadata storage | Object Storage, Metadata Store |
+| **WebSocket Relay** | Yjs document sync, cursor broadcasting, presence awareness | Yjs clients, Presence DB |
+| **Object Storage** | File blob storage, CDN delivery, public URLs | Upload Handler (server), clients (direct) |
+| **Metadata Store** | File metadata, canvas state, user permissions, version history | All server components |
 
-### Data Flow
-
-#### Real-Time Sync Flow (CRDT-based)
-
-```
-1. User draws on canvas
-   Client: ydoc.getArray('elements').push([newElement])
-
-2. Yjs encodes change as update (binary format)
-   Client: ws.send(update)
-
-3. WebSocket Server receives update
-   Server: Validates JWT, extracts room/user info
-
-4. Update stored in PostgreSQL (for history/recovery)
-   Server: INSERT INTO board_updates (board_id, update_data, user_id, timestamp)
-
-5. Update published to Redis channel
-   Server: redis.publish('board:123', update)
-
-6. All WebSocket instances receive update
-   Server: redis.subscribe('board:123')
-
-7. Each instance broadcasts to connected clients in that room
-   Server: clients.forEach(c => c.send(update))
-
-8. Client Yjs merges update automatically
-   Client: Y.applyUpdate(update) - no conflicts, commutative merge
-```
-
-#### Presence Flow
+## Recommended Project Structure
 
 ```
-1. User joins board
-   Client: ws.emit('join', {boardId, userId})
-
-2. WebSocket Server tracks connection
-   Server: redis.hset('presence:board:123', userId, JSON.stringify({
-     cursor: {x, y}, status: 'active', lastSeen: timestamp
-   }))
-
-3. Presence published to room
-   Server: redis.publish('presence:board:123', {userId, status: 'joined'})
-
-4. Other clients update presence indicators
-   Client: Show cursor, update online count
-
-5. User disconnects/leaves
-   Server: redis.hdel('presence:board:123', userId)
-   Server: redis.publish('presence:board:123', {userId, status: 'left'})
+vp-whiteboard/
+├── components/
+│   ├── markup/
+│   │   ├── FileUpload.vue           # Drag-drop upload zone
+│   │   ├── FileList.vue             # Uploaded files sidebar
+│   │   ├── DocumentViewer.vue       # PDF.js renderer wrapper
+│   │   ├── LayerPanel.vue           # Layer management UI
+│   │   └── ExportDialog.vue         # Export options dialog
+│   └── whiteboard/
+│       ├── WhiteboardCanvas.vue     # Existing Konva canvas
+│       └── WhiteboardToolbar.vue    # Existing drawing tools
+├── composables/
+│   ├── useFileUpload.ts             # File upload logic
+│   ├── useDocumentViewer.ts         # PDF.js integration
+│   ├── useLayerManager.ts           # Layer/z-order management
+│   ├── useExport.ts                 # Export workflow
+│   ├── useCollaborativeCanvas.ts    # Existing Yjs integration
+│   └── useWhiteboardStorage.ts      # Existing Supabase integration
+├── server/
+│   └── api/
+│       └── files/
+│           ├── upload.post.ts       # File upload handler
+│           ├── index.get.ts         # List files for whiteboard
+│           └── [id].delete.ts       # Delete file
+├── types/
+│   └── index.ts                     # TypeScript interfaces
+└── utils/
+    ├── pdf-renderer.ts              # PDF.js utilities
+    ├── export-processor.ts          # Export compositing
+    └── layer-utils.ts               # Layer management helpers
 ```
 
-#### File Upload Flow
+### Structure Rationale
 
-```
-1. User uploads blueprint/image
-   Client: POST /api/upload-request {filename, contentType, boardId}
+- **components/markup/**: File-specific UI components separate from general whiteboard components
+- **composables/useFileUpload.ts**: Encapsulates file selection, validation, upload progress, retry logic
+- **composables/useDocumentViewer.ts**: PDF.js lifecycle management (loading, rendering, page navigation)
+- **composables/useLayerManager.ts**: Manages relationship between document backgrounds and annotation layers
+- **composables/useExport.ts**: Handles canvas+document composite export for PNG/PDF
+- **server/api/files/**: REST endpoints for file operations separate from whiteboard CRUD
 
-2. Server validates auth, generates presigned URL
-   Server: JWT validation
-   Server: DO Spaces.generatePresignedUrl(key, expiration)
+## Architectural Patterns
 
-3. Client uploads directly to Object Storage
-   Client: PUT https://spaces.nyc3.digitaloceanspaces.com/... (direct)
+### Pattern 1: Three-Layer Document Rendering
 
-4. Client confirms upload
-   Client: POST /api/upload-complete {key, boardId}
+**What:** PDF.js architecture using Canvas Layer (rendered content), Annotation Layer (interactive HTML overlay), and Text Layer (selectable text).
 
-5. Server adds file reference to board
-   Server: INSERT INTO board_files (board_id, storage_key, filename, uploaded_by)
-   Server: ws.publish('board:123', {type: 'file-added', file})
-```
+**When to use:** For PDF markup workflows where text selection and form interactions are needed alongside drawing annotations.
 
-## Patterns to Follow
-
-### Pattern 1: CRDT-Based Sync with Yjs
-
-**What:** Use Yjs as the CRDT engine for real-time collaboration. Each client maintains local state and updates are merged automatically using conflict-free replicated data types.
-
-**When:** For any real-time collaborative features (drawing, text, shapes, cursors).
-
-**Why:**
-- Automatic conflict resolution without central coordination
-- Offline-first support with automatic sync on reconnect
-- Proven at scale (used by tldraw, various collaborative editors)
-- Better performance for local operations compared to OT
+**Trade-offs:**
+- Pro: Native PDF interactions (links, forms, text selection)
+- Pro: Accessibility (screen readers can read text layer)
+- Con: Complex coordination between Konva canvas and PDF.js layers
+- Con: Performance overhead with large multi-page PDFs
 
 **Example:**
 
 ```typescript
-// Client-side initialization
-import * as Y from 'yjs'
-import { WebsocketProvider } from 'y-websocket'
+// composables/useDocumentViewer.ts
+import * as pdfjsLib from 'pdfjs-dist'
 
-const ydoc = new Y.Doc()
-const elements = ydoc.getArray('elements')  // Shared CRDT array
-const awareness = ydoc.awareness
-
-// WebSocket connection with auth
-const wsProvider = new WebsocketProvider(
-  'wss://api.example.com',
-  `board-${boardId}`,
-  ydoc,
-  {
-    connect: true,
-    // JWT token sent as query param or header
-    params: { token: userToken }
-  }
-)
-
-// Local changes automatically sync
-function addElement(element) {
-  elements.push([{
-    type: 'rectangle',
-    x: element.x,
-    y: element.y,
-    id: generateId(),
-    userId: currentUser.id
-  }])
+interface DocumentLayer {
+  type: 'pdf' | 'image'
+  src: string
+  pageNumber?: number
+  width: number
+  height: number
+  x: number
+  y: number
+  scale: number
+  locked: boolean
 }
 
-// Listen to remote changes
-elements.observe((event) => {
-  renderCanvas(elements.toArray())
-})
+export function useDocumentViewer() {
+  const pdfDoc = ref<pdfjsLib.PDFDocumentProxy | null>(null)
+  const renderTask = ref<pdfjsLib.RenderTask | null>(null)
 
-// Presence awareness
-awareness.setLocalStateField('cursor', { x, y })
-awareness.setLocalStateField('user', { name, color })
-```
-
-### Pattern 2: Redis Pub/Sub for Multi-Instance Sync
-
-**What:** Use Redis as a message broker to coordinate between multiple WebSocket server instances.
-
-**When:** When you need to scale beyond a single WebSocket server instance.
-
-**Why:**
-- Enables horizontal scaling without sticky sessions
-- Low-latency message distribution (in-memory)
-- Automatic fanout to all subscribed instances
-- Battle-tested pattern for real-time systems
-
-**Example:**
-
-```typescript
-// Each WebSocket server instance
-import Redis from 'ioredis'
-
-const redisPublisher = new Redis(process.env.REDIS_URL)
-const redisSubscriber = new Redis(process.env.REDIS_URL)
-
-// Subscribe to board channels
-const roomClients = new Map<string, Set<WebSocket>>()
-
-async function handleConnection(ws: WebSocket, boardId: string) {
-  if (!roomClients.has(boardId)) {
-    roomClients.set(boardId, new Set())
-
-    // Subscribe to Redis channel for this board
-    await redisSubscriber.subscribe(`board:${boardId}`)
+  async function loadPDF(url: string) {
+    const loadingTask = pdfjsLib.getDocument(url)
+    pdfDoc.value = await loadingTask.promise
+    return pdfDoc.value.numPages
   }
-  roomClients.get(boardId)!.add(ws)
-}
 
-// Forward client messages to Redis
-ws.on('message', (data) => {
-  // Broadcast to local clients
-  roomClients.get(boardId)?.forEach(client => {
-    if (client !== ws) client.send(data)
-  })
+  async function renderPage(
+    pageNumber: number,
+    canvas: HTMLCanvasElement,
+    scale = 1.0
+  ): Promise<{ width: number; height: number }> {
+    if (!pdfDoc.value) throw new Error('PDF not loaded')
 
-  // Publish to other server instances
-  redisPublisher.publish(`board:${boardId}`, data)
-})
+    const page = await pdfDoc.value.getPage(pageNumber)
+    const viewport = page.getViewport({ scale })
 
-// Receive messages from other instances
-redisSubscriber.on('message', (channel, message) => {
-  const boardId = channel.split(':')[1]
-  roomClients.get(boardId)?.forEach(client => {
-    client.send(message)
-  })
-})
-```
+    const context = canvas.getContext('2d')!
+    canvas.width = viewport.width
+    canvas.height = viewport.height
 
-### Pattern 3: JWT-Based Authentication with Room-Level Authorization
-
-**What:** Use stateless JWT tokens for authentication, with room-level authorization checked on connection and message processing.
-
-**When:** For all authenticated operations and access control.
-
-**Why:**
-- Stateless auth scales horizontally
-- Room-level permissions prevent unauthorized access
-- Token expiration enforces session limits
-
-**Example:**
-
-```typescript
-// WebSocket connection with JWT
-async function handleWebSocketUpgrade(request: IncomingMessage) {
-  // Extract JWT from query param or header
-  const token = new URL(request.url, 'http://localhost').searchParams.get('token')
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET) as JWTPayload
-
-    // Check room access permission
-    const hasAccess = await checkBoardAccess(decoded.userId, boardId)
-    if (!hasAccess) {
-      return { error: 'Unauthorized' }
+    // Cancel any existing render task
+    if (renderTask.value) {
+      renderTask.value.cancel()
     }
 
-    return { userId: decoded.userId, permissions: decoded.permissions }
-  } catch (err) {
-    return { error: 'Invalid token' }
+    renderTask.value = page.render({
+      canvasContext: context,
+      viewport: viewport
+    })
+
+    await renderTask.value.promise
+
+    return { width: viewport.width, height: viewport.height }
   }
-}
 
-// Room-level permission check
-async function checkBoardAccess(userId: string, boardId: string): Promise<boolean> {
-  const result = await pg.query(`
-    SELECT permission FROM board_permissions
-    WHERE board_id = $1 AND user_id = $2
-  `, [boardId, userId])
+  function cleanup() {
+    if (renderTask.value) {
+      renderTask.value.cancel()
+    }
+    pdfDoc.value?.destroy()
+  }
 
-  return result.rows.length > 0
+  return {
+    pdfDoc,
+    loadPDF,
+    renderPage,
+    cleanup
+  }
 }
 ```
 
-### Pattern 4: Snapshot + Incremental Updates Pattern
+### Pattern 2: Document-as-Background-Layer
 
-**What:** Store periodic full snapshots of CRDT state plus incremental updates between snapshots. Load latest snapshot and replay updates since.
+**What:** Treat uploaded documents as locked background layers in the Konva stage, with annotations as editable foreground layers.
 
-**When:** For board persistence and recovery.
+**When to use:** For all file-based markup workflows. Provides separation between document content and user markup.
 
-**Why:**
-- Faster initial load (don't replay entire history)
-- Efficient storage (updates compress well)
-- Point-in-time recovery capability
+**Trade-offs:**
+- Pro: Clear separation of concerns (document vs markup)
+- Pro: Can toggle document visibility to view annotations alone
+- Pro: Supports multi-document canvases
+- Con: Requires layer management UI complexity
+- Con: Coordinate translation between document and canvas space
 
 **Example:**
 
 ```typescript
-// Server-side snapshot management
-const SNAPSHOT_INTERVAL = 100 // Create snapshot every 100 updates
-const SNAPSHOT_TTL = 7 * 24 * 60 * 60 // Keep snapshots for 7 days
+// composables/useLayerManager.ts
+import type { CanvasElement, DocumentLayer } from '~/types'
 
-async function saveBoardUpdate(boardId: string, update: Buffer) {
-  await pg.transaction(async (tx) => {
-    // Save incremental update
-    await tx.query(`
-      INSERT INTO board_updates (board_id, update_data, timestamp)
-      VALUES ($1, $2, NOW())
-    `, [boardId, update])
+export function useLayerManager(yjsElements: Y.Array<CanvasElement>) {
+  const documentLayers = ref<DocumentLayer[]>([])
+  const activeLayerId = ref<string | null>(null)
 
-    // Check if we need a new snapshot
-    const { count } = await tx.query(`
-      SELECT COUNT(*) as count
-      FROM board_updates
-      WHERE board_id = $1 AND snapshot_id IS NULL
-    `, [boardId])
+  function addDocumentLayer(layer: DocumentLayer) {
+    const id = `doc-${Date.now()}`
+    documentLayers.value.push({
+      ...layer,
+      id,
+      locked: true,
+      zOrder: documentLayers.value.length
+    })
 
-    if (count >= SNAPSHOT_INTERVAL) {
-      await createSnapshot(boardId, tx)
-    }
-  })
-}
+    // Add to Yjs as special element type
+    yjsElements.push([{
+      id,
+      type: 'document',
+      userId: 'system',
+      userName: 'System',
+      timestamp: Date.now(),
+      data: layer
+    }])
 
-async function createSnapshot(boardId: string, tx: any) {
-  // Get current Yjs state
-  const state = Y.encodeStateAsUpdate(ydoc)
-
-  // Create snapshot
-  const { rows: [snapshot] } = await tx.query(`
-    INSERT INTO board_snapshots (board_id, snapshot_data, created_at)
-    VALUES ($1, $2, NOW())
-    RETURNING id
-  `, [boardId, state])
-
-  // Link recent updates to this snapshot
-  await tx.query(`
-    UPDATE board_updates
-    SET snapshot_id = $1
-    WHERE board_id = $2 AND snapshot_id IS NULL
-  `, [snapshot.id, boardId])
-}
-
-// Client-side: load board efficiently
-async function loadBoard(boardId: string) {
-  const { snapshot, updates } = await api.getBoardData(boardId)
-
-  // Apply latest snapshot
-  Y.applyUpdate(ydoc, snapshot.snapshot_data)
-
-  // Replay incremental updates since snapshot
-  for (const update of updates) {
-    Y.applyUpdate(ydoc, update.update_data)
+    return id
   }
 
-  return ydoc
+  function removeDocumentLayer(layerId: string) {
+    const index = documentLayers.value.findIndex(l => l.id === layerId)
+    if (index !== -1) {
+      documentLayers.value.splice(index, 1)
+      // Remove from Yjs
+      const elementIndex = yjsElements.toArray().findIndex(e => e.id === layerId)
+      if (elementIndex !== -1) {
+        yjsElements.delete([elementIndex, 1])
+      }
+    }
+  }
+
+  function setLayerOrder(layerId: string, newZOrder: number) {
+    const layer = documentLayers.value.find(l => l.id === layerId)
+    if (layer) {
+      layer.zOrder = newZOrder
+      // Update Yjs element
+      updateElement(layerId, { zOrder: newZOrder })
+    }
+  }
+
+  function getAnnotationsForLayer(layerId: string): CanvasElement[] {
+    // Filter annotations that are positioned over this document
+    return yjsElements.toArray().filter(el =>
+      el.type !== 'document' &&
+      // Check spatial overlap with document layer
+      isOverlappingDocument(el, layerId)
+    )
+  }
+
+  return {
+    documentLayers,
+    activeLayerId,
+    addDocumentLayer,
+    removeDocumentLayer,
+    setLayerOrder,
+    getAnnotationsForLayer
+  }
 }
 ```
 
-## Anti-Patterns to Avoid
+### Pattern 3: Shareable URL Session Management
 
-### Anti-Pattern 1: Centralized Operational Transformation
+**What:** Each whiteboard/session has a unique identifier in the URL path. No authentication required for guest access—anyone with the URL can view and edit.
 
-**What:** Using OT with a central server that transforms all operations.
+**When to use:** For guest collaboration workflows where ease of sharing is prioritized over access control.
 
-**Why bad:**
-- Extremely complex to implement correctly
-- Server becomes bottleneck and single point of failure
-- Difficult to support offline mode
-- Prone to transformation bugs with concurrent edits
+**Trade-offs:**
+- Pro: Zero-friction sharing (copy link, send to anyone)
+- Pro: No authentication overhead
+- Con: Anyone with URL can access (security consideration)
+- Con: No user attribution without auth
 
-**Instead:** Use CRDTs (Yjs) which handle conflicts automatically without central coordination.
+**Example:**
 
-### Anti-Pattern 2: Sending Full State on Every Change
+```typescript
+// Session routing via Nuxt pages
+// pages/whiteboard/[id].vue
 
-**What:** Broadcasting entire document state instead of incremental updates.
+const route = useRoute()
+const whiteboardId = route.params.id as string
 
-**Why bad:**
-- Massive bandwidth usage (O(n) per change instead of O(1))
-- Poor performance with large documents
-- Unnecessary network traffic
+// Optional: Generate short URL for sharing
+function generateShareUrl(): string {
+  const config = useRuntimeConfig()
+  const baseUrl = config.public.siteUrl as string
+  return `${baseUrl}/whiteboard/${whiteboardId}`
+}
 
-**Instead:** Use Yjs which sends only incremental binary updates.
+// Optional: Create whiteboard with random ID if none exists
+// pages/new.vue -> redirect to /whiteboard/[random-id]
+function createWhiteboard(): string {
+  const id = crypto.randomUUID()
+  navigateTo(`/whiteboard/${id}`)
+  return id
+}
+```
 
-### Anti-Pattern 3: Reliance on Sticky Sessions for Scaling
+### Pattern 4: Composite Export (Document + Annotations)
 
-**What:** Using load balancer sticky sessions to keep users on same WebSocket server.
+**What:** Export workflow that composites the original document with annotations into a single output file (PNG or PDF).
 
-**Why bad:**
-- Creates uneven load distribution
-- Session migration on server failure is complex
-- Doesn't solve cross-room communication
+**When to use:** For generating marked-up deliverables that include both the original document and user annotations.
 
-**Instead:** Use Redis pub/sub for message distribution across all instances.
+**Trade-offs:**
+- Pro: Single file contains all markup
+- Pro: Works with standard viewers (no special software needed)
+- Con: For PDF: requires re-rendering PDF pages with annotations
+- Con: For PNG: limited to single page or viewport
 
-### Anti-Pattern 4: Storing Files in Database
+**Example:**
 
-**What:** Storing uploaded files (images, PDFs) as BLOBs in PostgreSQL.
+```typescript
+// composables/useExport.ts
+import * as pdfjsLib from 'pdfjs-dist'
+import { jsPDF } from 'jspdf'
 
-**Why bad:**
-- Database bloat, poor performance
-- Backups become huge and slow
+export function useExport() {
+  async function exportAsPNG(
+    konvaStage: any,
+    documentLayer?: DocumentLayer
+  ): Promise<string> {
+    // Create a temporary canvas for composition
+    const tempCanvas = document.createElement('canvas')
+    const ctx = tempCanvas.getContext('2d')!
+
+    // Set dimensions to match stage
+    tempCanvas.width = konvaStage.width()
+    tempCanvas.height = konvaStage.height()
+
+    // Draw document background if present
+    if (documentLayer) {
+      const docCanvas = await getDocumentCanvas(documentLayer)
+      ctx.drawImage(docCanvas, documentLayer.x, documentLayer.y)
+    }
+
+    // Draw Konva stage annotations
+    const annotationData = konvaStage.toDataURL()
+    const annotationImage = await loadImage(annotationData)
+    ctx.drawImage(annotationImage, 0, 0)
+
+    return tempCanvas.toDataURL('image/png')
+  }
+
+  async function exportAsPDF(
+    konvaStage: any,
+    documentLayers: DocumentLayer[]
+  ): Promise<Blob> {
+    const pdf = new jsPDF()
+
+    for (let i = 0; i < documentLayers.length; i++) {
+      const layer = documentLayers[i]
+
+      if (i > 0) pdf.addPage()
+
+      // Render original PDF page
+      await renderPDFPageToPdf(pdf, layer, i)
+
+      // Overlay annotations
+      const annotationData = await getAnnotationsForLayer(
+        konvaStage,
+        layer.id
+      )
+      pdf.addImage(annotationData, 'PNG', 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight())
+    }
+
+    return pdf.output('blob')
+  }
+
+  return {
+    exportAsPNG,
+    exportAsPDF
+  }
+}
+```
+
+## Data Flow
+
+### Upload to Render Flow
+
+```
+1. User selects file (drag-drop or click)
+   Client: FileUpload.vue handles file selection
+
+2. Client validates file (type, size)
+   Client: useFileUpload.validateFile(file)
+
+3. Request presigned upload URL
+   Client: POST /api/files/upload-request {filename, contentType, whiteboardId}
+   Server: Generates Supabase Storage presigned URL
+   Server: Returns { uploadUrl, fileId, storagePath }
+
+4. Direct upload to Supabase Storage
+   Client: PUT <presigned-url> (direct to storage, bypassing server)
+
+5. Confirm upload, save metadata
+   Client: POST /api/files/confirm-upload {fileId, storagePath, metadata}
+   Server: INSERT INTO whiteboard_files (...)
+   Server: Returns file record
+
+6. Add document as background layer
+   Client: useLayerManager.addDocumentLayer({
+     src: file.publicUrl,
+     type: file.type,
+     width, height,
+     x, y, scale
+   })
+
+7. Render document on canvas
+   Client: DocumentViewer.vue renders PDF/image
+   Client: Konva layer positioned and locked
+```
+
+### Annotation Sync Flow
+
+```
+1. User draws on document
+   Client: WhiteboardCanvas.vue captures pointer events
+
+2. Create annotation element
+   Client: useCollaborativeCanvas.addElement({
+     type: 'stroke',
+     data: { points, color, size },
+     layerId: currentDocumentLayer.id  // Associate with document
+   })
+
+3. Yjs syncs to all clients
+   Client: y-websocket provider broadcasts update
+
+4. Other clients render annotation
+   Client: observe yElements array, render new element at correct z-order
+```
+
+### Export Flow
+
+```
+1. User clicks export button
+   Client: ExportDialog.vue shows format options (PNG/PDF)
+
+2. Composite document + annotations
+   Client: useExport.exportAsPDF(documents, annotations)
+
+3. For PDF output:
+   a. Create new PDF document
+   b. For each page:
+      - Render original PDF page
+      - Overlay annotation layer (clipped to page bounds)
+   c. Generate Blob
+
+4. Download file
+   Client: Trigger browser download with generated Blob
+```
+
+### Session Flow
+
+```
+1. User navigates to /whiteboard/[id]
+   Client: Route handler extracts whiteboardId
+
+2. Load whiteboard metadata
+   Client: GET /api/whiteboard/[id]
+   Server: Returns { name, created_at, canvas_state }
+
+3. Load associated files
+   Client: GET /api/files?whiteboardId=[id]
+   Server: Returns [{ id, storage_path, file_name, ... }]
+
+4. Initialize Yjs document
+   Client: useCollaborativeCanvas(whiteboardId, userId, userName)
+
+5. Connect to WebSocket
+   Client: wsProvider.connect()
+   Server: Joins room "whiteboard:[id]"
+
+6. Load canvas state
+   Client: canvas.importState(canvas_state)
+
+7. Render document layers
+   Client: DocumentViewer renders each file as background layer
+```
+
+## Scaling Considerations
+
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| 0-1k users | Single server instance, Supabase for all storage, in-memory document rendering |
+| 1k-100k users | Multiple server instances, Redis for presence/pub/sub, CDN for file delivery |
+| 100k+ users | Separate document rendering service, sharded storage, regional CDN |
+
+### Scaling Priorities
+
+1. **First bottleneck: Document rendering CPU**
+   - PDF rendering is CPU-intensive
+   - Cache rendered pages as images
+   - Consider server-side pre-rendering for large PDFs
+   - WebAssembly PDF.js for better performance
+
+2. **Second bottleneck: Storage bandwidth**
+   - Large PDFs (10MB+) downloaded frequently
+   - Implement CDN caching (Supabase Storage supports CDN)
+   - Use aggressive cache headers for static documents
+
+3. **Third bottleneck: Yjs document size**
+   - Many annotations on large documents create large CRDT documents
+   - Implement per-document annotation sets (separate Yjs docs per document layer)
+   - Periodic snapshot and compaction
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Storing File Blobs in Database
+
+**What people do:** Store uploaded files as BLOB/bytea columns in PostgreSQL.
+
+**Why it's wrong:**
+- Database bloat, poor query performance
+- Backup/restore becomes extremely slow
 - No CDN capability
 - Expensive storage costs
 
-**Instead:** Use DigitalOcean Spaces (S3-compatible) with presigned URLs for direct uploads.
+**Do this instead:** Use Supabase Storage (S3-compatible) with presigned URLs. Store only metadata in database.
 
-### Anti-Pattern 5: No Rate Limiting on WebSocket Messages
+### Anti-Pattern 2: Rendering Entire Multi-Page PDF at Once
 
-**What:** Accepting unlimited messages from clients without throttling.
+**What people do:** Load all pages of a 100-page PDF into canvas elements simultaneously.
 
-**Why bad:**
-- DoS vulnerability (malicious client can spam server)
-- Database overload from excessive writes
-- Can take down entire infrastructure
+**Why it's wrong:**
+- Massive memory consumption (each page is a full canvas)
+- Browser tab crashes with large documents
+- Slow initial load time
 
-**Instead:** Implement per-user and per-connection rate limiting.
+**Do this instead:** Implement lazy page loading. Render only visible pages plus buffer (current +/- 1). Unload off-screen pages.
 
-## Scalability Considerations
+### Anti-Pattern 3: Blocking UI During File Upload
 
-| Concern | At 100 users | At 1K users | At 10K+ users |
-|---------|--------------|-------------|---------------|
-| **WebSocket Connections** | Single node sufficient | 2-3 nodes with Redis pub/sub | Multiple nodes, geographic distribution |
-| **Database** | Single PostgreSQL instance | Read replicas, connection pooling | Sharding by board_id, read replicas |
-| **Object Storage** | Direct Spaces integration | CDN enabled, presigned URLs | Multi-region replication |
-| **Memory (Yjs state)** | ~1-2 MB per active board | Monitor and evict inactive boards | Separate state servers, periodic snapshotting |
-| **Presence (Redis)** | In-memory hash per board | Redis cluster for distribution | Separate presence service, sharding |
+**What people do:** Synchronously upload files and block user interaction.
 
-### DigitalOcean Droplet Specifics
+**Why it's wrong:**
+- Poor UX for large files (10MB+ can take seconds)
+- No progress feedback
+- User can't cancel upload
 
-**Connection Limits:**
-- Theoretical TCP limit: ~65,535 connections per IP
-- Practical tested limit on 4 CPU/8GB droplet: ~45,000 concurrent WebSockets
-- Recommended per-instance limit: 5,000-10,000 connections (headroom for spikes)
+**Do this instead:** Asynchronous upload with progress callback. Show progress bar, allow cancel. Use presigned URLs for direct-to-storage upload.
 
-**Droplet Sizing Guide:**
+### Anti-Pattern 4: Exporting Canvas Only (Without Document)
 
-| Users (concurrent) | Droplet Size | Num Instances | Redis | Notes |
-|-------------------|--------------|---------------|-------|-------|
-| < 100 | 2 CPU, 2GB | 1 | Managed (basic) | Single instance sufficient |
-| 100-500 | 2 CPU, 4GB | 2 | Managed | Add Redis for pub/sub |
-| 500-2000 | 4 CPU, 8GB | 3 | Managed Cluster | Load balancer recommended |
-| 2000-10000 | 8 CPU, 16GB | 5+ | Dedicated Redis | Consider database read replicas |
+**What people do:** Export only the Konva canvas annotations, excluding the underlying document.
 
-**Kernel Tuning for High WebSocket Counts:**
+**Why it's wrong:**
+- Exported file missing context (shows marks without original content)
+- Users need both document and annotations
+- Incomplete deliverable for review workflows
 
-```bash
-# /etc/sysctl.conf
-fs.file-max=14000000
-fs.nr_open=14000000
-net.ipv4.tcp_mem="100000000 100000000 100000000"
-net.core.somaxconn=20000
-net.ipv4.tcp_max_syn_backlog=20000
-net.ipv4.ip_local_port_range="1025 65535"
+**Do this instead:** Composite document and annotations. For PDF: create new PDF with original pages plus annotation overlays. For PNG: render document then overlay canvas.
 
-# Apply
-sysctl -p
-```
+### Anti-Pattern 5: Single File for Multi-Page PDF Markup
 
-**Scaling Path:**
-1. **Phase 1 (MVP):** Single droplet, integrated PostgreSQL + Redis
-2. **Phase 2:** Add second WebSocket instance, managed Redis, load balancer
-3. **Phase 3:** Separate database tier, read replicas, 3+ WebSocket instances
-4. **Phase 4:** Geographic distribution, separate state servers
+**What people do:** Try to render all PDF pages as a single tall canvas image.
 
-## Security Architecture
+**Why it's wrong:**
+- Images don't maintain text selectability
+- Can't export back to PDF format properly
+- Massive single image is hard to navigate
 
-### Authentication Flow
+**Do this instead:** Keep PDF as native format. Render pages as separate canvas elements. Export as new PDF with annotation layers.
 
-```
-1. User logs in
-   POST /api/auth/login {email, password}
-   -> Validates against PostgreSQL users table
-   <- Returns JWT (15min access token + 7day refresh token)
+## Integration Points
 
-2. WebSocket connection
-   wss://api.example.com/ws?token=<jwt>
-   -> Validates JWT on connection
-   -> Extracts userId, permissions
-   <- Connection accepted with assigned permissions
+### External Services
 
-3. Token refresh
-   POST /api/auth/refresh {refreshToken}
-   <- Returns new JWT
-```
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| **Supabase Storage** | Presigned URLs for direct upload | Avoids server as bottleneck, supports CDN |
+| **PDF.js** | Worker-based rendering | Use Web Worker to avoid blocking UI thread |
+| **Yjs** | Per-whiteboard document | One Y.Doc per whiteboard, not per document layer |
+| **Supabase PostgreSQL** | Metadata store only | File metadata, canvas state, permissions |
 
-### Authorization Model
+### Internal Boundaries
 
-```typescript
-// Permission levels
-enum Permission {
-  VIEW = 'view',           // Can view board only
-  COMMENT = 'comment',     // Can add comments, not edit
-  EDIT = 'edit',           // Can edit elements
-  ADMIN = 'admin'          // Full control + user management
-}
-
-// Board ownership
-interface BoardAccess {
-  boardId: string
-  userId: string
-  permission: Permission
-  grantedBy: string | null  // null for owner
-  grantedAt: Date
-}
-
-// Check on every sensitive operation
-async function requirePermission(
-  userId: string,
-  boardId: string,
-  required: Permission
-): Promise<boolean> {
-  const access = await getBoardAccess(userId, boardId)
-
-  const hierarchy = {
-    [Permission.ADMIN]: 4,
-    [Permission.EDIT]: 3,
-    [Permission.COMMENT]: 2,
-    [Permission.VIEW]: 1
-  }
-
-  return hierarchy[access.permission] >= hierarchy[required]
-}
-```
-
-### Security Checklist
-
-- [ ] JWT with RS256 (asymmetric) for production, HS256 for MVP
-- [ ] WebSocket rate limiting per user (e.g., 100 msg/sec)
-- [ ] Input validation on all WebSocket messages
-- [ ] File upload validation (type, size limits, virus scanning)
-- [ ] HTTPS only (TLS 1.3) for WebSocket connections
-- [ ] CORS restricted to known domains
-- [ ] SQL injection prevention (parameterized queries)
-- [ ] Regular security audits of dependencies
-- [ ] Logging of all auth/permission decisions
-- [ ] Room-level isolation (users can only access authorized boards)
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| **FileUpload -> File Manager** | API calls (POST /api/files/...) | Upload component orchestrates upload flow |
+| **DocumentViewer -> LayerManager** | Direct method calls | Same component context, synchronous communication |
+| **LayerManager -> CollaborativeCanvas** | Yjs array manipulation | Both work with same yjsElements array |
+| **Export -> DocumentViewer** | Async method calls | Export needs rendered document canvases |
+| **Export -> CollaborativeCanvas** | Direct access to Konva stage | Export reads stage.toDataURL() |
 
 ## Build Order (Dependencies)
 
 ```
-Phase 1: Foundation
+Phase 1: File Upload Infrastructure
   |
-  +-- Authentication (JWT, user model)
-  +-- Database schema (users, boards, permissions)
-  +-- Basic WebSocket server (single instance)
-  +-- Yjs integration (local-only first)
+  +-- Supabase Storage bucket setup
+  +-- Upload API endpoint (presigned URL)
+  +-- FileUpload component (drag-drop UI)
+  +-- File metadata table and queries
+  |
+  Dependencies: None (can be done in parallel with existing canvas)
 
-Phase 2: Real-Time Sync
+Phase 2: Document Rendering
   |
-  +-- WebSocket + Yjs integration
-  +-- Room-based message routing
-  +-- Basic presence (online/offline)
-  +-- PostgreSQL persistence (updates, snapshots)
+  +-- PDF.js integration and worker setup
+  +-- DocumentViewer component (PDF + images)
+  +-- Layer manager basic functionality
+  +-- Document-as-background-layer in Konva
+  |
+  Dependencies: Phase 1 (need uploaded files to render)
 
-Phase 3: Scaling
+Phase 3: Export Functionality
   |
-  +-- Redis pub/sub integration
-  +-- Multiple WebSocket instances
-  +-- Load balancer configuration
-  +-- Redis presence implementation
+  +-- Export service (canvas + document composite)
+  +-- PNG export (single viewport)
+  +-- PDF export (multi-page with annotations)
+  +-- Export dialog UI
+  |
+  Dependencies: Phase 2 (need document rendering to export)
 
-Phase 4: File Handling
+Phase 4: Advanced Features
   |
-  +-- DigitalOcean Spaces integration
-  +-- Presigned URL generation
-  +-- File metadata storage
-  +-- Client-side upload handling
+  +-- Layer management UI (reorder, toggle visibility)
+  +-- Multi-document support (multiple PDFs on same canvas)
+  +-- Page navigation for PDFs
+  +-- Annotation-per-document filtering
+  |
+  Dependencies: Phase 3 (core features first)
 
-Phase 5: Advanced Features
+Phase 5: Optimization
   |
-  +-- Fine-grained permissions
-  +-- Cursor tracking
-  +-- Comments system
-  +-- Export/import functionality
+  +-- Lazy page loading for PDFs
+  +-- Cached page rendering
+  +-- WebAssembly PDF.js
+  +-- Progressive image loading
+  |
+  Dependencies: Phase 4 (optimize after functionality complete)
 ```
 
-## Database Schema
+### Build Order Rationale
 
-```sql
--- Users table
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
+1. **File Upload First**: Cannot render or markup documents without uploading them. This phase has no dependencies on existing canvas code.
 
--- Boards table
-CREATE TABLE boards (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name VARCHAR(255) NOT NULL,
-  owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
+2. **Document Rendering Second**: Once files are uploaded, need to render them on canvas. PDF.js integration is foundational.
 
--- Board permissions
-CREATE TABLE board_permissions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  board_id UUID REFERENCES boards(id) ON DELETE CASCADE,
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  permission VARCHAR(50) NOT NULL, -- 'view', 'edit', 'admin'
-  granted_by UUID REFERENCES users(id),
-  granted_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(board_id, user_id)
-);
+3. **Export Third**: Export requires both documents (Phase 2) and annotations (existing canvas). Building export after rendering ensures all components are available.
 
--- Board updates (incremental CRDT updates)
-CREATE TABLE board_updates (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  board_id UUID REFERENCES boards(id) ON DELETE CASCADE,
-  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  update_data BYTEA NOT NULL,
-  snapshot_id UUID REFERENCES board_snapshots(id),
-  created_at TIMESTAMP DEFAULT NOW()
-);
+4. **Advanced Features Fourth**: Layer management and multi-document support build on basic rendering. Not critical for MVP.
 
--- Board snapshots (full CRDT state)
-CREATE TABLE board_snapshots (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  board_id UUID REFERENCES boards(id) ON DELETE CASCADE,
-  snapshot_data BYTEA NOT NULL,
-  update_count INTEGER NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+5. **Optimization Fifth**: Performance optimizations come after functionality is working. Premature optimization risks complexity.
 
--- File uploads metadata
-CREATE TABLE board_files (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  board_id UUID REFERENCES boards(id) ON DELETE CASCADE,
-  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  storage_key VARCHAR(500) NOT NULL,
-  filename VARCHAR(255) NOT NULL,
-  content_type VARCHAR(100),
-  size_bytes BIGINT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+## Migration from Existing Architecture
 
--- Indexes for performance
-CREATE INDEX idx_board_updates_board_id ON board_updates(board_id, created_at DESC);
-CREATE INDEX idx_board_updates_snapshot_id ON board_updates(snapshot_id);
-CREATE INDEX idx_board_snapshots_board_id ON board_snapshots(board_id, created_at DESC);
-CREATE INDEX idx_board_permissions_board_id ON board_permissions(board_id);
-CREATE INDEX idx_board_permissions_user_id ON board_permissions(user_id);
-CREATE INDEX idx_board_files_board_id ON board_files(board_id);
-```
+The existing VP Whiteboard already has:
+- Yjs collaborative canvas
+- Konva rendering
+- Supabase integration
+- File upload (basic)
+
+To extend to full file-based markup:
+
+1. **Extend file upload**: Add PDF type support, increase file size limits
+2. **Add PDF.js**: Integrate PDF.js worker for rendering
+3. **Create layer system**: Extend existing CanvasElement type to include document layers
+4. **Implement export**: Add PDF export using jsPDF or similar
+5. **UI additions**: File list sidebar, layer panel, export dialog
 
 ## Sources
 
-- [Velt - Best CRDT Libraries 2025](https://velt.dev/blog/best-crdt-libraries-real-time-data-sync) - HIGH confidence, comprehensive CRDT library comparison
-- [Velt - Yjs WebSocket Server Guide](https://velt.dev/blog/yjs-websocket-server-real-time-collaboration) - HIGH confidence, detailed Yjs WebSocket architecture
-- [Scaling WebSocket Services with Redis Pub/Sub](https://leapcell.io/blog/scaling-websocket-services-with-redis-pub-sub-in-node-js) - MEDIUM confidence, practical implementation guide
-- [Real-Time Presence System Using Redis Pub/Sub + Spring WebSockets](https://blog.stackademic.com/real-time-presence-system-using-redis-pub-sub-spring-websockets-2025-architecture-guide-47e670b87af4) - HIGH confidence, 2025 architecture for presence
-- [Realtime Collaborative Whiteboard using NodeJS, MongoDB, Nginx LB and Redis](https://medium.com/@rayancr/realtime-collaborative-whiteboard-using-nodejs-mongodb-nginx-lb-and-redis-a0f1d29a1462) - MEDIUM confidence, real whiteboard implementation
-- [PART 1: FastAPI 45k concurrent websocket on single digitalocean droplet](https://medium.com/@ar.aldhafeeri11/part-1-fastapi-45k-concurrent-websocket-on-single-digitalocean-droplet-1e4fce4c5a64) - HIGH confidence, actual DO droplet performance data
-- [Operational Transformation vs CRDTs](https://dev.to/puritanic/building-collaborative-interfaces-operational-transforms-vs-crdts-2obo) - MEDIUM confidence, comparison of sync approaches
-- [Building Real-Time Applications with WebSockets](https://render.com/articles/building-real-time-applications-with-websockets) - MEDIUM confidence, WebSocket best practices
+### HIGH Confidence (Official Documentation)
+- [PDF.js Official Documentation](https://mozilla.github.io/pdf.js/) - Mozilla's official PDF rendering library docs
+- [Konva.js Documentation](https://konvajs.org/docs/) - Canvas framework official docs with export guides
+- [Yjs Documentation](https://docs.yjs.dev/) - CRDT sync library official docs
+- [Supabase Storage Documentation](https://supabase.com/docs/guides/storage) - Official Supabase Storage guides
+
+### MEDIUM Confidence (Recent Articles & Tutorials)
+- [Complete Guide to PDF.js - Nutrient (Dec 2025)](https://www.nutrient.io/blog/complete-guide-to-pdfjs/) - Comprehensive PDF.js architecture guide
+- [Understanding PDF.js Layers in React.js (July 2025)](https://blog.react-pdf.dev/understanding-pdfjs-layers-and-how-to-use-them-in-reactjs) - Layer architecture details
+- [PDF.js Advanced Features: Annotations (CSDN, Aug 2025)](https://blog.csdn.net/gitblog_00982/article/details/150619351) - Annotation system architecture
+- [Canvas to PDF Conversion - Konva Official](https://konvajs.org/docs/sandbox/Canvas_to_PDF.html) - Official export methodology
+- [High-Quality Export Tutorial - Konva Official](https://konvajs.org/docs/data_and_serialization/High-Quality-Export.html) - Best practices for canvas export
+- [Collaborative Document Editing Architecture (MDPI, 2024)](https://www.mdpi.com/2076-3417/14/18/8356) - Real-time collaboration research paper
+- [Session Management for Collaborative Applications (Georgia Tech)](https://faculty.cc.gatech.edu/~keith/pubs/session-mgmt.pdf) - Academic session management patterns
+
+### LOW Confidence (General References)
+- [Best Whiteboarding Tools 2025](https://mockflow.com/blog/best-whiteboarding-tools) - Market overview for feature comparison
+- Various community forum discussions on PDF.js integration patterns
+
+---
+*Architecture research for: File-based collaborative markup tools*
+*Researched: 2026-02-10*
+*Confidence: HIGH*
