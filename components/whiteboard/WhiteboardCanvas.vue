@@ -359,6 +359,11 @@ const props = defineProps<{
   currentColor: string
   currentSize: number
   currentStampType?: StampType
+  // Real-time stroke broadcasting props (optional - from useCollaborativeCanvas)
+  activeStrokes?: Record<string, [number, number, number][]>
+  startActiveStroke?: ((strokeId: string) => void) | null
+  broadcastStrokePoint?: ((strokeId: string, point: [number, number, number]) => void) | null
+  endActiveStroke?: ((strokeId: string, element: CanvasElement) => void) | null
   // Viewport sync props
   getViewport?: () => import('~/types').SharedViewportState
   syncViewport?: (viewport: import('~/types').ViewportState) => void
@@ -473,6 +478,7 @@ watch(visibleLayers, (layers) => {
 // Drawing state
 const isDrawing = ref(false)
 const currentStrokePoints = ref<[number, number, number][]>([])
+const currentStrokeId = ref<string | null>(null)
 
 // Text annotation state
 const textAnnotationStart = ref<{x: number, y: number} | null>(null)

@@ -139,22 +139,38 @@ const canvasSize = ref('')
 
 // Generate preview thumbnail when dialog opens
 watch(() => props.show, async (isOpen) => {
-  if (isOpen && props.stage) {
-    const width = props.stage.width()
-    const height = props.stage.height()
-    canvasSize.value = `${Math.round(width)} x ${Math.round(height)} px`
+  if (isOpen) {
+    // Reset preview when opening
+    previewUrl.value = null
+    canvasSize.value = ''
 
-    // Generate thumbnail at reduced size (max 300px width)
-    const thumbnailWidth = Math.min(300, width)
-    const scale = thumbnailWidth / width
+    // Wait for next tick to ensure stage ref is available
+    await nextTick()
 
-    previewUrl.value = props.stage.toDataURL({
-      pixelRatio: 1,
-      x: 0,
-      y: 0,
-      width,
-      height,
-    })
+    if (props.stage) {
+      try {
+        const width = props.stage.width()
+        const height = props.stage.height()
+        canvasSize.value = `${Math.round(width)} x ${Math.round(height)} px`
+
+        // Generate thumbnail at reduced size (max 300px width)
+        const thumbnailWidth = Math.min(300, width)
+        const scale = thumbnailWidth / width
+
+        previewUrl.value = props.stage.toDataURL({
+          pixelRatio: 1,
+          x: 0,
+          y: 0,
+          width,
+          height,
+        })
+      } catch (error) {
+        console.error('Failed to generate export preview:', error)
+        canvasSize.value = 'Preview unavailable'
+      }
+    } else {
+      canvasSize.value = 'Stage not available'
+    }
   }
 })
 

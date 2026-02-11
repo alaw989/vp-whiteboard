@@ -205,6 +205,7 @@
 import type { Whiteboard, CanvasElement, UploadResult } from '~/types'
 import type { StampType } from '~/components/whiteboard/WhiteboardCanvas.vue'
 import ExportDialog from '~/components/whiteboard/ExportDialog.vue'
+import UserPresenceList from '~/components/whiteboard/UserPresenceList.vue'
 
 const route = useRoute()
 const whiteboardId = route.params.id as string
