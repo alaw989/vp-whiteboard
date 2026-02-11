@@ -6,30 +6,30 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Engineers and clients can collaboratively mark up and discuss engineering drawings in real-time, with everyone seeing each other's cursors and annotations instantly.
 
-**Current focus:** Phase 1: Foundation
+**Current focus:** Phase 2: Document Rendering
 
 ## Current Position
 
-Phase: 1 of 8 (Foundation)
-Plan: 5 of 5 in current phase
+Phase: 2 of 8 (Document Rendering)
+Plan: 1 of 4 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed 01-05: Offline Detection and Connection Resilience
+Last activity: 2026-02-11 — Completed 02-01: PDF.js Configuration
 
-Progress: [█████████░] 100%
+Progress: [███░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
+- Total plans completed: 6
 - Average duration: 3 min
-- Total execution time: 0.24 hours
+- Total execution time: 0.28 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 5/5 | 13 min | 3 min |
-| 2 | 0/4 | - | - |
+| 2 | 1/4 | 4 min | 4 min |
 | 3 | 0/8 | - | - |
 | 4 | 0/3 | - | - |
 | 5 | 0/4 | - | - |
@@ -43,6 +43,7 @@ Progress: [█████████░] 100%
 
 *Updated after each plan completion*
 | Phase 01-foundation P01-05 | 4min | 3 tasks | 4 files |
+| Phase 02-document-rendering P01 | 4min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -64,6 +65,10 @@ Recent decisions affecting current work:
 - **Instant retry with 100ms delay** (01-05) - no exponential backoff for WebSocket reconnection
 - **VueUse useOnline for network detection** (01-05) - reliable Network Information API wrapper
 - **30-second heartbeat for connection health** (01-05) - balance between detection and traffic
+- **Vite-compatible worker URL using import.meta.url** (02-01) - prevents version mismatch, follows Vite best practices
+- **Default scale 1.5 for PDF rendering** (02-01) - balance between quality and file size
+- **Client-side only PDF.js plugin** (02-01) - avoids SSR hydration errors
+- **Dynamic import of pdfjs-dist in composable** (02-01) - SSR compatibility
 
 ### Pending Todos
 
@@ -80,5 +85,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 01-05: Offline Detection and Connection Resilience. Phase 01-foundation complete.
+Stopped at: Completed 02-01: PDF.js Configuration
 Resume file: None
