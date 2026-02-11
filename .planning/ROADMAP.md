@@ -164,12 +164,17 @@ Plans:
 2. User can export canvas as PDF with annotations
 3. Export includes original file background plus all markups
 
-**Plans**: TBD
+**Plans**: 3 plans in 2 waves
+
+| Wave | Plans | Description |
+|------|-------|-------------|
+| 1 | 06-01 | Export composable with PNG export (foundation) |
+| 2 | 06-02, 06-03 | PDF export, Export dialog UI (parallel) |
 
 Plans:
-- [ ] 06-01: PNG export with composite rendering
-- [ ] 06-02: PDF export with annotation overlays
-- [ ] 06-03: Export dialog with quality controls
+- [ ] 06-01-PLAN.md — Export composable with PNG export and filename generation
+- [ ] 06-02-PLAN.md — PDF export using jsPDF (depends on 06-01)
+- [ ] 06-03-PLAN.md — Export dialog with preview and format selection (depends on 06-01)
 
 ### Phase 7: Measurement Tools
 
