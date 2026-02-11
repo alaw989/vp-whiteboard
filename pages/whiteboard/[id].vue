@@ -90,6 +90,10 @@
             :current-color="currentColor"
             :current-size="currentSize"
             :current-stamp-type="currentStampType"
+            :active-strokes="activeStrokes"
+            :start-active-stroke="startActiveStroke"
+            :broadcast-stroke-point="broadcastStrokePoint"
+            :end-active-stroke="endActiveStroke"
             :get-viewport="canvas?.getViewport"
             :sync-viewport="canvas?.syncViewport"
             :observe-viewport="canvas?.observeViewport"
@@ -250,6 +254,10 @@ const connectedUsers = ref<Map<string, any>>(new Map())
 const elements = ref<CanvasElement[]>([])
 const canUndo = ref(false)
 const canRedo = ref(false)
+const activeStrokes = ref<Record<string, [number, number, number][]>>({})
+const startActiveStroke = ref<((strokeId: string) => void) | null>(null)
+const broadcastStrokePoint = ref<((strokeId: string, point: [number, number, number]) => void) | null>(null)
+const endActiveStroke = ref<((strokeId: string, element: CanvasElement) => void) | null>(null)
 
 // Initialize canvas on client side
 onMounted(() => {
@@ -266,6 +274,10 @@ onMounted(() => {
   elements.value = canvas.elements.value
   canUndo.value = canvas.canUndo.value
   canRedo.value = canvas.canRedo.value
+  activeStrokes.value = canvas.activeStrokes.value || {}
+  startActiveStroke.value = canvas.startActiveStroke
+  broadcastStrokePoint.value = canvas.broadcastStrokePoint
+  endActiveStroke.value = canvas.endActiveStroke
 
   // Watch for updates
   watch(() => canvas.isConnected.value, (v) => { isConnected.value = v })
@@ -274,6 +286,7 @@ onMounted(() => {
   watch(() => canvas.elements.value, (v) => { elements.value = v })
   watch(() => canvas.canUndo.value, (v) => { canUndo.value = v })
   watch(() => canvas.canRedo.value, (v) => { canRedo.value = v })
+  watch(() => canvas.activeStrokes, (v) => { activeStrokes.value = v.value || {} }, { deep: true })
 
   // Load saved canvas state
   if (whiteboard.value?.canvas_state) {
