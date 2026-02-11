@@ -160,11 +160,24 @@ export interface UploadOptions {
   onProgress?: (progress: number) => void
 }
 
+export interface UploadProgress {
+  loaded: number
+  total: number
+  percent: number
+}
+
 export interface UploadResult {
   fileId: string
   fileName: string
   storagePath: string
   url: string
+  fileRecord?: {
+    id: string
+    file_name: string
+    file_type: string
+    storage_path: string
+    file_size: number
+  }
 }
 
 // Color Palette
