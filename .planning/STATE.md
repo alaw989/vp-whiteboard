@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 2 of 8 (Document Rendering)
-Plan: 3 of 4 in current phase
+Plan: 2 of 4 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed 02-03: Upload-to-Canvas Integration
+Last activity: 2026-02-11 — Completed 02-02: Document Background Layer
 
-Progress: [██████░░░] 50%
+Progress: [████░░░░░] 38%
 
 ## Performance Metrics
 
@@ -29,7 +29,7 @@ Progress: [██████░░░] 50%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 5/5 | 13 min | 3 min |
-| 2 | 2/4 | 10 min | 5 min |
+| 2 | 2/4 | 8 min | 4 min |
 | 3 | 0/8 | - | - |
 | 4 | 0/3 | - | - |
 | 5 | 0/4 | - | - |
@@ -44,7 +44,7 @@ Progress: [██████░░░] 50%
 *Updated after each plan completion*
 | Phase 01-foundation P01-05 | 4min | 3 tasks | 4 files |
 | Phase 02-document-rendering P01 | 4min | 3 tasks | 5 files |
-| Phase 02-document-rendering P03 | 6min | 3 tasks | 3 files |
+| Phase 02-document-rendering P02 | 4min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -70,6 +70,10 @@ Recent decisions affecting current work:
 - **Default scale 1.5 for PDF rendering** (02-01) - balance between quality and file size
 - **Client-side only PDF.js plugin** (02-01) - avoids SSR hydration errors
 - **Dynamic import of pdfjs-dist in composable** (02-01) - SSR compatibility
+- **Document layer renders before main drawing layer** (02-02) - ensures proper z-ordering for documents behind drawings
+- **listening(false) on document layer for performance** (02-02) - skip hit detection on non-interactive backgrounds
+- **Image caching with Map<string, HTMLImageElement>** (02-02) - prevents redundant loading of document images
+- **DocumentLayer type from ~/types used consistently** (02-02) - not local interfaces, maintains type consistency
 - **PDF files rendered to dataURL images for Konva Image consumption** (02-03) - enables proper canvas export and layer management
 - **Layer state managed separately from canvas elements** (02-03) - enables independent document tracking and layer panel UI
 - **Supabase storage retained for file uploads** (02-03) - production-ready, no downgrade to local files needed
@@ -89,5 +93,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 02-03: Upload-to-Canvas Integration
+Stopped at: Completed 02-02: Document Background Layer
 Resume file: None
