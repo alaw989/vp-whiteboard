@@ -111,17 +111,14 @@
           </template>
         </ClientOnly>
 
-        <!-- User List Overlay (UserPresenceList will be added in 05-02) -->
-        <!-- <div class="absolute top-4 right-4 z-10">
-          <ClientOnly>
-            <WhiteboardUserList :users="connectedUsers" />
-            <template #fallback>
-              <div class="bg-white rounded-lg shadow-sm border border-neutral-200 p-3">
-                <div class="text-sm text-neutral-400">Loading users...</div>
-              </div>
-            </template>
-          </ClientOnly>
-        </div> -->
+        <!-- User Presence List -->
+        <ClientOnly>
+          <UserPresenceList
+            v-if="currentUserFromCanvas && remoteCursors.size > 0"
+            :users="remoteCursors"
+            :current-user="currentUserFromCanvas"
+          />
+        </ClientOnly>
       </main>
     </div>
 
@@ -259,6 +256,14 @@ const startActiveStroke = ref<((strokeId: string) => void) | null>(null)
 const broadcastStrokePoint = ref<((strokeId: string, point: [number, number, number]) => void) | null>(null)
 const endActiveStroke = ref<((strokeId: string, element: CanvasElement) => void) | null>(null)
 
+// Cursor tracking state from WhiteboardCanvas's useCursors
+const currentUserFromCanvas = ref<{ id: string; name: string; color: string }>({
+  id: currentUser.id,
+  name: currentUser.name,
+  color: '',  // Will be updated by useCursors
+})
+const remoteCursors = ref<Map<number, any>>(new Map())
+
 // Initialize canvas on client side
 onMounted(() => {
   canvas = useCollaborativeCanvas(
@@ -287,6 +292,24 @@ onMounted(() => {
   watch(() => canvas.canUndo.value, (v) => { canUndo.value = v })
   watch(() => canvas.canRedo.value, (v) => { canRedo.value = v })
   watch(() => canvas.activeStrokes, (v) => { activeStrokes.value = v.value || {} }, { deep: true })
+
+  // Watch for cursor tracking updates from WhiteboardCanvas component
+  watchEffect(() => {
+    const canvasComponent = canvasRef.value
+    if (canvasComponent) {
+      // Access exposed values from WhiteboardCanvas
+      const exposed = canvasComponent as unknown as {
+        currentUser?: { id: string; name: string; color: string }
+        remoteCursors?: Map<number, any>
+      }
+      if (exposed.currentUser) {
+        currentUserFromCanvas.value = exposed.currentUser
+      }
+      if (exposed.remoteCursors) {
+        remoteCursors.value = exposed.remoteCursors
+      }
+    }
+  })
 
   // Load saved canvas state
   if (whiteboard.value?.canvas_state) {

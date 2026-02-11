@@ -1648,5 +1648,8 @@ defineExpose({
   updateLayer,
   removeLayer,
   visibleLayers,
+  // Cursor tracking for UserPresenceList
+  currentUser,
+  remoteCursors,
 })
 </script>
