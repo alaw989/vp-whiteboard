@@ -190,7 +190,7 @@
     <ClientOnly>
       <ExportDialog
         :show="showExportDialog"
-        :stage="(canvasRef.value as any)?.stageRef?.value?.getNode() || null"
+        :stage="(canvasRef.value as any)?.stageRef?.getNode() || null"
         :filename="whiteboard.value?.name"
         :is-exporting="isExporting"
         :export-progress="exportProgress"
