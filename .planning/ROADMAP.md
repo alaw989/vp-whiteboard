@@ -138,13 +138,18 @@ Plans:
 3. User list shows all participants in the session
 4. Drawing changes broadcast instantly to all clients
 
-**Plans**: TBD
+**Plans**: 4 plans in 2 waves
+
+| Wave | Plans | Description |
+|------|-------|-------------|
+| 1 | 05-01, 05-02 | Cursor tracking with Awareness API, user presence list |
+| 2 | 05-03, 05-04 | Real-time stroke broadcast, cursor throttling |
 
 Plans:
-- [ ] 05-01: Multi-user cursor tracking and display
-- [ ] 05-02: User presence list
-- [ ] 05-03: Real-time drawing broadcast via Yjs
-- [ ] 05-04: Cursor throttling and cleanup
+- [ ] 05-01-PLAN.md — Multi-user cursor tracking with Yjs Awareness API
+- [ ] 05-02-PLAN.md — User presence list component with color indicators
+- [ ] 05-03-PLAN.md — Real-time drawing broadcast via activeStrokes Y.Map
+- [ ] 05-04-PLAN.md — Cursor and stroke throttling for performance
 
 ### Phase 6: Export
 
