@@ -1131,6 +1131,37 @@ function getStrokeConfig(element: CanvasElement) {
   }
 }
 
+/**
+ * Get config for rendering remote active stroke (preview state)
+ * Uses lower opacity to indicate in-progress state
+ */
+function getActiveStrokeConfig(strokeId: string, points: [number, number, number][]) {
+  // Extract userId from strokeId to get user color
+  const userId = strokeId.split('-')[0]
+  const userColor = getUserColor(userId)
+
+  // Use perfect-freehand to render smooth stroke as filled polygon
+  const outline = getStroke(points, {
+    size: 4,
+    thinning: 0.5,
+    smoothing: 0.5,
+    streamline: 0.5,
+  })
+
+  const flatPoints = outline.flatMap(p => [p[0], p[1]])
+
+  return {
+    points: flatPoints,
+    stroke: userColor,
+    strokeWidth: 1,
+    fill: userColor,
+    globalAlpha: 0.6,  // Lower opacity for preview state
+    lineCap: 'round',
+    lineJoin: 'round',
+    closed: true,
+  }
+}
+
 function getLineConfig(element: CanvasElement) {
   const data = element.data as LineElement
   return {
@@ -1594,6 +1625,19 @@ function cancelAnnotation() {
   showAnnotationInput.value = false
   pendingAnnotationText.value = ''
   delete (window as any).__pendingLeaderLine
+}
+
+/**
+ * Get consistent color for user based on userId
+ * Matches the color generation in useCollaborativeCanvas.ts
+ */
+function getUserColor(userId: string): string {
+  const colors = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899']
+  let hash = 0
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return colors[Math.abs(hash) % colors.length]
 }
 
 defineExpose({
