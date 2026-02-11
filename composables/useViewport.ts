@@ -1,4 +1,4 @@
-import { ref, computed, readonly, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, readonly, watch, type Ref, type ComputedRef } from 'vue'
 import type { ViewportState } from '~/types'
 
 export interface ViewportOptions {
@@ -24,6 +24,9 @@ export function useViewport(options: ViewportOptions) {
     y: 0,
     zoom: 1,
   })
+
+  // Pan state tracking
+  const isPanning = ref(false)
 
   // Stage configuration for Konva
   const stageConfig = computed(() => ({
@@ -81,25 +84,31 @@ export function useViewport(options: ViewportOptions) {
 
   /**
    * Enable panning by making the stage draggable
+   * Sets pan state, enables dragging, and updates cursor
    */
-  function startPan() {
+  function enablePan() {
     const stage = stageRef.value?.getNode()
     if (stage) {
+      isPanning.value = true
       stage.draggable(true)
+      stage.container()?.style.setProperty('cursor', 'grab')
     }
   }
 
   /**
    * Disable panning and capture final position
+   * Resets pan state, disables dragging, and captures position
    */
-  function stopPan() {
+  function disablePan() {
     const stage = stageRef.value?.getNode()
     if (stage) {
-      stage.draggable(false)
-
       // Capture final position after dragging
       viewport.value.x = stage.x()
       viewport.value.y = stage.y()
+
+      stage.draggable(false)
+      stage.container()?.style.removeProperty('cursor')
+      isPanning.value = false
 
       // Notify callback if provided
       if (onViewportChange) {
@@ -107,6 +116,53 @@ export function useViewport(options: ViewportOptions) {
       }
     }
   }
+
+  /**
+   * Deprecated: Use enablePan instead
+   * Kept for backward compatibility
+   */
+  function startPan() {
+    enablePan()
+  }
+
+  /**
+   * Deprecated: Use disablePan instead
+   * Kept for backward compatibility
+   */
+  function stopPan() {
+    disablePan()
+  }
+
+  /**
+   * Watch stage dragmove to update viewport in real-time during pan
+   */
+  watch(isPanning, (panning) => {
+    const stage = stageRef.value?.getNode()
+    if (!stage) return
+
+    if (panning) {
+      // Listen to dragmove event for real-time viewport updates
+      stage.on('dragmove', () => {
+        viewport.value.x = stage.x()
+        viewport.value.y = stage.y()
+      })
+
+      // Update cursor to grabbing during active drag
+      stage.on('dragstart', () => {
+        stage.container()?.style.setProperty('cursor', 'grabbing')
+      })
+
+      // Reset cursor on drag end
+      stage.on('dragend', () => {
+        stage.container()?.style.setProperty('cursor', 'grab')
+      })
+    } else {
+      // Remove listeners when pan is disabled
+      stage.off('dragmove')
+      stage.off('dragstart')
+      stage.off('dragend')
+    }
+  })
 
   /**
    * Zoom in toward center of viewport
@@ -189,6 +245,7 @@ export function useViewport(options: ViewportOptions) {
   return {
     // State (readonly for external use)
     viewport: readonly(viewport),
+    isPanning: readonly(isPanning),
     stageConfig,
     zoomPercent,
     canZoomIn,
@@ -196,6 +253,8 @@ export function useViewport(options: ViewportOptions) {
 
     // Actions
     handleWheel,
+    enablePan,
+    disablePan,
     startPan,
     stopPan,
     zoomIn,
