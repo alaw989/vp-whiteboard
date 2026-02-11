@@ -11,18 +11,18 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 3 of 8 (Drawing Tools)
-Plan: 1 of 8 in current phase
-Status: Ready to start
-Last activity: 2026-02-11 — Completed Phase 2: Document Rendering
+Plan: 2 of 8 in current phase
+Status: In progress
+Last activity: 2026-02-11 — Completed Plan 01: Pen, Highlighter, and Eraser
 
-Progress: [████████░] 88%
+Progress: [████████░] 89%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 13
+- Total plans completed: 14
 - Average duration: 3 min
-- Total execution time: 0.73 hours
+- Total execution time: 0.75 hours
 
 **By Phase:**
 
@@ -30,7 +30,7 @@ Progress: [████████░] 88%
 |-------|-------|-------|----------|
 | 1 | 5/5 | 13 min | 3 min |
 | 2 | 4/4 | 13 min | 3 min |
-| 3 | 0/8 | - | - |
+| 3 | 1/8 | 2 min | 2 min |
 | 4 | 0/3 | - | - |
 | 5 | 0/4 | - | - |
 | 6 | 0/3 | - | - |
@@ -42,8 +42,8 @@ Progress: [████████░] 88%
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
+| Phase 03-drawing-tools P01 | 2min | 3 tasks | 3 files |
 | Phase 02-document-rendering P04 | 4min | 3 tasks | 3 files |
-| Phase 03-drawing-tools P01 | - | - | - |
 | Phase 01-foundation P01-05 | 4min | 3 tasks | 4 files |
 | Phase 02-document-rendering P01 | 4min | 3 tasks | 5 files |
 | Phase 02-document-rendering P02 | 4min | 3 tasks | 3 files |
@@ -84,6 +84,9 @@ Recent decisions affecting current work:
 - **AbortSignal for cancellation** (02-04) - native browser API for cancellable async operations with event listener cleanup
 - **Two-stage progress mapping** (02-04) - 0-50% for document load, 50-100% for render provides smooth user feedback
 - **Backdrop blur overlay for loading indicator** (02-04) - prevents user interaction and focuses attention during long operations
+- **perfect-freehand for smooth stroke rendering** (03-01) - creates natural variable-width strokes using pressure simulation
+- **Filled polygon rendering for strokes** (03-01) - strokes rendered as closed polygons using perfect-freehand outline points
+- **Eraser hit detection with getAllIntersections** (03-01) - uses Konva's hit detection to find and remove elements at cursor position
 
 ### Pending Todos
 
@@ -100,5 +103,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Phase 2 complete, ready to start Phase 3: Drawing Tools
+Stopped at: Completed 03-01 (Pen, Highlighter, Eraser), ready for 03-02 (Line Tools)
 Resume file: None
