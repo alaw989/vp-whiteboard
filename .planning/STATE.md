@@ -11,18 +11,18 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 3 of 8 (Drawing Tools)
-Plan: 2 of 8 in current phase
+Plan: 3 of 8 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed Plan 01: Pen, Highlighter, and Eraser
+Last activity: 2026-02-11 — Completed Plan 03: Text Annotation Tool
 
-Progress: [████████░] 89%
+Progress: [█████████] 91%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 14
+- Total plans completed: 15
 - Average duration: 3 min
-- Total execution time: 0.75 hours
+- Total execution time: 0.80 hours
 
 **By Phase:**
 
@@ -30,7 +30,7 @@ Progress: [████████░] 89%
 |-------|-------|-------|----------|
 | 1 | 5/5 | 13 min | 3 min |
 | 2 | 4/4 | 13 min | 3 min |
-| 3 | 1/8 | 2 min | 2 min |
+| 3 | 2/8 | 7 min | 4 min |
 | 4 | 0/3 | - | - |
 | 5 | 0/4 | - | - |
 | 6 | 0/3 | - | - |
@@ -42,6 +42,7 @@ Progress: [████████░] 89%
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
+| Phase 03-drawing-tools P03 | 5min | 3 tasks | 3 files |
 | Phase 03-drawing-tools P01 | 2min | 3 tasks | 3 files |
 | Phase 02-document-rendering P04 | 4min | 3 tasks | 3 files |
 | Phase 01-foundation P01-05 | 4min | 3 tasks | 4 files |
@@ -87,6 +88,8 @@ Recent decisions affecting current work:
 - **perfect-freehand for smooth stroke rendering** (03-01) - creates natural variable-width strokes using pressure simulation
 - **Filled polygon rendering for strokes** (03-01) - strokes rendered as closed polygons using perfect-freehand outline points
 - **Eraser hit detection with getAllIntersections** (03-01) - uses Konva's hit detection to find and remove elements at cursor position
+- **Modal dialog for text input after shape placement** (03-03) - better UX than inline editing for leader line annotations
+- **Leader line coordinates relative to group origin** (03-03) - proper positioning within v-group for text+line compound element
 
 ### Pending Todos
 
@@ -103,5 +106,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 03-01 (Pen, Highlighter, Eraser), ready for 03-02 (Line Tools)
+Stopped at: Completed 03-03 (Text Annotation Tool), ready for 03-04 (Arrow Tool)
 Resume file: None
