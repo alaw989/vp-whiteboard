@@ -87,10 +87,25 @@ export function useCursors(
   function cleanup() {
     if (awareness) {
       awareness.off('change', handleAwarenessChange)
-      // Mark user as offline by clearing local state
+      // Mark CURRENT user as offline by clearing local state
       awareness.setLocalState(null)
     }
   }
+
+  /**
+   * Awareness API Automatic Cleanup
+   *
+   * The Yjs Awareness API automatically handles cleanup of remote users:
+   * - When a user disconnects, their state is automatically removed
+   * - A 30-second inactivity timeout is built into Awareness
+   * - No manual cleanup is needed for remote cursors
+   *
+   * The cleanup() function above only handles the CURRENT user's state
+   * by calling awareness.setLocalState(null) to mark them as offline.
+   *
+   * The 30-second filter in remoteCursors (in handleAwarenessChange)
+   * provides additional safety, but Awareness handles the primary cleanup.
+   */
 
   return {
     currentUser,
