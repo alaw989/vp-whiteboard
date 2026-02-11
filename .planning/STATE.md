@@ -11,18 +11,18 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 4 of 8 (Canvas Navigation)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed Plan 01: Mouse Wheel Zoom with Viewport Composable
+Last activity: 2026-02-11 — Completed Plan 02: Pan-by-Drag Functionality
 
-Progress: [███-------] 33%
+Progress: [█████-----] 67%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 20
+- Total plans completed: 21
 - Average duration: 3 min
-- Total execution time: 1.05 hours
+- Total execution time: 1.08 hours
 
 **By Phase:**
 
@@ -31,7 +31,7 @@ Progress: [███-------] 33%
 | 1 | 5/5 | 13 min | 3 min |
 | 2 | 4/4 | 13 min | 3 min |
 | 3 | 8/8 | 30 min | 4 min |
-| 4 | 1/3 | 20 min | 20 min |
+| 4 | 2/3 | 23 min | 12 min |
 | 5 | 0/4 | - | - |
 | 6 | 0/3 | - | - |
 | 7 | 0/4 | - | - |
@@ -42,6 +42,7 @@ Progress: [███-------] 33%
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
+| Phase 04-canvas-navigation P02 | 3min | 3 tasks | 4 files |
 | Phase 04-canvas-navigation P01 | 20min | 3 tasks | 2 files |
 | Phase 03-drawing-tools P08 | 5min | 4 tasks | 2 files |
 | Phase 03-drawing-tools P06 | 5min | 4 tasks | 3 files |
@@ -117,6 +118,10 @@ Recent decisions affecting current work:
 - **Merged viewport config with width/height via computed** (04-01) - container dimensions separate from viewport transform state
 - **Readonly refs for exported viewport state** (04-01) - prevents external mutation, all changes through composable functions
 - **Optional callback pattern for viewport changes** (04-01) - onViewportChange enables future sync without tight coupling
+- **Pan state management pattern** (04-02) - isPanning ref guards other operations during pan
+- **Konva dragmove for real-time viewport sync** (04-02) - stage dragmove event updates viewport.x/y during pan
+- **Cursor feedback during pan** (04-02) - grab cursor when enabled, grabbing during active drag
+- **Keyboard shortcuts via toolShortcuts mapping** (04-02) - useKeyboardShortcuts composable with tool key mappings
 
 ### Pending Todos
 
@@ -133,5 +138,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 04-01 (Mouse Wheel Zoom with Viewport Composable)
+Stopped at: Completed 04-02 (Pan-by-Drag Functionality)
 Resume file: None
