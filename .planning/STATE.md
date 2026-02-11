@@ -6,23 +6,23 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Engineers and clients can collaboratively mark up and discuss engineering drawings in real-time, with everyone seeing each other's cursors and annotations instantly.
 
-**Current focus:** Phase 4: Canvas Navigation
+**Current focus:** Phase 5: Real-time Collaboration
 
 ## Current Position
 
-Phase: 4 of 8 (Canvas Navigation)
-Plan: 3 of 3 in current phase
+Phase: 5 of 8 (Real-time Collaboration)
+Plan: 4 of 8 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed Plan 03: Collaborative Viewport Sync
+Last activity: 2026-02-11 — Completed Wave 2: Plans 05-03, 05-04
 
-Progress: [████████--] 100%
+Progress: [████░░░░--] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 24
+- Total plans completed: 30
 - Average duration: 3 min
-- Total execution time: 1.15 hours
+- Total execution time: 1.45 hours
 
 **By Phase:**
 
@@ -32,7 +32,7 @@ Progress: [████████--] 100%
 | 2 | 4/4 | 13 min | 3 min |
 | 3 | 8/8 | 30 min | 4 min |
 | 4 | 3/3 | 30 min | 10 min |
-| 5 | 0/4 | - | - |
+| 5 | 4/8 | 20 min | 5 min |
 | 6 | 0/3 | - | - |
 | 7 | 0/4 | - | - |
 | 8 | 0/6 | - | - |
@@ -42,6 +42,8 @@ Progress: [████████--] 100%
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
+| Phase 05-real-time-collab P04 | 8min | 3 tasks | 2 files |
+| Phase 05-real-time-collab P03 | 12min | 3 tasks | 3 files |
 | Phase 04-canvas-navigation P03 | 7min | 3 tasks | 4 files |
 | Phase 04-canvas-navigation P02 | 3min | 3 tasks | 4 files |
 | Phase 04-canvas-navigation P01 | 20min | 3 tasks | 2 files |
@@ -127,6 +129,11 @@ Recent decisions affecting current work:
 - **Debounced viewport sync with threshold** (04-03) - 100ms debounce, 5px position threshold, 0.01 zoom threshold
 - **Conflict avoidance via lastUpdatedBy** (04-03) - userId comparison prevents applying own updates back
 - **isRemoteUpdate guard pattern** (04-03) - boolean flag during remote updates prevents infinite sync loop
+- **Separate Y.Map for in-progress strokes** (05-03) - yActiveStrokes for temporary state, move to yElements on completion
+- **Filter own strokes from observation** (05-03) - check strokeId prefix to exclude own state
+- **Time-based stroke throttling** (05-03/05-04) - 16ms minimum for consistent ~60fps broadcasting
+- **VueUse useDebounceFn for cursor throttling** (05-04) - 16ms delay with last-call-wins behavior
+- **Awareness automatic cleanup** (05-04) - 30-second timeout built into Awareness API, no manual code needed
 
 ### Pending Todos
 
@@ -143,5 +150,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 04-03 (Collaborative Viewport Sync)
+Stopped at: Completed 05-04 (Cursor and Stroke Throttling)
 Resume file: None
