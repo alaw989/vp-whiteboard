@@ -1,5 +1,6 @@
-import { ref, computed, readonly, watch, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, readonly, watch, nextTick, type Ref, type ComputedRef } from 'vue'
 import type { ViewportState } from '~/types'
+import { useDebounceFn } from '@vueuse/core'
 
 export interface ViewportOptions {
   stageRef: Ref<any>
@@ -7,6 +8,10 @@ export interface ViewportOptions {
   minZoom?: number
   maxZoom?: number
   onViewportChange?: (viewport: ViewportState) => void
+  // Yjs sync options
+  userId?: string
+  syncViewport?: (viewport: ViewportState) => void
+  applyRemoteViewport?: (viewport: ViewportState) => void
 }
 
 export function useViewport(options: ViewportOptions) {
@@ -16,6 +21,9 @@ export function useViewport(options: ViewportOptions) {
     minZoom = 0.1,
     maxZoom = 5.0,
     onViewportChange,
+    userId,
+    syncViewport,
+    applyRemoteViewport,
   } = options
 
   // Viewport state (x, y, zoom)
@@ -27,6 +35,10 @@ export function useViewport(options: ViewportOptions) {
 
   // Pan state tracking
   const isPanning = ref(false)
+
+  // Remote sync state (prevents infinite loop)
+  const isRemoteUpdate = ref(false)
+  const lastSyncedViewport = ref<ViewportState | null>(null)
 
   // Stage configuration for Konva
   const stageConfig = computed(() => ({
@@ -45,6 +57,37 @@ export function useViewport(options: ViewportOptions) {
 
   // Check if zoom can be decreased
   const canZoomOut = computed(() => viewport.value.zoom > minZoom)
+
+  // Debounced sync function to avoid excessive network traffic during rapid viewport changes
+  const debouncedSync = useDebounceFn((vp: ViewportState) => {
+    if (syncViewport && userId && !isRemoteUpdate.value) {
+      // Only sync if userId provided (collaborative mode)
+      syncViewport(vp)
+      lastSyncedViewport.value = { ...vp }
+    }
+  }, 100)
+
+  // Internal sync caller with threshold check
+  function triggerSync(vp: ViewportState) {
+    if (!syncViewport || !userId || isRemoteUpdate.value) {
+      return
+    }
+
+    // Check if viewport changed significantly (threshold: 5px or 0.01 zoom)
+    const last = lastSyncedViewport.value
+    if (!last) {
+      debouncedSync(vp)
+      return
+    }
+
+    const dx = Math.abs(vp.x - last.x)
+    const dy = Math.abs(vp.y - last.y)
+    const dz = Math.abs(vp.zoom - last.zoom)
+
+    if (dx > 5 || dy > 5 || dz > 0.01) {
+      debouncedSync(vp)
+    }
+  }
 
   /**
    * Handle mouse wheel zoom with pointer-relative scaling
@@ -75,6 +118,9 @@ export function useViewport(options: ViewportOptions) {
     viewport.value.x = pointer.x - (pointer.x - viewport.value.x) * (clampedScale / oldScale)
     viewport.value.y = pointer.y - (pointer.y - viewport.value.y) * (clampedScale / oldScale)
     viewport.value.zoom = clampedScale
+
+    // Trigger sync for collaborative mode
+    triggerSync(viewport.value)
 
     // Notify callback if provided
     if (onViewportChange) {
@@ -110,11 +156,27 @@ export function useViewport(options: ViewportOptions) {
       stage.container()?.style.removeProperty('cursor')
       isPanning.value = false
 
+      // Trigger sync for collaborative mode (sync immediately after pan ends)
+      triggerSync(viewport.value)
+
       // Notify callback if provided
       if (onViewportChange) {
         onViewportChange(viewport.value)
       }
     }
+  }
+
+  /**
+   * Apply remote viewport change from another user
+   * Sets isRemoteUpdate flag to prevent sync loop
+   */
+  function applyRemoteViewportInternal(remoteViewport: ViewportState) {
+    isRemoteUpdate.value = true
+    viewport.value = { ...remoteViewport }
+    // Reset flag after next tick to allow subsequent updates
+    nextTick(() => {
+      isRemoteUpdate.value = false
+    })
   }
 
   /**
@@ -183,6 +245,9 @@ export function useViewport(options: ViewportOptions) {
     viewport.value.y = centerY - (centerY - viewport.value.y) * (newScale / oldScale)
     viewport.value.zoom = newScale
 
+    // Trigger sync for collaborative mode
+    triggerSync(viewport.value)
+
     if (onViewportChange) {
       onViewportChange(viewport.value)
     }
@@ -207,6 +272,9 @@ export function useViewport(options: ViewportOptions) {
     viewport.value.y = centerY - (centerY - viewport.value.y) * (newScale / oldScale)
     viewport.value.zoom = newScale
 
+    // Trigger sync for collaborative mode
+    triggerSync(viewport.value)
+
     if (onViewportChange) {
       onViewportChange(viewport.value)
     }
@@ -222,6 +290,9 @@ export function useViewport(options: ViewportOptions) {
       zoom: 1,
     }
 
+    // Trigger sync for collaborative mode
+    triggerSync(viewport.value)
+
     if (onViewportChange) {
       onViewportChange(viewport.value)
     }
@@ -236,6 +307,9 @@ export function useViewport(options: ViewportOptions) {
     if (state.zoom !== undefined) {
       viewport.value.zoom = Math.min(Math.max(state.zoom, minZoom), maxZoom)
     }
+
+    // Trigger sync for collaborative mode
+    triggerSync(viewport.value)
 
     if (onViewportChange) {
       onViewportChange(viewport.value)
@@ -261,6 +335,9 @@ export function useViewport(options: ViewportOptions) {
     zoomOut,
     resetZoom,
     setViewport,
+
+    // Remote viewport sync
+    applyRemoteViewport: applyRemoteViewportInternal,
   }
 }
 
