@@ -80,6 +80,8 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   const activeStrokes = ref<Record<string, [number, number, number][]>>({})
 
   // Track last broadcast time for throttling stroke points
+  // STROKE_THROTTLE_MS = 16ms (~60fps max) provides consistent real-time feel
+  // while preventing excessive network traffic during rapid drawing
   const STROKE_THROTTLE_MS = 16 // ~60fps max
   const lastBroadcastTime = new Map<string, number>()
 
@@ -301,9 +303,14 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   }
 
   /**
-   * Broadcast a stroke point in real-time
+   * Broadcast a stroke point in real-time with throttling
+   *
+   * Throttling Strategy:
+   * - Time-based throttling (16ms minimum = ~60fps max)
+   * - Provides consistent real-time feel regardless of drawing speed
+   * - Count-based throttling would lose points during fast drawing
+   *
    * Appends point to existing stroke array in yActiveStrokes
-   * Includes 16ms throttling to prevent excessive network traffic
    */
   function broadcastStrokePoint(strokeId: string, point: [number, number, number]) {
     const now = Date.now()
