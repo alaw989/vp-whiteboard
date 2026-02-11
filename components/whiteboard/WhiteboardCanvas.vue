@@ -52,10 +52,13 @@
         <v-group :config="{ x: viewport.x, y: viewport.y }">
           <!-- Render all elements -->
           <template v-for="element in elements" :key="element.id">
-            <!-- Stroke elements (freehand drawing) -->
+            <!-- Stroke elements (freehand drawing) - rendered as filled polygon -->
             <v-line
               v-if="element.type === 'stroke'"
-              :config="getStrokeConfig(element)"
+              :config="{
+                ...getStrokeConfig(element),
+                closed: true,
+              }"
             />
 
             <!-- Line elements -->
@@ -118,7 +121,8 @@
 </template>
 
 <script setup lang="ts">
-import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, ImageElement, TextElement, UserPresence, DocumentLayer } from '~/types'
+import { getStroke } from 'perfect-freehand'
+import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, UserPresence, DocumentLayer } from '~/types'
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
 import type { PDFLoadingState } from '~/types'
 
@@ -135,6 +139,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'element-add': [element: CanvasElement]
+  'element-delete': [elementId: string]
   'cursor-update': [x: number, y: number]
 }>()
 
@@ -199,7 +204,7 @@ const viewport = ref({ x: 0, y: 0, zoom: 1 })
 
 // Drawing state
 const isDrawing = ref(false)
-const currentStrokePoints = ref<[number, number][]>([])
+const currentStrokePoints = ref<[number, number, number][]>([])
 
 // PDF loading state
 const pdfLoadingState = ref<PDFLoadingState>({
@@ -251,6 +256,35 @@ function getPointerPos(event: any) {
   }
 }
 
+/**
+ * Erase element at the given position
+ * Uses hit detection to find and remove elements
+ */
+function eraseElementAt(x: number, y: number) {
+  const stage = stageRef.value?.getNode()
+  if (!stage) return
+
+  // Get all shapes at the clicked position
+  const shapes = stage.getAllIntersections({ x, y })
+
+  // Filter out document layer and background
+  const canvasShapes = shapes.filter(shape => {
+    const parent = shape.getParent()
+    const layer = parent?.getParent()
+    return layer?.name !== 'documentLayer'
+  })
+
+  // Delete the first non-stroke element (shapes, images, text)
+  // For strokes, we need more precise hit detection
+  for (const shape of canvasShapes) {
+    const elementId = shape.id()
+    if (elementId && elementId.startsWith(props.userId)) {
+      emit('element-delete', elementId)
+      break
+    }
+  }
+}
+
 // Mouse handlers
 function handleMouseDown(event: any) {
   if (props.currentTool === 'pan') {
@@ -259,14 +293,24 @@ function handleMouseDown(event: any) {
   }
 
   if (props.currentTool === 'select') {
-    // Handle selection
+    // Handle selection (implemented in 03-06)
     return
   }
 
   // Drawing tools
   const pos = getPointerPos(event)
   isDrawing.value = true
-  currentStrokePoints.value = [[pos.x, pos.y]]
+
+  if (props.currentTool === 'pen' || props.currentTool === 'highlighter') {
+    // Start stroke with pressure (default 0.5)
+    currentStrokePoints.value = [[pos.x, pos.y, 0.5]]
+  } else if (props.currentTool === 'eraser') {
+    // Eraser starts immediately - check for elements to delete
+    eraseElementAt(pos.x, pos.y)
+  } else {
+    // Other tools
+    currentStrokePoints.value = [[pos.x, pos.y]]
+  }
 }
 
 function handleMouseMove(event: any) {
@@ -277,9 +321,12 @@ function handleMouseMove(event: any) {
 
   if (!isDrawing.value) return
 
-  if (props.currentTool === 'pen' || props.currentTool === 'highlighter' || props.currentTool === 'eraser') {
-    currentStrokePoints.value.push([pos.x, pos.y])
+  if (props.currentTool === 'pen' || props.currentTool === 'highlighter') {
+    currentStrokePoints.value.push([pos.x, pos.y, 0.5])
+  } else if (props.currentTool === 'eraser') {
+    eraseElementAt(pos.x, pos.y)
   }
+  // ... other tool handling
 }
 
 function handleMouseUp(event: any) {
@@ -296,8 +343,19 @@ function handleMouseUp(event: any) {
 
   if (!isDrawing.value) return
 
-  // Create element from stroke
-  if (currentStrokePoints.value.length > 1) {
+  // Create pen or highlighter stroke element
+  if ((props.currentTool === 'pen' || props.currentTool === 'highlighter') && currentStrokePoints.value.length > 1) {
+    // Use perfect-freehand to render smooth stroke
+    const outline = getStroke(currentStrokePoints.value, {
+      size: props.currentSize,
+      thinning: props.currentTool === 'highlighter' ? 0 : 0.5,
+      smoothing: 0.5,
+      streamline: 0.5,
+    })
+
+    // Convert to flat array for Konva
+    const flatPoints = outline.flatMap(p => [p[0], p[1]])
+
     const element: CanvasElement = {
       id: `${props.userId}-${Date.now()}`,
       type: 'stroke',
@@ -305,10 +363,10 @@ function handleMouseUp(event: any) {
       userName: props.userName,
       timestamp: Date.now(),
       data: {
-        points: currentStrokePoints.value.map(p => [p[0], p[1], 0.5]) as [number, number, number][],
-        color: props.currentTool === 'eraser' ? '#f5f5f5' : props.currentColor,
-        size: props.currentTool === 'eraser' ? 20 : props.currentSize,
-        tool: props.currentTool === 'highlighter' ? 'highlighter' : 'pen',
+        points: currentStrokePoints.value,
+        color: props.currentColor,
+        size: props.currentSize,
+        tool: props.currentTool,
         smooth: true,
       } as StrokeElement,
     }
@@ -364,14 +422,26 @@ function handleWheel(event: any) {
 // Element config helpers
 function getStrokeConfig(element: CanvasElement) {
   const data = element.data as StrokeElement
+
+  // Use perfect-freehand to render smooth stroke as filled polygon
+  const outline = getStroke(data.points, {
+    size: data.size,
+    thinning: data.tool === 'highlighter' ? 0 : 0.5,
+    smoothing: 0.5,
+    streamline: 0.5,
+  })
+
+  const flatPoints = outline.flatMap(p => [p[0], p[1]])
+
   return {
-    points: data.points.flatMap(p => [p[0], p[1]]),
+    points: flatPoints,
     stroke: data.color,
-    strokeWidth: data.size,
-    tension: 0.5,
+    strokeWidth: 1,  // Outline is filled, so stroke width doesn't matter
+    fill: data.color,
+    globalAlpha: data.tool === 'highlighter' ? 0.5 : 1,
     lineCap: 'round',
     lineJoin: 'round',
-    globalAlpha: data.tool === 'highlighter' ? 0.5 : 1,
+    closed: true,
   }
 }
 
@@ -437,15 +507,29 @@ function getTextConfig(element: CanvasElement) {
 
 // Current stroke config
 const currentStrokeConfig = computed(() => {
-  const points = currentStrokePoints.value.flat()
+  if (currentStrokePoints.value.length < 2) {
+    return { points: [], stroke: props.currentColor, strokeWidth: 1 }
+  }
+
+  // Render using perfect-freehand for preview
+  const outline = getStroke(currentStrokePoints.value, {
+    size: props.currentSize,
+    thinning: props.currentTool === 'highlighter' ? 0 : 0.5,
+    smoothing: 0.5,
+    streamline: 0.5,
+  })
+
+  const flatPoints = outline.flatMap(p => [p[0], p[1]])
+
   return {
-    points,
-    stroke: props.currentTool === 'eraser' ? '#f5f5f5' : props.currentColor,
-    strokeWidth: props.currentTool === 'eraser' ? 20 : props.currentSize,
-    tension: 0.5,
+    points: flatPoints,
+    stroke: props.currentColor,
+    strokeWidth: 1,  // Outline is filled, so stroke width doesn't matter
+    fill: props.currentColor,
+    globalAlpha: props.currentTool === 'highlighter' ? 0.5 : 1,
     lineCap: 'round',
     lineJoin: 'round',
-    globalAlpha: props.currentTool === 'highlighter' ? 0.5 : 1,
+    closed: true,
   }
 })
 
