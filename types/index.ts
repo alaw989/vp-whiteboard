@@ -315,3 +315,19 @@ export interface DocumentLayerState {
   loading: boolean
   error: string | null
 }
+
+// Export Types
+export type ExportFormat = 'png' | 'pdf'
+
+export interface ExportOptions {
+  format: ExportFormat
+  pixelRatio?: number  // 1 for screen quality, 2+ for print
+  filename?: string     // Auto-generated if omitted
+  includeBackground?: boolean
+}
+
+export interface ExportState {
+  isExporting: boolean
+  progress: number  // 0-100
+  error: string | null
+}
