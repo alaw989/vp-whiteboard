@@ -166,11 +166,15 @@
       <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Export</h4>
 
       <button
-        class="p-2 rounded-lg hover:bg-neutral-100 text-neutral-600 transition-colors"
-        title="Export as PNG"
+        :disabled="isExporting"
+        :class="[
+          'p-2 rounded-lg transition-colors',
+          isExporting ? 'animate-pulse bg-blue-100 text-blue-600' : 'hover:bg-neutral-100 text-neutral-600'
+        ]"
+        :title="isExporting ? `Exporting ${exportProgress}%` : 'Export as PNG'"
         @click="$emit('export', 'png')"
       >
-        <Icon name="mdi:download" class="w-5 h-5" />
+        <Icon :name="isExporting ? 'mdi:loading' : 'mdi:download'" class="w-5 h-5" />
       </button>
     </div>
   </div>
@@ -187,6 +191,8 @@ const props = defineProps<{
   currentSize: number
   canUndo: boolean
   canRedo: boolean
+  isExporting?: boolean
+  exportProgress?: number
 }>()
 
 const emit = defineEmits<{

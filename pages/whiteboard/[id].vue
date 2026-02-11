@@ -64,6 +64,8 @@
           :current-size="currentSize"
           :can-undo="canUndo"
           :can-redo="canRedo"
+          :is-exporting="isExporting"
+          :export-progress="exportProgress"
           @select-tool="setTool"
           @select-color="setColor"
           @select-size="setSize"
@@ -264,6 +266,9 @@ const currentUserFromCanvas = ref<{ id: string; name: string; color: string }>({
 })
 const remoteCursors = ref<Map<number, any>>(new Map())
 
+// Export functionality
+const { isExporting, progress: exportProgress, exportAsPNG } = useExport()
+
 // Initialize canvas on client side
 onMounted(() => {
   canvas = useCollaborativeCanvas(
@@ -389,13 +394,9 @@ function clearCanvas() {
 
 function exportCanvas(format: 'png' | 'pdf') {
   if (format === 'png' && canvasRef.value) {
-    const dataUrl = canvasRef.value.exportAsImage()
-    if (dataUrl) {
-      const link = document.createElement('a')
-      link.download = `${whiteboard.value?.name || 'whiteboard'}.png`
-      link.href = dataUrl
-      link.click()
-    }
+    const stage = (canvasRef.value as any).stageRef?.value?.getNode()
+    const filename = whiteboard.value?.name || 'whiteboard'
+    exportAsPNG(stage, { filename })
   }
 }
 
