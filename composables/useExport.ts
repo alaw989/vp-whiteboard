@@ -1,5 +1,6 @@
 import { ref, readonly } from 'vue'
 import type { Stage } from 'konva/lib/Stage'
+import jsPDF from 'jspdf'
 import type { ExportFormat, ExportOptions, ExportState } from '~/types'
 
 export function useExport() {
@@ -69,10 +70,73 @@ export function useExport() {
     }
   }
 
+  // Export canvas as PDF with embedded image
+  async function exportAsPDF(
+    stage: Stage | null,
+    options: Partial<ExportOptions> = {}
+  ): Promise<void> {
+    if (!stage) {
+      error.value = 'Canvas not available'
+      return
+    }
+
+    try {
+      isExporting.value = true
+      progress.value = 0
+      error.value = null
+
+      // Allow UI update
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      const width = stage.width()
+      const height = stage.height()
+
+      // Export at 2x pixel ratio for print quality (200 DPI equivalent)
+      progress.value = 25
+      const dataUrl = stage.toDataURL({
+        pixelRatio: options.pixelRatio ?? 2,  // Higher quality for PDF
+        x: 0,
+        y: 0,
+        width,
+        height,
+      })
+
+      progress.value = 75
+
+      // Create PDF with canvas dimensions
+      // Use pixel units to avoid conversion errors
+      const orientation = width > height ? 'landscape' : 'portrait'
+      const pdf = new jsPDF({
+        orientation,
+        unit: 'px',
+        format: [width, height],
+        compress: true,
+      })
+
+      // Add canvas image to PDF
+      pdf.addImage(dataUrl, 'PNG', 0, 0, width, height)
+
+      progress.value = 90
+
+      // Generate blob and trigger download
+      const pdfBlob = pdf.output('blob')
+      const pdfUrl = URL.createObjectURL(pdfBlob)
+      const filename = options.filename ?? generateFilename('whiteboard', 'pdf')
+      triggerDownload(pdfUrl, filename)
+
+      progress.value = 100
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'PDF export failed'
+    } finally {
+      isExporting.value = false
+    }
+  }
+
   return {
     isExporting: readonly(isExporting),
     progress: readonly(progress),
     error: readonly(error),
     exportAsPNG,
+    exportAsPDF,
   }
 }
