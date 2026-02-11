@@ -117,12 +117,12 @@ Plans:
 2. User can pan canvas by dragging
 3. Zoom level persists and syncs for all users in the session
 
-**Plans**: TBD
+**Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 04-01: Mouse wheel zoom implementation
-- [ ] 04-02: Pan-by-drag implementation
-- [ ] 04-03: Zoom state synchronization across users
+- [ ] 04-01-PLAN.md — Mouse wheel zoom with useViewport composable (Wave 1)
+- [ ] 04-02-PLAN.md — Pan-by-drag with toolbar button (Wave 2)
+- [ ] 04-03-PLAN.md — Zoom state synchronization via Yjs (Wave 3)
 
 ### Phase 5: Real-time Collaboration
 
