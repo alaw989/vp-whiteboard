@@ -1,0 +1,38 @@
+{
+  "name": "vp-whiteboard",
+  "version": "1.0.0",
+  "description": "VP Associates Collaborative Whiteboard Application",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "start": "node .output/server/index.mjs",
+    "postinstall": "nuxt prepare",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.13.5",
+    "konva": "^9.3.15",
+    "nanoid": "^5.1.6",
+    "nuxt": "^3.15.0",
+    "perfect-freehand": "^1.2.3",
+    "vue": "^3.5.0",
+    "vue-konva": "^3.3.0",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.29"
+  },
+  "devDependencies": {
+    "@nuxt/icon": "^1.0.0",
+    "@nuxtjs/tailwindcss": "^6.12.1",
+    "@pinia/nuxt": "^0.5.5",
+    "@types/nanoid": "^2.1.0",
+    "@types/node": "^25.2.1",
+    "@vueuse/nuxt": "^12.0.1",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^2.2.0"
+  }
+}
