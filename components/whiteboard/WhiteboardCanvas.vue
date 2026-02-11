@@ -340,6 +340,10 @@ const props = defineProps<{
   currentColor: string
   currentSize: number
   currentStampType?: StampType
+  // Viewport sync props
+  getViewport?: () => import('~/types').SharedViewportState
+  syncViewport?: (viewport: import('~/types').ViewportState) => void
+  observeViewport?: (callback: (viewport: import('~/types').SharedViewportState) => void) => () => void
 }>()
 
 const emit = defineEmits<{
@@ -387,11 +391,15 @@ const {
   disablePan,
   startPan,
   stopPan,
+  applyRemoteViewport,
 } = useViewport({
   stageRef,
   containerRef,
   minZoom: 0.1,
   maxZoom: 5.0,
+  userId: props.userId,
+  syncViewport: props.syncViewport,
+  applyRemoteViewport: undefined, // We'll handle this via observer callback
 })
 
 // Stage configuration (merges viewport config with width/height)
@@ -466,6 +474,9 @@ const pdfLoadingState = ref<PDFLoadingState>({
 const pdfFileName = ref<string>('')
 const pdfAbortController = ref<AbortController | null>(null)
 
+// Viewport observer cleanup function
+let cleanupViewportObserver: (() => void) | null = null
+
 // Initialize stage size
 onMounted(() => {
   if (containerRef.value) {
@@ -478,12 +489,46 @@ onMounted(() => {
 
   // Add keyboard shortcuts for selection
   window.addEventListener('keydown', handleKeyDown)
+
+  // Set up viewport sync if functions provided
+  if (props.observeViewport && props.getViewport) {
+    // Load initial viewport from shared state
+    const initialViewport = props.getViewport()
+    if (initialViewport.lastUpdatedBy && initialViewport.lastUpdatedBy !== props.userId) {
+      // Apply remote viewport if it exists and is from another user
+      if (applyRemoteViewport) {
+        applyRemoteViewport({
+          x: initialViewport.x,
+          y: initialViewport.y,
+          zoom: initialViewport.zoom,
+        })
+      }
+    }
+
+    // Set up observer for remote viewport changes
+    cleanupViewportObserver = props.observeViewport((remoteViewport) => {
+      // Apply remote viewport change
+      if (applyRemoteViewport) {
+        applyRemoteViewport({
+          x: remoteViewport.x,
+          y: remoteViewport.y,
+          zoom: remoteViewport.zoom,
+        })
+      }
+    })
+  }
 })
 
 onUnmounted(() => {
   layerImageCache.clear()
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('keydown', handleKeyDown)
+
+  // Clean up viewport observer
+  if (cleanupViewportObserver) {
+    cleanupViewportObserver()
+    cleanupViewportObserver = null
+  }
 })
 
 function handleResize() {
