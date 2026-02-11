@@ -267,7 +267,7 @@ const currentUserFromCanvas = ref<{ id: string; name: string; color: string }>({
 const remoteCursors = ref<Map<number, any>>(new Map())
 
 // Export functionality
-const { isExporting, progress: exportProgress, exportAsPNG } = useExport()
+const { isExporting, progress: exportProgress, exportAsPNG, exportAsPDF } = useExport()
 
 // Initialize canvas on client side
 onMounted(() => {
@@ -393,10 +393,15 @@ function clearCanvas() {
 }
 
 function exportCanvas(format: 'png' | 'pdf') {
-  if (format === 'png' && canvasRef.value) {
-    const stage = (canvasRef.value as any).stageRef?.value?.getNode()
-    const filename = whiteboard.value?.name || 'whiteboard'
+  if (!canvasRef.value) return
+
+  const stage = (canvasRef.value as any).stageRef?.value?.getNode()
+  const filename = whiteboard.value?.name || 'whiteboard'
+
+  if (format === 'png') {
     exportAsPNG(stage, { filename })
+  } else if (format === 'pdf') {
+    exportAsPDF(stage, { filename })
   }
 }
 
