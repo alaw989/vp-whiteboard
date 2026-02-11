@@ -90,6 +90,16 @@
               v-else-if="element.type === 'text'"
               :config="getTextConfig(element)"
             />
+
+            <!-- Text annotation elements (text + leader line in group) -->
+            <v-group
+              v-else-if="element.type === 'text-annotation'"
+              :config="getTextAnnotationConfig(element)"
+              @click="handleElementClick(element, $event)"
+            >
+              <v-line :config="getTextAnnotationLineConfig(element)" />
+              <v-text :config="getTextAnnotationTextConfig(element)" />
+            </v-group>
           </template>
 
           <!-- Current stroke being drawn -->
@@ -97,9 +107,48 @@
             v-if="currentStrokePoints.length > 0"
             :config="currentStrokeConfig"
           />
+
+          <!-- Current leader line preview for text annotation -->
+          <v-line
+            v-if="currentLeaderLinePreview"
+            :config="currentLeaderLinePreview"
+          />
         </v-group>
       </v-layer>
     </v-stage>
+
+    <!-- Text annotation input dialog -->
+    <div
+      v-if="showAnnotationInput"
+      class="fixed inset-0 bg-black/20 flex items-center justify-center z-50"
+      @click.self="cancelAnnotation"
+    >
+      <div class="bg-white rounded-lg shadow-xl p-4 w-80">
+        <h3 class="text-lg font-semibold mb-3">Add Annotation</h3>
+        <textarea
+          v-model="pendingAnnotationText"
+          class="w-full border border-gray-300 rounded-md p-2 mb-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          rows="3"
+          placeholder="Enter your annotation..."
+          @keydown.enter.prevent="confirmAnnotation"
+          @keydown.esc="cancelAnnotation"
+        />
+        <div class="flex justify-end gap-2">
+          <button
+            @click="cancelAnnotation"
+            class="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+          >
+            Cancel
+          </button>
+          <button
+            @click="confirmAnnotation"
+            class="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+          >
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Collaborative cursors -->
     <ClientOnly>
@@ -352,6 +401,18 @@ function handleMouseMove(event: any) {
 
   if (!isDrawing.value) return
 
+  // Update arrow preview
+  if (props.currentTool === 'arrow' && arrowStart.value) {
+    currentArrowEnd.value = pos
+    return
+  }
+
+  // Update line preview
+  if (props.currentTool === 'line' && lineStart.value) {
+    currentLineEnd.value = pos
+    return
+  }
+
   // Update text annotation leader line preview
   if (props.currentTool === 'text-annotation' && textAnnotationStart.value) {
     currentLeaderLineEnd.value = pos
@@ -563,6 +624,71 @@ function getTextConfig(element: CanvasElement) {
     fontFamily: data.fontFamily,
   }
 }
+
+// Text annotation config helpers
+function getTextAnnotationConfig(element: CanvasElement) {
+  const data = element.data as TextAnnotationElement
+  return {
+    x: data.x,
+    y: data.y,
+  }
+}
+
+function getTextAnnotationTextConfig(element: CanvasElement) {
+  const data = element.data as TextAnnotationElement
+  const leaderEnd = data.leaderLine.end
+
+  return {
+    text: data.text,
+    x: leaderEnd[0] - data.x,
+    y: leaderEnd[1] - data.y + 20,  // Offset below the leader line end
+    fontSize: data.fontSize,
+    fill: data.color,
+    fontFamily: data.fontFamily,
+    padding: 8,
+  }
+}
+
+function getTextAnnotationLineConfig(element: CanvasElement) {
+  const data = element.data as TextAnnotationElement
+
+  return {
+    // Points relative to group position (data.x, data.y)
+    points: [
+      data.leaderLine.start[0] - data.x,
+      data.leaderLine.start[1] - data.y,
+      data.leaderLine.end[0] - data.x,
+      data.leaderLine.end[1] - data.y,
+    ],
+    stroke: data.color,
+    strokeWidth: 2,
+    lineCap: 'round',
+  }
+}
+
+// Element click handler for selection
+function handleElementClick(element: CanvasElement, evt: any) {
+  if (props.currentTool === 'select') {
+    // Will be implemented in 03-06
+    console.log('Selected element:', element.id)
+    evt.cancelBubble = true
+  }
+}
+
+// Current leader line preview for text annotation
+const currentLeaderLinePreview = computed(() => {
+  if (!textAnnotationStart.value || !currentLeaderLineEnd.value) return null
+
+  const start = textAnnotationStart.value
+  const end = currentLeaderLineEnd.value
+
+  return {
+    points: [start.x, start.y, end.x, end.y],
+    stroke: props.currentColor,
+    strokeWidth: 2,
+    dash: [5, 5],  // Dashed for preview
+  }
+})
 
 // Current stroke config
 const currentStrokeConfig = computed(() => {
