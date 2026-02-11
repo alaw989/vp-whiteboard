@@ -44,6 +44,8 @@ Progress: [████░░░░--] 50%
 *Updated after each plan completion*
 | Phase 05-real-time-collab P04 | 8min | 3 tasks | 2 files |
 | Phase 05-real-time-collab P03 | 12min | 3 tasks | 3 files |
+| Phase 05-real-time-collab P02 | 4min | 2 tasks | 3 files |
+| Phase 05-real-time-collab P01 | 8min | 3 tasks | 4 files |
 | Phase 04-canvas-navigation P03 | 7min | 3 tasks | 4 files |
 | Phase 04-canvas-navigation P02 | 3min | 3 tasks | 4 files |
 | Phase 04-canvas-navigation P01 | 20min | 3 tasks | 2 files |
@@ -129,6 +131,12 @@ Recent decisions affecting current work:
 - **Debounced viewport sync with threshold** (04-03) - 100ms debounce, 5px position threshold, 0.01 zoom threshold
 - **Conflict avoidance via lastUpdatedBy** (04-03) - userId comparison prevents applying own updates back
 - **isRemoteUpdate guard pattern** (04-03) - boolean flag during remote updates prevents infinite sync loop
+- **Yjs Awareness API for cursor tracking** (05-01) - automatic broadcast, cleanup, and reconnection handling
+- **Filter local user from remoteCursors using awareness.clientId** (05-01) - prevents rendering own cursor
+- **Pointer-events-none on cursors** (05-01) - prevents interference with canvas hit detection
+- **UserPresenceList fixed positioning top-right** (05-02) - consistent location across viewports
+- **30-second inactivity filter based on cursor presence** (05-02) - users without cursor filtered from list
+- **Online status inferred from tool presence** (05-02) - has tool = active (green), no tool = idle (gray)
 - **Separate Y.Map for in-progress strokes** (05-03) - yActiveStrokes for temporary state, move to yElements on completion
 - **Filter own strokes from observation** (05-03) - check strokeId prefix to exclude own state
 - **Time-based stroke throttling** (05-03/05-04) - 16ms minimum for consistent ~60fps broadcasting
