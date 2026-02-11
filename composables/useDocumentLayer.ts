@@ -1,223 +1,179 @@
-import type { CanvasElement, ImageElement } from '~/types'
+import { ref, computed } from 'vue'
+import type { DocumentLayer, DocumentLayerState } from '~/types'
 import { usePDFRendering } from './usePDFRendering'
 
-export interface DocumentLayer {
-  id: string
-  name: string
-  type: 'image' | 'pdf'
-  url: string
-  visible: boolean
-  x: number
-  y: number
-  width: number
-  height: number
-  pageNumber?: number
-  pageCount?: number
-  elementId?: string // Reference to canvas element
-}
-
-export interface LayerState {
-  layers: DocumentLayer[]
-  activeLayerId: string | null
-}
-
-export interface AddImageLayerOptions {
-  id: string
-  url: string
-  name: string
-  x?: number
-  y?: number
-  width?: number
-  height?: number
-}
-
-export interface AddPDFLayerOptions {
-  id: string
-  url: string
-  name: string
-  pageNumber?: number
-  x?: number
-  y?: number
-  width?: number
-  height?: number
-}
-
 export function useDocumentLayer() {
-  const { loadPDFDocument, renderPageToImage, cleanupPDFDocument } = usePDFRendering()
+  const { renderPageToImage, loadPDFDocument, cleanupPDFDocument } = usePDFRendering()
 
-  // Layer state
-  const state = ref<LayerState>({
+  // State
+  const state = ref<DocumentLayerState>({
     layers: [],
     activeLayerId: null,
+    loading: false,
+    error: null,
   })
 
-  // Computed properties
-  const visibleLayers = computed(() => state.value.layers.filter(l => l.visible))
+  // Computed
+  const activeLayer = computed(() =>
+    state.value.layers.find(l => l.id === state.value.activeLayerId)
+  )
+
+  const visibleLayers = computed(() =>
+    state.value.layers.filter(l => l.visible)
+  )
 
   /**
-   * Add an image layer to the canvas
-   * Returns the canvas element to be added
+   * Add an image document layer
    */
-  async function addImageLayer(
-    options: AddImageLayerOptions,
-    elementId?: string
-  ): Promise<CanvasElement | null> {
+  async function addImageLayer(file: {
+    id: string
+    url: string
+    name: string
+  }) {
     const layer: DocumentLayer = {
-      id: options.id,
-      name: options.name,
+      id: `layer-${file.id}-${Date.now()}`,
       type: 'image',
-      url: options.url,
+      fileId: file.id,
+      src: file.url,
+      x: 0,
+      y: 0,
+      width: 0,  // Will be set when image loads
+      height: 0,  // Will be set when image loads
+      scale: 1,
+      opacity: 1,
       visible: true,
-      x: options.x ?? 100,
-      y: options.y ?? 100,
-      width: options.width ?? 400,
-      height: options.height ?? 300,
-      elementId,
     }
 
-    state.value.layers.push(layer)
-    state.value.activeLayerId = layer.id
+    // Load image to get dimensions
+    return new Promise<DocumentLayer>((resolve, reject) => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
 
-    // Return the canvas element for rendering
-    return {
-      id: elementId || `img-${layer.id}`,
-      type: 'image',
-      userId: 'system',
-      userName: 'System',
-      timestamp: Date.now(),
-      data: {
-        src: options.url,
-        x: layer.x,
-        y: layer.y,
-        width: layer.width,
-        height: layer.height,
-        fileId: options.id,
-      } as ImageElement,
-    }
+      img.onload = () => {
+        layer.width = img.width
+        layer.height = img.height
+
+        state.value.layers.push(layer)
+        state.value.activeLayerId = layer.id
+        state.value.error = null
+        resolve(layer)
+      }
+
+      img.onerror = () => {
+        const error = `Failed to load image: ${file.name}`
+        state.value.error = error
+        reject(new Error(error))
+      }
+
+      img.src = file.url
+    })
   }
 
   /**
-   * Add a PDF layer to the canvas
-   * Fetches the PDF, renders first page, and adds as image layer
+   * Add a PDF document layer (renders first page)
    */
   async function addPDFLayer(
-    options: AddPDFLayerOptions,
-    arrayBuffer?: ArrayBuffer,
-    elementId?: string
-  ): Promise<CanvasElement | null> {
+    file: {
+      id: string
+      url: string
+      name: string
+    },
+    arrayBuffer: ArrayBuffer
+  ) {
+    state.value.loading = true
+    state.value.error = null
+
     try {
-      let pdfArrayBuffer = arrayBuffer
-
-      // If no ArrayBuffer provided, fetch from URL
-      if (!pdfArrayBuffer) {
-        const response = await fetch(options.url)
-        pdfArrayBuffer = await response.arrayBuffer()
-      }
-
       // Load PDF document
-      const pdfDocument = await loadPDFDocument(pdfArrayBuffer)
+      const pdfDocument = await loadPDFDocument(arrayBuffer)
 
-      const pageNumber = options.pageNumber ?? 1
-      const page = await pdfDocument.getPage(pageNumber)
+      // Render first page
+      const page = await pdfDocument.getPage(1)
+      const dataUrl = await renderPageToImage(page, { scale: 1.5 })
 
-      // Render page to image
-      const dataUrl = await renderPageToImage(page)
+      // Get page dimensions for layer sizing
+      const viewport = page.getViewport({ scale: 1.5 })
 
-      // Create layer with rendered image
       const layer: DocumentLayer = {
-        id: options.id,
-        name: options.name,
+        id: `layer-${file.id}-${Date.now()}`,
         type: 'pdf',
-        url: dataUrl, // Use rendered image URL
+        fileId: file.id,
+        src: dataUrl,
+        x: 0,
+        y: 0,
+        width: viewport.width,
+        height: viewport.height,
+        scale: 1,
+        opacity: 1,
         visible: true,
-        x: options.x ?? 100,
-        y: options.y ?? 100,
-        width: options.width ?? 400,
-        height: options.height ?? 0, // Will be set based on rendered image aspect ratio
-        pageNumber,
-        pageCount: pdfDocument.numPages,
-        elementId,
+        pageNumber: 1,
+        totalPages: pdfDocument.numPages,
       }
 
       state.value.layers.push(layer)
       state.value.activeLayerId = layer.id
 
-      // Cleanup PDF document
+      // Cleanup PDF resources
       cleanupPDFDocument(pdfDocument)
 
-      // Return the canvas element for rendering
-      return {
-        id: elementId || `pdf-${layer.id}`,
-        type: 'image',
-        userId: 'system',
-        userName: 'System',
-        timestamp: Date.now(),
-        data: {
-          src: dataUrl,
-          x: layer.x,
-          y: layer.y,
-          width: layer.width,
-          height: layer.height,
-          fileId: options.id,
-        } as ImageElement,
-      }
+      return layer
     } catch (error) {
-      console.error('Failed to add PDF layer:', error)
-      return null
+      const message = error instanceof Error ? error.message : 'Failed to load PDF'
+      state.value.error = message
+      throw error
+    } finally {
+      state.value.loading = false
     }
   }
 
   /**
-   * Update an existing layer's properties
+   * Update layer properties (position, scale, opacity, visibility)
    */
-  function updateLayer(
-    layerId: string,
-    updates: Partial<Omit<DocumentLayer, 'id' | 'type' | 'url' | 'pageNumber' | 'pageCount'>>
-  ): void {
-    const layer = state.value.layers.find(l => l.id === layerId)
-    if (layer) {
-      Object.assign(layer, updates)
+  function updateLayer(id: string, updates: Partial<DocumentLayer>) {
+    const index = state.value.layers.findIndex(l => l.id === id)
+    if (index !== -1) {
+      state.value.layers[index] = { ...state.value.layers[index], ...updates }
     }
   }
 
   /**
-   * Remove a layer
+   * Remove a layer by ID
    */
-  function removeLayer(layerId: string): void {
-    const index = state.value.layers.findIndex(l => l.id === layerId)
-    if (index > -1) {
-      state.value.layers.splice(index, 1)
-      if (state.value.activeLayerId === layerId) {
-        state.value.activeLayerId = null
-      }
+  function removeLayer(id: string) {
+    state.value.layers = state.value.layers.filter(l => l.id !== id)
+    if (state.value.activeLayerId === id) {
+      state.value.activeLayerId = state.value.layers[0]?.id || null
     }
   }
 
   /**
    * Set the active layer
    */
-  function setActiveLayer(layerId: string | null): void {
-    state.value.activeLayerId = layerId
+  function setActiveLayer(id: string | null) {
+    state.value.activeLayerId = id
   }
 
   /**
-   * Get a layer by ID
+   * Clear all layers
    */
-  function getLayer(layerId: string): DocumentLayer | undefined {
-    return state.value.layers.find(l => l.id === layerId)
+  function clearLayers() {
+    state.value.layers = []
+    state.value.activeLayerId = null
+    state.value.error = null
   }
 
   return {
     // State
     state,
+    activeLayer,
     visibleLayers,
 
-    // Layer operations
+    // Actions
     addImageLayer,
     addPDFLayer,
     updateLayer,
     removeLayer,
     setActiveLayer,
-    getLayer,
+    clearLayers,
   }
 }
