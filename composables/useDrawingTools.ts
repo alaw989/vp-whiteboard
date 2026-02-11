@@ -46,12 +46,20 @@ export function useDrawingTools() {
     currentStroke.value.push([x, y, pressure])
   }
 
-  // End stroke and return stroke data
-  function endStroke(): StrokeElement | null {
+  // End stroke and return stroke data (or null for eraser)
+  function endStroke(): StrokeElement | { isEraser: true; x: number; y: number } | null {
     if (!isDrawing.value || currentStroke.value.length < 2) {
       isDrawing.value = false
       currentStroke.value = []
       return null
+    }
+
+    // Handle eraser - returns position for hit detection
+    if (toolSettings.value.tool === 'eraser') {
+      const lastPoint = currentStroke.value[currentStroke.value.length - 1]
+      isDrawing.value = false
+      currentStroke.value = []
+      return { isEraser: true, x: lastPoint[0], y: lastPoint[1] }
     }
 
     const stroke: StrokeElement = {
@@ -153,6 +161,49 @@ export function useDrawingTools() {
     return simplified
   }
 
+  /**
+   * Render perfect-freehand stroke to Konva-compatible polygon points
+   * Returns the outline points for a filled shape (not just a line)
+   */
+  function renderStroke(stroke: StrokeElement): { points: number[]; bbox: { x: number; y: number; width: number; height: number } } {
+    const { points, size } = stroke
+
+    if (points.length < 2) {
+      return { points: [], bbox: { x: 0, y: 0, width: 0, height: 0 } }
+    }
+
+    // Get stroke outline using perfect-freehand
+    const outline = getStroke(points, {
+      size: stroke.size,
+      thinning: stroke.tool === 'highlighter' ? 0 : 0.5,
+      smoothing: 0.5,
+      streamline: 0.5,
+    })
+
+    // Calculate bounding box
+    let minX = Infinity, minY = Infinity
+    let maxX = -Infinity, maxY = -Infinity
+    for (const [x, y] of outline) {
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x)
+      maxY = Math.max(maxY, y)
+    }
+
+    // Flatten outline points for Konva Line/ Polygon
+    const flatPoints = outline.flatMap(p => [p[0], p[1]])
+
+    return {
+      points: flatPoints,
+      bbox: {
+        x: minX,
+        y: minY,
+        width: maxX - minX,
+        height: maxY - minY,
+      },
+    }
+  }
+
   return {
     // State
     toolSettings,
@@ -170,5 +221,6 @@ export function useDrawingTools() {
     strokeToSvgPath,
     getStrokeBounds,
     simplifyStroke,
+    renderStroke,
   }
 }
