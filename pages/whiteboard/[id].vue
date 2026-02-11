@@ -103,7 +103,7 @@
         <!-- User List Overlay -->
         <div class="absolute top-4 right-4 z-10">
           <ClientOnly>
-            <UserList :users="connectedUsers" />
+            <WhiteboardUserList :users="connectedUsers" />
             <template #fallback>
               <div class="bg-white rounded-lg shadow-sm border border-neutral-200 p-3">
                 <div class="text-sm text-neutral-400">Loading users...</div>
@@ -180,7 +180,6 @@
 
 <script setup lang="ts">
 import type { Whiteboard, CanvasElement, UploadResult } from '~/types'
-import UserList from '~/components/whiteboard/UserList.vue'
 
 const route = useRoute()
 const whiteboardId = route.params.id as string

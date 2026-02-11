@@ -101,7 +101,7 @@
     <!-- Collaborative cursors -->
     <ClientOnly>
       <template v-for="[id, presence] in connectedUsers" :key="id">
-        <CursorPointer v-if="presence?.cursor" :presence="presence" />
+        <WhiteboardCursorPointer v-if="presence?.cursor" :presence="presence" />
       </template>
     </ClientOnly>
 
@@ -120,7 +120,6 @@
 <script setup lang="ts">
 import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, ImageElement, TextElement, UserPresence, DocumentLayer } from '~/types'
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
-import CursorPointer from '~/components/whiteboard/CursorPointer.vue'
 import type { PDFLoadingState } from '~/types'
 
 const props = defineProps<{
