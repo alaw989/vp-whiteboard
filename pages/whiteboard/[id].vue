@@ -196,10 +196,30 @@ const currentUser = {
 // Initialize collaborative canvas (only on client)
 let canvas: ReturnType<typeof useCollaborativeCanvas> | null = null
 
+// Style persistence - load saved styles or use defaults
+const STORAGE_KEY_STYLE = 'whiteboard:style'
+
+function loadSavedStyles() {
+  if (import.meta.client) {
+    const savedStyles = localStorage.getItem(STORAGE_KEY_STYLE)
+    if (savedStyles) {
+      try {
+        const parsed = JSON.parse(savedStyles)
+        return { color: parsed.color || '#000000', size: parsed.size || 4 }
+      } catch {
+        return { color: '#000000', size: 4 }
+      }
+    }
+  }
+  return { color: '#000000', size: 4 }
+}
+
+const savedStyles = loadSavedStyles()
+
 // Tool state
 const currentTool = ref<'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text-annotation' | 'stamp' | 'eraser'>('pen')
-const currentColor = ref('#000000')
-const currentSize = ref(4)
+const currentColor = ref(savedStyles.color)
+const currentSize = ref(savedStyles.size)
 const currentStampType = ref<StampType>('APPROVED')
 
 // UI state
@@ -284,6 +304,16 @@ function setColor(color: string) {
 function setSize(size: number) {
   currentSize.value = size
 }
+
+// Watch for style changes and persist to localStorage
+watch([currentColor, currentSize], () => {
+  if (import.meta.client) {
+    localStorage.setItem(STORAGE_KEY_STYLE, JSON.stringify({
+      color: currentColor.value,
+      size: currentSize.value,
+    }))
+  }
+})
 
 function handleStampTypeChange(stampType: StampType) {
   currentStampType.value = stampType
