@@ -38,14 +38,19 @@ Decimal phases appear between their surrounding integers in numeric order.
 4. Session persists across browser refresh and can be revisited via the same URL
 5. Session auto-saves every 30 seconds and uploads are validated for size and type
 
-**Plans**: TBD
+**Plans**: 5 plans in 2 waves
+
+| Wave | Plans | Description |
+|------|-------|-------------|
+| 1 | 01-01, 01-03, 01-04, 01-05 | Session infrastructure, file upload progress, auto-save, offline detection |
+| 2 | 01-02 | Session lookup and routing (depends on 01-01) |
 
 Plans:
-- [ ] 01-01: Secure file upload with server-side validation
-- [ ] 01-02: Session creation and link-based routing
-- [ ] 01-03: Session persistence and auto-save
-- [ ] 01-04: WebSocket heartbeat and reconnection logic
-- [ ] 01-05: Document size limits and CRDT snapshot system
+- [ ] 01-01-PLAN.md — Session infrastructure with short IDs (nanoid + session API)
+- [ ] 01-02-PLAN.md — Session lookup API and short URL routing (/s/[id])
+- [ ] 01-03-PLAN.md — File upload with real progress tracking (Axios)
+- [ ] 01-04-PLAN.md — Auto-save composable with visual status indicator
+- [ ] 01-05-PLAN.md — Offline detection banner and instant WebSocket retry
 
 ### Phase 2: Document Rendering
 
