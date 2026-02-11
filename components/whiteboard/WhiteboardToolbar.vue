@@ -179,6 +179,7 @@
 <script setup lang="ts">
 import type { DrawingTool } from '~/types'
 import type { StampType } from '~/components/whiteboard/WhiteboardCanvas.vue'
+import { COLORS, TOOL_SIZES } from '~/types'
 
 const props = defineProps<{
   currentTool: DrawingTool
@@ -267,16 +268,7 @@ const tools = [
   { id: 'eraser' as DrawingTool, name: 'Eraser', icon: 'mdi:eraser' },
 ] as const
 
-const colors = [
-  '#000000', // Black
-  '#374151', // Gray 700
-  '#EF4444', // Red 500
-  '#F59E0B', // Amber 500
-  '#10B981', // Emerald 500
-  '#3B82F6', // Blue 500
-  '#8B5CF6', // Violet 500
-  '#EC4899', // Pink 500
-] as const
-
-const sizes = [2, 4, 8, 16, 24] as const
+// Use centralized color and size constants from types
+const colors = COLORS
+const sizes = TOOL_SIZES
 </script>
