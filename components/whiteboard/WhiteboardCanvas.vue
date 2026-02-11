@@ -122,7 +122,7 @@
 
 <script setup lang="ts">
 import { getStroke } from 'perfect-freehand'
-import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, UserPresence, DocumentLayer } from '~/types'
+import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, UserPresence, DocumentLayer } from '~/types'
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
 import type { PDFLoadingState } from '~/types'
 
@@ -205,6 +205,19 @@ const viewport = ref({ x: 0, y: 0, zoom: 1 })
 // Drawing state
 const isDrawing = ref(false)
 const currentStrokePoints = ref<[number, number, number][]>([])
+
+// Text annotation state
+const textAnnotationStart = ref<{x: number, y: number} | null>(null)
+const currentLeaderLineEnd = ref<{x: number, y: number} | null>(null)
+const pendingAnnotationText = ref('')
+const showAnnotationInput = ref(false)
+const annotationInputPosition = ref<{x: number, y: number}>({ x: 0, y: 0 })
+
+// Arrow and line drawing state
+const arrowStart = ref<{x: number, y: number} | null>(null)
+const currentArrowEnd = ref<{x: number, y: number} | null>(null)
+const lineStart = ref<{x: number, y: number} | null>(null)
+const currentLineEnd = ref<{x: number, y: number} | null>(null)
 
 // PDF loading state
 const pdfLoadingState = ref<PDFLoadingState>({
@@ -301,12 +314,30 @@ function handleMouseDown(event: any) {
   const pos = getPointerPos(event)
   isDrawing.value = true
 
+  // Arrow tool - start drawing arrow
+  if (props.currentTool === 'arrow') {
+    arrowStart.value = pos
+    currentArrowEnd.value = pos
+    return
+  }
+
+  // Line tool - start drawing line
+  if (props.currentTool === 'line') {
+    lineStart.value = pos
+    currentLineEnd.value = pos
+    return
+  }
+
   if (props.currentTool === 'pen' || props.currentTool === 'highlighter') {
     // Start stroke with pressure (default 0.5)
     currentStrokePoints.value = [[pos.x, pos.y, 0.5]]
   } else if (props.currentTool === 'eraser') {
     // Eraser starts immediately - check for elements to delete
     eraseElementAt(pos.x, pos.y)
+  } else if (props.currentTool === 'text-annotation') {
+    // Text annotation tool - click to place text, drag to set leader line
+    textAnnotationStart.value = pos
+    currentLeaderLineEnd.value = pos
   } else {
     // Other tools
     currentStrokePoints.value = [[pos.x, pos.y]]
@@ -320,6 +351,12 @@ function handleMouseMove(event: any) {
   emit('cursor-update', pos.x, pos.y)
 
   if (!isDrawing.value) return
+
+  // Update text annotation leader line preview
+  if (props.currentTool === 'text-annotation' && textAnnotationStart.value) {
+    currentLeaderLineEnd.value = pos
+    return
+  }
 
   if (props.currentTool === 'pen' || props.currentTool === 'highlighter') {
     currentStrokePoints.value.push([pos.x, pos.y, 0.5])
@@ -342,6 +379,28 @@ function handleMouseUp(event: any) {
   }
 
   if (!isDrawing.value) return
+
+  // Complete text annotation - show input dialog
+  if (props.currentTool === 'text-annotation' && textAnnotationStart.value && currentLeaderLineEnd.value) {
+    const start = textAnnotationStart.value
+    const end = currentLeaderLineEnd.value
+
+    // Show input dialog at text position
+    annotationInputPosition.value = { x: start.x, y: start.y }
+    pendingAnnotationText.value = ''
+    showAnnotationInput.value = true
+
+    // Store leader line endpoint for when text is confirmed
+    ;(window as any).__pendingLeaderLine = {
+      start: [start.x, start.y],
+      end: [end.x, end.y],
+    }
+
+    textAnnotationStart.value = null
+    currentLeaderLineEnd.value = null
+    isDrawing.value = false
+    return
+  }
 
   // Create pen or highlighter stroke element
   if ((props.currentTool === 'pen' || props.currentTool === 'highlighter') && currentStrokePoints.value.length > 1) {
@@ -622,6 +681,51 @@ function cancelPDFLoad() {
 // Close loading indicator
 function closeLoadingIndicator() {
   pdfLoadingState.value = { loading: false, loaded: 0, total: 0, percent: 0 }
+}
+
+// Text annotation handlers
+function confirmAnnotation() {
+  const text = pendingAnnotationText.value.trim()
+  if (!text) {
+    showAnnotationInput.value = false
+    return
+  }
+
+  const leaderLine = (window as any).__pendingLeaderLine
+  if (!leaderLine) {
+    showAnnotationInput.value = false
+    return
+  }
+
+  const element: CanvasElement = {
+    id: `${props.userId}-${Date.now()}`,
+    type: 'text-annotation',
+    userId: props.userId,
+    userName: props.userName,
+    timestamp: Date.now(),
+    data: {
+      text,
+      x: leaderLine.start[0],
+      y: leaderLine.start[1],
+      fontSize: 16,
+      color: props.currentColor,
+      fontFamily: 'Arial, sans-serif',
+      leaderLine: {
+        start: leaderLine.end,
+        end: leaderLine.start,
+      },
+    } as TextAnnotationElement,
+  }
+
+  emit('element-add', element)
+  showAnnotationInput.value = false
+  delete (window as any).__pendingLeaderLine
+}
+
+function cancelAnnotation() {
+  showAnnotationInput.value = false
+  pendingAnnotationText.value = ''
+  delete (window as any).__pendingLeaderLine
 }
 
 defineExpose({
