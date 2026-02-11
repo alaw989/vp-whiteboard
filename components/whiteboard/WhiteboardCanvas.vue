@@ -286,6 +286,7 @@ import type { CanvasElement, StrokeElement, LineElement, RectangleElement, Circl
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
 import type { PDFLoadingState } from '~/types'
 import { useSelection } from '~/composables/useSelection'
+import { useViewport } from '~/composables/useViewport'
 
 // Stamp configurations with styling
 const STAMP_CONFIGS = {
@@ -348,6 +349,13 @@ const emit = defineEmits<{
   'cursor-update': [x: number, y: number]
 }>()
 
+// Container ref
+const containerRef = ref<HTMLDivElement | null>(null)
+const stageRef = ref<any>(null)
+const layerRef = ref<any>(null)
+const documentLayerRef = ref<any>(null)
+const transformerLayerRef = ref<any>(null)
+
 // Document layer composable
 const {
   visibleLayers,
@@ -368,6 +376,31 @@ const {
   selectElementAtPosition,
   handleStageClick,
 } = useSelection(stageRef, computed(() => props.elements))
+
+// Viewport composable
+const {
+  viewport,
+  stageConfig: viewportStageConfig,
+  handleWheel,
+  startPan,
+  stopPan,
+} = useViewport({
+  stageRef,
+  containerRef,
+  minZoom: 0.1,
+  maxZoom: 5.0,
+})
+
+// Stage configuration (merges viewport config with width/height)
+const stageConfig = computed(() => ({
+  width: stageWidth.value,
+  height: stageHeight.value,
+  ...viewportStageConfig.value,
+}))
+
+// Stage width/height (separate from viewport config)
+const stageWidth = ref(2000)
+const stageHeight = ref(1500)
 
 // Layer image cache to prevent reloading - use plain Map (non-reactive)
 // to avoid triggering re-renders when cache is updated
@@ -398,27 +431,6 @@ watch(visibleLayers, (layers) => {
     }
   }
 }, { deep: true })
-
-// Container ref
-const containerRef = ref<HTMLDivElement | null>(null)
-const stageRef = ref<any>(null)
-const layerRef = ref<any>(null)
-const documentLayerRef = ref<any>(null)
-const transformerLayerRef = ref<any>(null)
-
-// Stage configuration
-const stageConfig = ref({
-  width: 2000,
-  height: 1500,
-  scaleX: 1,
-  scaleY: 1,
-  x: 0,
-  y: 0,
-  draggable: false,
-})
-
-// Viewport state
-const viewport = ref({ x: 0, y: 0, zoom: 1 })
 
 // Drawing state
 const isDrawing = ref(false)
@@ -454,8 +466,8 @@ const pdfAbortController = ref<AbortController | null>(null)
 // Initialize stage size
 onMounted(() => {
   if (containerRef.value) {
-    stageConfig.value.width = containerRef.value.offsetWidth || 2000
-    stageConfig.value.height = containerRef.value.offsetHeight || 1500
+    stageWidth.value = containerRef.value.offsetWidth || 2000
+    stageHeight.value = containerRef.value.offsetHeight || 1500
   }
 
   // Handle window resize
@@ -473,8 +485,8 @@ onUnmounted(() => {
 
 function handleResize() {
   if (containerRef.value) {
-    stageConfig.value.width = containerRef.value.offsetWidth || 2000
-    stageConfig.value.height = containerRef.value.offsetHeight || 1500
+    stageWidth.value = containerRef.value.offsetWidth || 2000
+    stageHeight.value = containerRef.value.offsetHeight || 1500
   }
 }
 
@@ -590,7 +602,7 @@ function placeStamp(x: number, y: number, stampType: StampType) {
 // Mouse handlers
 function handleMouseDown(event: any) {
   if (props.currentTool === 'pan') {
-    stageConfig.value.draggable = true
+    startPan()
     return
   }
 
@@ -691,13 +703,7 @@ function handleMouseMove(event: any) {
 
 function handleMouseUp(event: any) {
   if (props.currentTool === 'pan') {
-    stageConfig.value.draggable = false
-    // Update viewport position
-    const stage = stageRef.value?.getNode()
-    if (stage) {
-      viewport.value.x = stage.x()
-      viewport.value.y = stage.y()
-    }
+    stopPan()
     return
   }
 
@@ -1001,32 +1007,6 @@ function handleTouchMove(event: any) {
 function handleTouchEnd(event: any) {
   event.evt.preventDefault()
   handleMouseUp(event)
-}
-
-// Zoom handler
-function handleWheel(event: any) {
-  event.evt.preventDefault()
-
-  const oldScale = viewport.value.zoom
-  const pointer = stageRef.value?.getNode().getPointerPosition()
-
-  const scaleBy = 1.1
-  const newScale = event.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy
-
-  // Limit zoom
-  const clampedScale = Math.min(Math.max(newScale, 0.1), 5)
-
-  // Adjust position to zoom toward pointer
-  if (pointer) {
-    viewport.value.x = pointer.x - (pointer.x - viewport.value.x) * (clampedScale / oldScale)
-    viewport.value.y = pointer.y - (pointer.y - viewport.value.y) * (clampedScale / oldScale)
-  }
-
-  viewport.value.zoom = clampedScale
-  stageConfig.value.scaleX = clampedScale
-  stageConfig.value.scaleY = clampedScale
-  stageConfig.value.x = viewport.value.x
-  stageConfig.value.y = viewport.value.y
 }
 
 // Element config helpers
