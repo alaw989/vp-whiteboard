@@ -421,6 +421,9 @@ onMounted(() => {
       setTool('select')
     }
     // Tool shortcuts
+    if (e.key === 'v' || e.key === 'V') {
+      setTool('select')
+    }
     if (e.key === 'l' || e.key === 'L') {
       setTool('line')
     }
