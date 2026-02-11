@@ -96,6 +96,11 @@ export interface ImageElement {
   width: number
   height: number
   fileId?: string
+  // Document layer support
+  isDocument?: boolean
+  layer?: number  // Layer index for z-ordering
+  documentType?: 'pdf' | 'image'
+  pageNumber?: number  // For PDFs
 }
 
 export interface TextElement {
@@ -227,4 +232,28 @@ export interface PDFLoadingState {
   total: number
   percent: number
   error?: string
+}
+
+// Document Layer Types
+export interface DocumentLayer {
+  id: string
+  type: 'pdf' | 'image'
+  fileId: string
+  src: string
+  x: number
+  y: number
+  width: number
+  height: number
+  scale: number
+  opacity: number
+  visible: boolean
+  pageNumber?: number
+  totalPages?: number
+}
+
+export interface DocumentLayerState {
+  layers: DocumentLayer[]
+  activeLayerId: string | null
+  loading: boolean
+  error: string | null
 }
