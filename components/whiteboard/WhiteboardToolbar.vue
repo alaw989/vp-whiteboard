@@ -176,6 +176,18 @@
       >
         <Icon :name="isExporting ? 'mdi:loading' : 'mdi:download'" class="w-5 h-5" />
       </button>
+
+      <button
+        :disabled="isExporting"
+        :class="[
+          'p-2 rounded-lg transition-colors',
+          isExporting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-neutral-100 text-neutral-600'
+        ]"
+        title="Export as PDF"
+        @click="$emit('export', 'pdf')"
+      >
+        <Icon name="mdi:file-pdf-box" class="w-5 h-5" />
+      </button>
     </div>
   </div>
 </template>
