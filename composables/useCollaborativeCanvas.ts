@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import type { CanvasElement, UserPresence, DrawingTool } from '~/types'
+import type { CanvasElement, UserPresence, DrawingTool, ViewportState, SharedViewportState } from '~/types'
 
 export function useCollaborativeCanvas(whiteboardId: string, userId: string, userName: string) {
   const config = useRuntimeConfig()
@@ -207,6 +207,47 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     }, 'import')
   }
 
+  // Get current shared viewport state from yMeta
+  function getViewport(): SharedViewportState {
+    const stored = yMeta.get('viewport') as SharedViewportState | undefined
+    return stored || { x: 0, y: 0, zoom: 1, lastUpdatedBy: '', timestamp: 0 }
+  }
+
+  // Sync local viewport changes to all connected users
+  function syncViewport(viewport: ViewportState) {
+    const stored = getViewport()
+    // Only sync if viewport actually changed (avoid redundant updates)
+    if (stored.x === viewport.x && stored.y === viewport.y && stored.zoom === viewport.zoom) {
+      return
+    }
+    ydoc.transact(() => {
+      yMeta.set('viewport', {
+        ...viewport,
+        lastUpdatedBy: userId,
+        timestamp: Date.now(),
+      })
+    }, userId)
+  }
+
+  // Observe remote viewport changes from other users
+  function observeViewport(callback: (viewport: SharedViewportState) => void): () => void {
+    const handler = (event: Y.YMapEvent<any>) => {
+      // Check if viewport key changed
+      if (event.changes.keys.has('viewport')) {
+        const viewport = yMeta.get('viewport') as SharedViewportState
+        // Only apply remote changes (ignore own updates to prevent loop)
+        if (viewport && viewport.lastUpdatedBy !== userId) {
+          callback(viewport)
+        }
+      }
+    }
+    yMeta.observe(handler)
+    // Return cleanup function
+    return () => {
+      yMeta.unobserve(handler)
+    }
+  }
+
   // Cleanup on unmount
   function cleanup() {
     yCursors.delete(userId)
@@ -239,9 +280,15 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     importState,
     cleanup,
 
+    // Viewport sync methods
+    getViewport,
+    syncViewport,
+    observeViewport,
+
     // Raw instances for advanced usage
     ydoc,
     yElements,
+    yMeta,
     wsProvider,
   }
 }

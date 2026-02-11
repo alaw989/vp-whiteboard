@@ -166,6 +166,11 @@ export interface ViewportState {
   zoom: number
 }
 
+export interface SharedViewportState extends ViewportState {
+  lastUpdatedBy: string  // userId of last updater
+  timestamp: number      // When viewport was last updated
+}
+
 // Drawing Tool Types
 export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser'
 
