@@ -85,6 +85,7 @@
             :user-name="currentUser.name"
             :elements="elements"
             :connected-users="connectedUsers"
+            :ws-provider="canvas?.wsProvider"
             :current-tool="currentTool"
             :current-color="currentColor"
             :current-size="currentSize"
@@ -106,8 +107,8 @@
           </template>
         </ClientOnly>
 
-        <!-- User List Overlay -->
-        <div class="absolute top-4 right-4 z-10">
+        <!-- User List Overlay (UserPresenceList will be added in 05-02) -->
+        <!-- <div class="absolute top-4 right-4 z-10">
           <ClientOnly>
             <WhiteboardUserList :users="connectedUsers" />
             <template #fallback>
@@ -116,7 +117,7 @@
               </div>
             </template>
           </ClientOnly>
-        </div>
+        </div> -->
       </main>
     </div>
 

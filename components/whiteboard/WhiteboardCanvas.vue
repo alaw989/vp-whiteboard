@@ -177,6 +177,13 @@
             :config="currentStrokeConfig"
           />
 
+          <!-- Remote active strokes (in-progress drawings from other users) -->
+          <v-line
+            v-for="[strokeId, points] in Object.entries(activeStrokes || {})"
+            :key="`active-${strokeId}`"
+            :config="getActiveStrokeConfig(strokeId, points)"
+          />
+
           <!-- Current arrow preview -->
           <v-arrow
             v-if="currentArrowPreview"
@@ -263,8 +270,17 @@
 
     <!-- Collaborative cursors -->
     <ClientOnly>
-      <template v-for="[id, presence] in connectedUsers" :key="id">
-        <WhiteboardCursorPointer v-if="presence?.cursor" :presence="presence" />
+      <template v-for="[clientId, cursorState] in remoteCursors" :key="clientId">
+        <WhiteboardCursorPointer
+          v-if="cursorState?.cursor"
+          :presence="{
+            id: cursorState.user.id,
+            name: cursorState.user.name,
+            color: cursorState.user.color,
+            cursor: cursorState.cursor,
+            tool: cursorState.tool,
+          }"
+        />
       </template>
     </ClientOnly>
 
@@ -284,9 +300,11 @@
 import { getStroke } from 'perfect-freehand'
 import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, StampElement, UserPresence, DocumentLayer } from '~/types'
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
+import WhiteboardCursorPointer from '~/components/whiteboard/WhiteboardCursorPointer.vue'
 import type { PDFLoadingState } from '~/types'
 import { useSelection } from '~/composables/useSelection'
 import { useViewport } from '~/composables/useViewport'
+import { useCursors, type CursorState } from '~/composables/useCursors'
 
 // Stamp configurations with styling
 const STAMP_CONFIGS = {
@@ -336,6 +354,7 @@ const props = defineProps<{
   userName: string
   elements: CanvasElement[]
   connectedUsers: Map<string, UserPresence>
+  wsProvider: any  // WebSocket provider for Awareness API
   currentTool: string
   currentColor: string
   currentSize: number
@@ -401,6 +420,14 @@ const {
   syncViewport: props.syncViewport,
   applyRemoteViewport: undefined, // We'll handle this via observer callback
 })
+
+// Cursor tracking composable with Awareness API
+const {
+  currentUser,
+  remoteCursors,
+  updateLocalCursor,
+  cleanup: cleanupCursors,
+} = useCursors(props.wsProvider, props.userId, props.userName)
 
 // Stage configuration (merges viewport config with width/height)
 const stageConfig = computed(() => ({
@@ -529,6 +556,9 @@ onUnmounted(() => {
     cleanupViewportObserver()
     cleanupViewportObserver = null
   }
+
+  // Clean up cursor tracking via Awareness
+  cleanupCursors()
 })
 
 function handleResize() {
@@ -719,7 +749,10 @@ function handleMouseDown(event: any) {
 function handleMouseMove(event: any) {
   const pos = getPointerPos(event)
 
-  // Emit cursor update for collaboration
+  // Update local cursor position via Awareness API
+  updateLocalCursor(pos.x, pos.y, props.currentTool as any)
+
+  // Also emit cursor update for parent (backward compatibility)
   emit('cursor-update', pos.x, pos.y)
 
   if (!isDrawing.value) return
@@ -974,11 +1007,19 @@ function handleMouseUp(event: any) {
         smooth: true,
       } as StrokeElement,
     }
-    emit('element-add', element)
+
+    // End active stroke and move to permanent elements
+    if (currentStrokeId.value && props.endActiveStroke) {
+      props.endActiveStroke(currentStrokeId.value, element)
+    } else {
+      // Fallback to regular emit if no active stroke broadcasting
+      emit('element-add', element)
+    }
   }
 
   isDrawing.value = false
   currentStrokePoints.value = []
+  currentStrokeId.value = null
 }
 
 /**
