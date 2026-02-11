@@ -11,18 +11,18 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 3 of 8 (Drawing Tools)
-Plan: 7 of 8 in current phase
+Plan: 6 of 8 in current phase
 Status: In progress
-Last activity: 2026-02-10 — Completed Plan 07: Style Controls
+Last activity: 2026-02-11 — Completed Plan 06: Selection and Transform Tools
 
-Progress: [██████████] 88%
+Progress: [█████████] 75%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17
+- Total plans completed: 18
 - Average duration: 3 min
-- Total execution time: 0.92 hours
+- Total execution time: 0.97 hours
 
 **By Phase:**
 
@@ -30,7 +30,7 @@ Progress: [██████████] 88%
 |-------|-------|-------|----------|
 | 1 | 5/5 | 13 min | 3 min |
 | 2 | 4/4 | 13 min | 3 min |
-| 3 | 7/8 | 20 min | 3 min |
+| 3 | 6/8 | 25 min | 4 min |
 | 4 | 0/3 | - | - |
 | 5 | 0/4 | - | - |
 | 6 | 0/3 | - | - |
@@ -42,7 +42,7 @@ Progress: [██████████] 88%
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
-| Phase 03-drawing-tools P07 | 1min | 3 tasks | 2 files |
+| Phase 03-drawing-tools P06 | 5min | 4 tasks | 3 files |
 | Phase 03-drawing-tools P05 | 5min | 3 tasks | 3 files |
 | Phase 03-drawing-tools P04 | 4min | 4 tasks | 3 files |
 | Phase 03-drawing-tools P03 | 5min | 3 tasks | 3 files |
@@ -54,6 +54,7 @@ Progress: [██████████] 88%
 | Phase 02-document-rendering P03 | 4min | 3 tasks | 2 files |
 | Phase 02-document-rendering P04 | 1min | 3 tasks | 3 files |
 | Phase 03 P03-02 | 3min | 3 tasks | 3 files |
+| Phase 03-drawing-tools P06 | 5 | 4 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -104,9 +105,10 @@ Recent decisions affecting current work:
 - **Minimum size validation for shapes** (03-05) - 5px minimum prevents accidental clicks creating tiny shapes
 - **Circle draws from center, rectangle/ellipse from corner** (03-05) - different interaction patterns for different shape types
 - **Keyboard shortcuts for shape tools** (03-05) - R for rectangle, C for circle, E for ellipse
-- **Centralized COLORS and TOOL_SIZES constants** (03-07) - toolbar uses constants from types/index.ts for UI consistency
-- **localStorage style persistence** (03-07) - 'whiteboard:style' key stores color and size preferences across sessions
-- **Highlighter transparency** (03-07) - 50% globalAlpha applied to highlighter strokes for expected markup behavior
+- **Transformer on dedicated layer** (03-06) - separate transformerLayer ensures selection handles always render above drawings
+- **Selection composable pattern** (03-06) - encapsulates all selection state and logic in reusable useSelection composable
+- **Group-aware selection** (03-06) - handles both individual shapes and groups by checking parent className
+- **V keyboard shortcut for select tool** (03-06) - quick access to selection mode
 
 ### Pending Todos
 
@@ -122,6 +124,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-10
-Stopped at: Completed 03-07 (Style Controls), ready for 03-08 (next plan)
+Last session: 2026-02-11
+Stopped at: Completed 03-06 (Selection and Transform Tools), ready for 03-07 (Style Controls)
 Resume file: None
