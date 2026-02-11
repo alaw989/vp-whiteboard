@@ -85,6 +85,13 @@
               :config="getCircleConfig(element)"
             />
 
+            <!-- Ellipse elements -->
+            <v-ellipse
+              v-else-if="element.type === 'ellipse'"
+              :config="getEllipseConfig(element)"
+              @click="handleElementClick(element, $event)"
+            />
+
             <!-- Image elements -->
             <v-image
               v-else-if="element.type === 'image'"
@@ -134,6 +141,20 @@
           <v-line
             v-if="currentLinePreview"
             :config="currentLinePreview"
+          />
+
+          <!-- Current shape preview -->
+          <v-rect
+            v-if="currentShapePreview?.type === 'rectangle'"
+            :config="currentShapePreview.config"
+          />
+          <v-circle
+            v-if="currentShapePreview?.type === 'circle'"
+            :config="currentShapePreview.config"
+          />
+          <v-ellipse
+            v-if="currentShapePreview?.type === 'ellipse'"
+            :config="currentShapePreview.config"
           />
 
           <!-- Current leader line preview for text annotation -->
@@ -1113,6 +1134,78 @@ const currentLinePreview = computed(() => {
     lineCap: 'round',
     dash: [5, 5],  // Dashed line for preview
   }
+})
+
+// Current shape preview config
+const currentShapePreview = computed(() => {
+  if (!shapeStart.value || !currentShapeEnd.value) return null
+
+  const start = shapeStart.value
+  const end = currentShapeEnd.value
+
+  // Rectangle preview
+  if (props.currentTool === 'rectangle') {
+    const x = Math.min(start.x, end.x)
+    const y = Math.min(start.y, end.y)
+    const width = Math.abs(end.x - start.x)
+    const height = Math.abs(end.y - start.y)
+
+    return {
+      type: 'rectangle',
+      config: {
+        x, y, width, height,
+        stroke: props.currentColor,
+        strokeWidth: props.currentSize,
+        fill: 'transparent',
+        dash: [5, 5],  // Dashed for preview
+      }
+    }
+  }
+
+  // Circle preview
+  if (props.currentTool === 'circle') {
+    const dx = end.x - start.x
+    const dy = end.y - start.y
+    const radius = Math.sqrt(dx * dx + dy * dy)
+
+    return {
+      type: 'circle',
+      config: {
+        x: start.x,
+        y: start.y,
+        radius,
+        stroke: props.currentColor,
+        strokeWidth: props.currentSize,
+        fill: 'transparent',
+        dash: [5, 5],
+      }
+    }
+  }
+
+  // Ellipse preview
+  if (props.currentTool === 'ellipse') {
+    const x = Math.min(start.x, end.x)
+    const y = Math.min(start.y, end.y)
+    const width = Math.abs(end.x - start.x)
+    const height = Math.abs(end.y - start.y)
+
+    return {
+      type: 'ellipse',
+      config: {
+        x: x + width / 2,
+        y: y + height / 2,
+        radiusX: width / 2,
+        radiusY: height / 2,
+        rotation: 0,
+        stroke: props.currentColor,
+        strokeWidth: props.currentSize,
+        fill: 'transparent',
+        dash: [5, 5],
+      }
+    }
+  }
+
+  return null
 })
 
 // Export canvas as image
