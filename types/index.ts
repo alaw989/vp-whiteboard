@@ -194,3 +194,37 @@ export const COLORS = [
 ] as const
 
 export const TOOL_SIZES = [1, 2, 4, 8, 12, 16, 24, 32] as const
+
+// PDF.js Types
+export interface PDFDocumentProxy {
+  numPages: number
+  getPage: (pageNumber: number) => Promise<PDFPageProxy>
+  cleanup: () => void
+  destroy: () => void
+}
+
+export interface PDFPageProxy {
+  getViewport: (options: { scale: number }) => PDFPageViewport
+  render: (options: {
+    canvasContext: CanvasRenderingContext2D
+    viewport: PDFPageViewport
+  }) => { promise: Promise<void> }
+}
+
+export interface PDFPageViewport {
+  width: number
+  height: number
+}
+
+export interface PDFRenderOptions {
+  scale?: number
+  onProgress?: (percent: number) => void
+}
+
+export interface PDFLoadingState {
+  loading: boolean
+  loaded: number
+  total: number
+  percent: number
+  error?: string
+}
