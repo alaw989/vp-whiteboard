@@ -197,7 +197,7 @@ const currentUser = {
 let canvas: ReturnType<typeof useCollaborativeCanvas> | null = null
 
 // Tool state
-const currentTool = ref<'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'text-annotation' | 'stamp' | 'eraser'>('pen')
+const currentTool = ref<'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text-annotation' | 'stamp' | 'eraser'>('pen')
 const currentColor = ref('#000000')
 const currentSize = ref(4)
 const currentStampType = ref<StampType>('APPROVED')
@@ -399,6 +399,15 @@ onMounted(() => {
     }
     if (e.key === 's' || e.key === 'S') {
       setTool('stamp')
+    }
+    if (e.key === 'r' || e.key === 'R') {
+      setTool('rectangle')
+    }
+    if (e.key === 'c' || e.key === 'C') {
+      setTool('circle')
+    }
+    if (e.key === 'e' || e.key === 'E') {
+      setTool('ellipse')
     }
     if (e.key === 't' || e.key === 'T') {
       setTool('text-annotation')

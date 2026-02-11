@@ -260,9 +260,10 @@ const tools = [
   { id: 'highlighter' as DrawingTool, name: 'Highlighter', icon: 'mdi:marker' },
   { id: 'line' as DrawingTool, name: 'Line (L)', icon: 'mdi:vector-line' },
   { id: 'arrow' as DrawingTool, name: 'Arrow (A)', icon: 'mdi:arrow-top-right' },
-  { id: 'text-annotation' as DrawingTool, name: 'Text Annotation', icon: 'mdi:comment-text-outline' },
-  { id: 'rectangle' as DrawingTool, name: 'Rectangle', icon: 'mdi:rectangle-outline' },
-  { id: 'circle' as DrawingTool, name: 'Circle', icon: 'mdi:circle-outline' },
+  { id: 'text-annotation' as DrawingTool, name: 'Text Annotation (T)', icon: 'mdi:comment-text-outline' },
+  { id: 'rectangle' as DrawingTool, name: 'Rectangle (R)', icon: 'mdi:rectangle-outline' },
+  { id: 'circle' as DrawingTool, name: 'Circle (C)', icon: 'mdi:circle-outline' },
+  { id: 'ellipse' as DrawingTool, name: 'Ellipse (E)', icon: 'mdi:ellipse-outline' },
   { id: 'eraser' as DrawingTool, name: 'Eraser', icon: 'mdi:eraser' },
 ] as const
 
