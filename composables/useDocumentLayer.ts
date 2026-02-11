@@ -53,7 +53,8 @@ export function useDocumentLayer() {
         layer.width = img.width
         layer.height = img.height
 
-        state.value.layers.push(layer)
+        // Create new array reference to avoid recursive updates
+        state.value.layers = [...state.value.layers, layer]
         state.value.activeLayerId = layer.id
         state.value.error = null
         resolve(layer)
@@ -110,7 +111,8 @@ export function useDocumentLayer() {
         totalPages: pdfDocument.numPages,
       }
 
-      state.value.layers.push(layer)
+      // Create new array reference to avoid recursive updates
+      state.value.layers = [...state.value.layers, layer]
       state.value.activeLayerId = layer.id
 
       // Cleanup PDF resources
