@@ -73,7 +73,7 @@
           @undo="undo"
           @redo="redo"
           @clear="clearCanvas"
-          @export="exportCanvas"
+          @open-export="openExportDialog"
         />
       </aside>
 
@@ -185,12 +185,26 @@
         </div>
       </div>
     </div>
+
+    <!-- Export Dialog -->
+    <ClientOnly>
+      <ExportDialog
+        :show="showExportDialog"
+        :stage="(canvasRef.value as any)?.stageRef?.value?.getNode() || null"
+        :filename="whiteboard.value?.name"
+        :is-exporting="isExporting"
+        :export-progress="exportProgress"
+        @close="closeExportDialog"
+        @export="confirmExport"
+      />
+    </ClientOnly>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { Whiteboard, CanvasElement, UploadResult } from '~/types'
 import type { StampType } from '~/components/whiteboard/WhiteboardCanvas.vue'
+import ExportDialog from '~/components/whiteboard/ExportDialog.vue'
 
 const route = useRoute()
 const whiteboardId = route.params.id as string
@@ -233,6 +247,7 @@ const currentStampType = ref<StampType>('APPROVED')
 // UI state
 const showShareModal = ref(false)
 const showUploadModal = ref(false)
+const showExportDialog = ref(false)
 const canvasRef = ref<InstanceType<typeof WhiteboardCanvas> | null>(null)
 
 // Fetch whiteboard data
@@ -392,17 +407,34 @@ function clearCanvas() {
   }
 }
 
-function exportCanvas(format: 'png' | 'pdf') {
+// Export dialog functions
+function openExportDialog() {
+  showExportDialog.value = true
+}
+
+function closeExportDialog() {
+  showExportDialog.value = false
+}
+
+async function confirmExport(format: 'png' | 'pdf') {
   if (!canvasRef.value) return
 
   const stage = (canvasRef.value as any).stageRef?.value?.getNode()
   const filename = whiteboard.value?.name || 'whiteboard'
 
   if (format === 'png') {
-    exportAsPNG(stage, { filename })
+    await exportAsPNG(stage, { filename })
   } else if (format === 'pdf') {
-    exportAsPDF(stage, { filename })
+    await exportAsPDF(stage, { filename })
   }
+
+  // Close dialog after export completes
+  closeExportDialog()
+}
+
+function exportCanvas(format: 'png' | 'pdf') {
+  // Open dialog first - actual export happens after confirmation
+  openExportDialog()
 }
 
 function copyShareLink() {
