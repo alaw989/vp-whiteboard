@@ -331,3 +331,9 @@ export interface ExportState {
   progress: number  // 0-100
   error: string | null
 }
+
+export interface ExportDialogState {
+  show: boolean
+  format: ExportFormat
+  previewUrl: string | null
+}
