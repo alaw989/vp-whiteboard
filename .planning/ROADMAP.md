@@ -102,7 +102,7 @@ Plans:
 - [ ] 03-05: Shape tools (rectangle, circle, ellipse)
 - [ ] 03-06: Element selection, move, and resize (Konva Transformer)
 - [ ] 03-07: Styling controls (color palette, stroke thickness)
-- [ ] 03-08: Undo/redo system
+- [x] 03-08: Undo/redo system
 
 ### Phase 4: Canvas Navigation
 
