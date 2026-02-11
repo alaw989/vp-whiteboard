@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 3 of 8 (Drawing Tools)
-Plan: 5 of 8 in current phase
+Plan: 7 of 8 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed Plan 05: Shape Drawing Tools
+Last activity: 2026-02-10 — Completed Plan 07: Style Controls
 
-Progress: [█████████] 93%
+Progress: [██████████] 88%
 
 ## Performance Metrics
 
@@ -30,7 +30,7 @@ Progress: [█████████] 93%
 |-------|-------|-------|----------|
 | 1 | 5/5 | 13 min | 3 min |
 | 2 | 4/4 | 13 min | 3 min |
-| 3 | 5/8 | 19 min | 4 min |
+| 3 | 7/8 | 20 min | 3 min |
 | 4 | 0/3 | - | - |
 | 5 | 0/4 | - | - |
 | 6 | 0/3 | - | - |
@@ -42,6 +42,7 @@ Progress: [█████████] 93%
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
+| Phase 03-drawing-tools P07 | 1min | 3 tasks | 2 files |
 | Phase 03-drawing-tools P05 | 5min | 3 tasks | 3 files |
 | Phase 03-drawing-tools P04 | 4min | 4 tasks | 3 files |
 | Phase 03-drawing-tools P03 | 5min | 3 tasks | 3 files |
@@ -103,6 +104,9 @@ Recent decisions affecting current work:
 - **Minimum size validation for shapes** (03-05) - 5px minimum prevents accidental clicks creating tiny shapes
 - **Circle draws from center, rectangle/ellipse from corner** (03-05) - different interaction patterns for different shape types
 - **Keyboard shortcuts for shape tools** (03-05) - R for rectangle, C for circle, E for ellipse
+- **Centralized COLORS and TOOL_SIZES constants** (03-07) - toolbar uses constants from types/index.ts for UI consistency
+- **localStorage style persistence** (03-07) - 'whiteboard:style' key stores color and size preferences across sessions
+- **Highlighter transparency** (03-07) - 50% globalAlpha applied to highlighter strokes for expected markup behavior
 
 ### Pending Todos
 
@@ -118,6 +122,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-11
-Stopped at: Completed 03-05 (Shape Drawing Tools), ready for 03-06 (Selection and Transform Tools)
+Last session: 2026-02-10
+Stopped at: Completed 03-07 (Style Controls), ready for 03-08 (next plan)
 Resume file: None
