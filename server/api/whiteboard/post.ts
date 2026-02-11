@@ -1,0 +1,77 @@
+import { createClient } from '@supabase/supabase-js'
+import type { ApiResponse, Whiteboard } from '~/types'
+
+export default defineEventHandler(async (event) => {
+  const config = useRuntimeConfig()
+  const supabaseUrl = config.supabaseUrl as string
+  const supabaseKey = config.supabaseKey as string
+
+  const body = await readBody(event)
+  const { name, project_id, created_by } = body
+
+  if (!name || !created_by) {
+    throw createError({
+      statusCode: 400,
+      message: 'Name and created_by are required',
+    })
+  }
+
+  // Return mock data if Supabase is not configured (for testing)
+  if (!supabaseUrl || !supabaseKey) {
+    const mockWhiteboard: Whiteboard = {
+      id: `mock-${Date.now()}`,
+      name,
+      project_id: project_id || undefined,
+      created_by,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      canvas_state: { version: 1, elements: [] },
+    }
+
+    const response: ApiResponse<Whiteboard> = {
+      success: true,
+      data: mockWhiteboard,
+    }
+    return response
+  }
+
+  try {
+    const supabase = createClient(supabaseUrl, supabaseKey)
+
+    const { data: whiteboard, error } = await supabase
+      .from('whiteboards')
+      .insert({
+        name,
+        project_id: project_id || null,
+        created_by,
+        canvas_state: { version: 1, elements: [] },
+      })
+      .select()
+      .single()
+
+    if (error) {
+      throw createError({
+        statusCode: 400,
+        message: error.message,
+      })
+    }
+
+    const response: ApiResponse<Whiteboard> = {
+      success: true,
+      data: whiteboard,
+    }
+
+    return response
+  } catch (error) {
+    if (error && typeof error === 'object' && 'statusCode' in error) {
+      throw error
+    }
+
+    const response: ApiResponse = {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create whiteboard',
+    }
+
+    return response
+  }
+})

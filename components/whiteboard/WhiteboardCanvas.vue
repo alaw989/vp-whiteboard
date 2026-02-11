@@ -120,6 +120,7 @@
 <script setup lang="ts">
 import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, ImageElement, TextElement, UserPresence, DocumentLayer } from '~/types'
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
+import CursorPointer from '~/components/whiteboard/CursorPointer.vue'
 import type { PDFLoadingState } from '~/types'
 
 const props = defineProps<{

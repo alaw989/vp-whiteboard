@@ -208,12 +208,17 @@ export interface PDFDocumentProxy {
   destroy: () => void
 }
 
+export interface PDFRenderTask {
+  promise: Promise<void>
+  cancel: () => void
+}
+
 export interface PDFPageProxy {
   getViewport: (options: { scale: number }) => PDFPageViewport
   render: (options: {
     canvasContext: CanvasRenderingContext2D
     viewport: PDFPageViewport
-  }) => { promise: Promise<void> }
+  }) => PDFRenderTask
 }
 
 export interface PDFPageViewport {

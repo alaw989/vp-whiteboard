@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-neutral-50 text-neutral-900 font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors duration-200;
+  }
+
+  .btn-primary {
+    @apply btn bg-blue-600 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2;
+  }
+
+  .btn-secondary {
+    @apply btn bg-neutral-200 text-neutral-900 hover:bg-neutral-300 focus:ring-2 focus:ring-neutral-400 focus:ring-offset-2;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-neutral-700 hover:bg-neutral-100 focus:ring-2 focus:ring-neutral-300 focus:ring-offset-0;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow;
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-neutral-200;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.neutral.300') theme('colors.neutral.100');
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: theme('colors.neutral.100');
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: theme('colors.neutral.300');
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.neutral.400');
+  }
+}
+
+/* Whiteboard canvas styles */
+.whiteboard-container {
+  @apply relative w-full h-full overflow-hidden bg-neutral-100;
+}
+
+.whiteboard-canvas {
+  @apply absolute top-0 left-0 cursor-crosshair;
+}
+
+/* Tooltip styles */
+.tooltip {
+  @apply absolute z-50 px-2 py-1 text-xs text-white bg-neutral-800 rounded shadow-lg pointer-events-none;
+}
+
+/* User cursor colors */
+.user-cursor-1 { --cursor-color: #ef4444; }
+.user-cursor-2 { --cursor-color: #f59e0b; }
+.user-cursor-3 { --cursor-color: #10b981; }
+.user-cursor-4 { --cursor-color: #3b82f6; }
+.user-cursor-5 { --cursor-color: #8b5cf6; }
+.user-cursor-6 { --cursor-color: #ec4899; }

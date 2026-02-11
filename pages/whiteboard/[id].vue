@@ -180,6 +180,7 @@
 
 <script setup lang="ts">
 import type { Whiteboard, CanvasElement, UploadResult } from '~/types'
+import UserList from '~/components/whiteboard/UserList.vue'
 
 const route = useRoute()
 const whiteboardId = route.params.id as string
