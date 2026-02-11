@@ -11,24 +11,24 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 1 of 8 (Foundation)
-Plan: 4 of 5 in current phase
+Plan: 5 of 5 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed 01-04: Auto-Save with Visual Feedback
+Last activity: 2026-02-11 — Completed 01-05: Offline Detection and Connection Resilience
 
-Progress: [██████░░░░░] 80%
+Progress: [█████████░] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 2 min
-- Total execution time: 0.13 hours
+- Total plans completed: 5
+- Average duration: 3 min
+- Total execution time: 0.24 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1 | 4/5 | 9 min | 2 min |
+| 1 | 5/5 | 13 min | 3 min |
 | 2 | 0/4 | - | - |
 | 3 | 0/8 | - | - |
 | 4 | 0/3 | - | - |
@@ -38,11 +38,11 @@ Progress: [██████░░░░░] 80%
 | 8 | 0/6 | - | - |
 
 **Recent Trend:**
-- Last 5 plans: 2 min
+- Last 5 plans: 3 min
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
-| Phase 01-foundation P01-04 | 3min | 2 tasks | 2 files |
+| Phase 01-foundation P01-05 | 4min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -61,6 +61,9 @@ Recent decisions affecting current work:
 - **30-second auto-save interval** (01-04) - balances persistence with server load
 - **1-second debounce after changes** (01-04) - prevents excessive save requests
 - **Last-write-wins for offline queue** (01-04) - simpler than conflict resolution
+- **Instant retry with 100ms delay** (01-05) - no exponential backoff for WebSocket reconnection
+- **VueUse useOnline for network detection** (01-05) - reliable Network Information API wrapper
+- **30-second heartbeat for connection health** (01-05) - balance between detection and traffic
 
 ### Pending Todos
 
@@ -77,5 +80,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 01-04: Auto-Save with Visual Feedback. Ready to proceed with 01-05.
+Stopped at: Completed 01-05: Offline Detection and Connection Resilience. Phase 01-foundation complete.
 Resume file: None
