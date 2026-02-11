@@ -382,6 +382,9 @@ const {
   viewport,
   stageConfig: viewportStageConfig,
   handleWheel,
+  isPanning,
+  enablePan,
+  disablePan,
   startPan,
   stopPan,
 } = useViewport({
@@ -491,9 +494,26 @@ function handleResize() {
 }
 
 /**
- * Handle keyboard shortcuts for selection
+ * Handle keyboard shortcuts for selection and tools
  */
 function handleKeyDown(event: KeyboardEvent) {
+  // Don't trigger shortcuts if typing in input/textarea
+  if (document.activeElement?.tagName === 'INPUT' ||
+      document.activeElement?.tagName === 'TEXTAREA' ||
+      document.activeElement?.getAttribute('contenteditable') === 'true') {
+    return
+  }
+
+  // H key - switch to pan tool
+  if (event.key === 'h' || event.key === 'H') {
+    event.preventDefault()
+    // Emit to parent to switch tool - parent will emit back via props
+    const emitToolChange = (getCurrentInstance()?.proxy as any)?.$parent?.$emit?.('select-tool', 'pan')
+    // If no parent emit available, we'll handle via toolbar
+    window.dispatchEvent(new CustomEvent('switch-tool', { detail: 'pan' }))
+    return
+  }
+
   // Delete/Backspace - remove selected element
   if ((event.key === 'Delete' || event.key === 'Backspace') && hasSelection.value) {
     // Don't delete if user is typing in an input
@@ -602,7 +622,7 @@ function placeStamp(x: number, y: number, stampType: StampType) {
 // Mouse handlers
 function handleMouseDown(event: any) {
   if (props.currentTool === 'pan') {
-    startPan()
+    enablePan()
     return
   }
 
@@ -702,8 +722,8 @@ function handleMouseMove(event: any) {
 }
 
 function handleMouseUp(event: any) {
-  if (props.currentTool === 'pan') {
-    stopPan()
+  if (isPanning.value) {
+    disablePan()
     return
   }
 
