@@ -67,6 +67,7 @@
           @select-tool="setTool"
           @select-color="setColor"
           @select-size="setSize"
+          @stamp-type-change="handleStampTypeChange"
           @undo="undo"
           @redo="redo"
           @clear="clearCanvas"
@@ -87,6 +88,7 @@
             :current-tool="currentTool"
             :current-color="currentColor"
             :current-size="currentSize"
+            :current-stamp-type="currentStampType"
             @element-add="addElement"
             @cursor-update="updateCursor"
           />
@@ -180,6 +182,7 @@
 
 <script setup lang="ts">
 import type { Whiteboard, CanvasElement, UploadResult } from '~/types'
+import type { StampType } from '~/components/whiteboard/WhiteboardCanvas.vue'
 
 const route = useRoute()
 const whiteboardId = route.params.id as string
@@ -194,9 +197,10 @@ const currentUser = {
 let canvas: ReturnType<typeof useCollaborativeCanvas> | null = null
 
 // Tool state
-const currentTool = ref<'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'rectangle' | 'circle' | 'text' | 'eraser'>('pen')
+const currentTool = ref<'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'text-annotation' | 'stamp' | 'eraser'>('pen')
 const currentColor = ref('#000000')
 const currentSize = ref(4)
+const currentStampType = ref<StampType>('APPROVED')
 
 // UI state
 const showShareModal = ref(false)
@@ -279,6 +283,10 @@ function setColor(color: string) {
 
 function setSize(size: number) {
   currentSize.value = size
+}
+
+function handleStampTypeChange(stampType: StampType) {
+  currentStampType.value = stampType
 }
 
 // Canvas handlers
@@ -388,6 +396,9 @@ onMounted(() => {
     }
     if (e.key === 'a' || e.key === 'A') {
       setTool('arrow')
+    }
+    if (e.key === 's' || e.key === 'S') {
+      setTool('stamp')
     }
     if (e.key === 't' || e.key === 'T') {
       setTool('text-annotation')
