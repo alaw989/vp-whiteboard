@@ -441,6 +441,60 @@ function handleMouseUp(event: any) {
 
   if (!isDrawing.value) return
 
+  // Complete arrow drawing
+  if (props.currentTool === 'arrow' && arrowStart.value && currentArrowEnd.value) {
+    const start = arrowStart.value
+    const end = currentArrowEnd.value
+
+    const element: CanvasElement = {
+      id: `${props.userId}-${Date.now()}`,
+      type: 'arrow',
+      userId: props.userId,
+      userName: props.userName,
+      timestamp: Date.now(),
+      data: {
+        points: [[start.x, start.y], [end.x, end.y]],
+        pointerLength: 10,
+        pointerWidth: 10,
+        stroke: props.currentColor,
+        strokeWidth: props.currentSize,
+        fill: props.currentColor,
+      } as ArrowElement,
+    }
+    emit('element-add', element)
+
+    arrowStart.value = null
+    currentArrowEnd.value = null
+    isDrawing.value = false
+    return
+  }
+
+  // Complete line drawing
+  if (props.currentTool === 'line' && lineStart.value && currentLineEnd.value) {
+    const start = lineStart.value
+    const end = currentLineEnd.value
+
+    const element: CanvasElement = {
+      id: `${props.userId}-${Date.now()}`,
+      type: 'line',
+      userId: props.userId,
+      userName: props.userName,
+      timestamp: Date.now(),
+      data: {
+        start: [start.x, start.y],
+        end: [end.x, end.y],
+        color: props.currentColor,
+        size: props.currentSize,
+      } as LineElement,
+    }
+    emit('element-add', element)
+
+    lineStart.value = null
+    currentLineEnd.value = null
+    isDrawing.value = false
+    return
+  }
+
   // Complete text annotation - show input dialog
   if (props.currentTool === 'text-annotation' && textAnnotationStart.value && currentLeaderLineEnd.value) {
     const start = textAnnotationStart.value

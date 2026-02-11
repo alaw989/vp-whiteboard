@@ -167,6 +167,7 @@ const tools = [
   { id: 'pen' as DrawingTool, name: 'Pen', icon: 'mdi:pencil' },
   { id: 'highlighter' as DrawingTool, name: 'Highlighter', icon: 'mdi:marker' },
   { id: 'line' as DrawingTool, name: 'Line', icon: 'mdi:vector-line' },
+  { id: 'text-annotation' as DrawingTool, name: 'Text Annotation', icon: 'mdi:comment-text-outline' },
   { id: 'rectangle' as DrawingTool, name: 'Rectangle', icon: 'mdi:rectangle-outline' },
   { id: 'circle' as DrawingTool, name: 'Circle', icon: 'mdi:circle-outline' },
   { id: 'eraser' as DrawingTool, name: 'Eraser', icon: 'mdi:eraser' },

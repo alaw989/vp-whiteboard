@@ -365,6 +365,12 @@ function handleUploadError(error: string) {
 // Keyboard shortcuts
 onMounted(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
+    // Check not typing in input
+    const activeTag = document.activeElement?.tagName
+    if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') {
+      return
+    }
+
     if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
       e.preventDefault()
       undo()
@@ -375,6 +381,10 @@ onMounted(() => {
     }
     if (e.key === 'Escape') {
       setTool('select')
+    }
+    // Tool shortcuts
+    if (e.key === 't' || e.key === 'T') {
+      setTool('text-annotation')
     }
   }
   window.addEventListener('keydown', handleKeyDown)
