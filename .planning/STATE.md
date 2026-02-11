@@ -11,18 +11,18 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 3 of 8 (Drawing Tools)
-Plan: 4 of 8 in current phase
+Plan: 5 of 8 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed Plan 04: Pre-defined Stamp Library
+Last activity: 2026-02-11 — Completed Plan 05: Shape Drawing Tools
 
-Progress: [█████████] 92%
+Progress: [█████████] 93%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16
+- Total plans completed: 17
 - Average duration: 3 min
-- Total execution time: 0.87 hours
+- Total execution time: 0.92 hours
 
 **By Phase:**
 
@@ -30,7 +30,7 @@ Progress: [█████████] 92%
 |-------|-------|-------|----------|
 | 1 | 5/5 | 13 min | 3 min |
 | 2 | 4/4 | 13 min | 3 min |
-| 3 | 4/8 | 14 min | 4 min |
+| 3 | 5/8 | 19 min | 4 min |
 | 4 | 0/3 | - | - |
 | 5 | 0/4 | - | - |
 | 6 | 0/3 | - | - |
@@ -38,10 +38,11 @@ Progress: [█████████] 92%
 | 8 | 0/6 | - | - |
 
 **Recent Trend:**
-- Last 5 plans: 3 min
+- Last 5 plans: 4 min
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
+| Phase 03-drawing-tools P05 | 5min | 3 tasks | 3 files |
 | Phase 03-drawing-tools P04 | 4min | 4 tasks | 3 files |
 | Phase 03-drawing-tools P03 | 5min | 3 tasks | 3 files |
 | Phase 03-drawing-tools P01 | 2min | 3 tasks | 3 files |
@@ -98,6 +99,10 @@ Recent decisions affecting current work:
 - **Four pre-configured stamp types with color schemes** (03-04) - APPROVED (green), REVISED (amber), NOTE (blue), FOR REVIEW (red) for engineering workflow
 - **Stamp placement centered on click** (03-04) - stamps center on cursor position for better UX
 - **Stamp elements render as v-group with rectangle and text** (03-04) - compound element with background, border, shadow, and centered text
+- **Drag-to-draw shape interaction with live preview** (03-05) - mouseDown records start, mouseMove updates preview, mouseUp finalizes
+- **Minimum size validation for shapes** (03-05) - 5px minimum prevents accidental clicks creating tiny shapes
+- **Circle draws from center, rectangle/ellipse from corner** (03-05) - different interaction patterns for different shape types
+- **Keyboard shortcuts for shape tools** (03-05) - R for rectangle, C for circle, E for ellipse
 
 ### Pending Todos
 
@@ -114,5 +119,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 03-04 (Pre-defined Stamp Library), ready for 03-05 (Ellipse Tool)
+Stopped at: Completed 03-05 (Shape Drawing Tools), ready for 03-06 (Selection and Transform Tools)
 Resume file: None
