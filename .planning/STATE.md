@@ -13,7 +13,7 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 Phase: 3 of 8 (Drawing Tools)
 Plan: 3 of 8 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed Plan 03: Text Annotation Tool
+Last activity: 2026-02-11 — Completed Plan 02: Arrow and Line Drawing Tools
 
 Progress: [█████████] 91%
 
@@ -50,6 +50,7 @@ Progress: [█████████] 91%
 | Phase 02-document-rendering P02 | 4min | 3 tasks | 3 files |
 | Phase 02-document-rendering P03 | 4min | 3 tasks | 2 files |
 | Phase 02-document-rendering P04 | 1min | 3 tasks | 3 files |
+| Phase 03 P03-02 | 3min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,9 @@ Recent decisions affecting current work:
 - **perfect-freehand for smooth stroke rendering** (03-01) - creates natural variable-width strokes using pressure simulation
 - **Filled polygon rendering for strokes** (03-01) - strokes rendered as closed polygons using perfect-freehand outline points
 - **Eraser hit detection with getAllIntersections** (03-01) - uses Konva's hit detection to find and remove elements at cursor position
+- **Konva.Arrow for automatic arrowhead rendering** (03-02) - built-in arrow shape with configurable pointerLength/pointerWidth
+- **Dashed preview during drag for two-point shapes** (03-02) - dash: [5, 5] distinguishes preview from final shapes
+- **Separate line and arrow tools** (03-02) - clearer UX than toggle for engineering drawings
 - **Modal dialog for text input after shape placement** (03-03) - better UX than inline editing for leader line annotations
 - **Leader line coordinates relative to group origin** (03-03) - proper positioning within v-group for text+line compound element
 
@@ -106,5 +110,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 03-03 (Text Annotation Tool), ready for 03-04 (Arrow Tool)
+Stopped at: Completed 03-02 (Arrow and Line Drawing Tools), ready for 03-04 (Rectangle Tool)
 Resume file: None
