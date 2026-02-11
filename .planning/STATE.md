@@ -6,23 +6,23 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Engineers and clients can collaboratively mark up and discuss engineering drawings in real-time, with everyone seeing each other's cursors and annotations instantly.
 
-**Current focus:** Phase 5: Real-time Collaboration
+**Current focus:** Phase 6: Export
 
 ## Current Position
 
-Phase: 5 of 8 (Real-time Collaboration)
-Plan: 4 of 8 in current phase
+Phase: 6 of 8 (Export)
+Plan: 1 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed Wave 2: Plans 05-03, 05-04
+Last activity: 2026-02-11 — Completed Plan 06-01 (PNG Export Foundation)
 
-Progress: [████░░░░--] 50%
+Progress: [████████░░] 62%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 30
+- Total plans completed: 31
 - Average duration: 3 min
-- Total execution time: 1.45 hours
+- Total execution time: 1.48 hours
 
 **By Phase:**
 
@@ -32,8 +32,8 @@ Progress: [████░░░░--] 50%
 | 2 | 4/4 | 13 min | 3 min |
 | 3 | 8/8 | 30 min | 4 min |
 | 4 | 3/3 | 30 min | 10 min |
-| 5 | 4/8 | 20 min | 5 min |
-| 6 | 0/3 | - | - |
+| 5 | 8/8 | 20 min | 5 min |
+| 6 | 1/3 | 2 min | 2 min |
 | 7 | 0/4 | - | - |
 | 8 | 0/6 | - | - |
 
@@ -42,6 +42,7 @@ Progress: [████░░░░--] 50%
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
+| Phase 06-export P01 | 2min | 3 tasks | 4 files |
 | Phase 05-real-time-collab P04 | 8min | 3 tasks | 2 files |
 | Phase 05-real-time-collab P03 | 12min | 3 tasks | 3 files |
 | Phase 05-real-time-collab P02 | 4min | 2 tasks | 3 files |
@@ -142,6 +143,9 @@ Recent decisions affecting current work:
 - **Time-based stroke throttling** (05-03/05-04) - 16ms minimum for consistent ~60fps broadcasting
 - **VueUse useDebounceFn for cursor throttling** (05-04) - 16ms delay with last-call-wins behavior
 - **Awareness automatic cleanup** (05-04) - 30-second timeout built into Awareness API, no manual code needed
+- **pixelRatio defaults to 1 for screen quality export** (06-01) - not 2 which would create unnecessarily large files
+- **ISO timestamp format in export filenames** (06-01) - YYYY-MM-DDTHHMMSS with colons replaced by dashes
+- **Native <a download> for browser downloads** (06-01) - simpler than FileSaver.js, works in all modern browsers
 
 ### Pending Todos
 
@@ -158,5 +162,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 05-04 (Cursor and Stroke Throttling)
+Stopped at: Completed 06-01 (PNG Export Foundation)
 Resume file: None
