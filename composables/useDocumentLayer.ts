@@ -132,7 +132,8 @@ export function useDocumentLayer() {
   function updateLayer(id: string, updates: Partial<DocumentLayer>) {
     const index = state.value.layers.findIndex(l => l.id === id)
     if (index !== -1) {
-      state.value.layers[index] = { ...state.value.layers[index], ...updates }
+      const current = state.value.layers[index]
+      state.value.layers[index] = { ...current, ...updates } as DocumentLayer
     }
   }
 
