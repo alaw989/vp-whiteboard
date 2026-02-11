@@ -90,6 +90,7 @@
             :current-size="currentSize"
             :current-stamp-type="currentStampType"
             @element-add="addElement"
+            @element-delete="handleDeleteElement"
             @cursor-update="updateCursor"
           />
           <template #fallback>
@@ -328,6 +329,10 @@ function updateCursor(x: number, y: number) {
   if (canvas) canvas.updateCursor(x, y, currentTool.value)
 }
 
+function handleDeleteElement(elementId: string) {
+  if (canvas) canvas.deleteElement(elementId)
+}
+
 function undo() {
   if (canvas) canvas.undo()
 }
@@ -400,55 +405,26 @@ function handleUploadError(error: string) {
   // Optionally show error notification to user
 }
 
-// Keyboard shortcuts
-onMounted(() => {
-  const handleKeyDown = (e: KeyboardEvent) => {
-    // Check not typing in input
-    const activeTag = document.activeElement?.tagName
-    if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') {
-      return
-    }
+// Keyboard shortcuts using composable
+useKeyboardShortcuts({
+  canUndo,
+  canRedo,
+  onUndo: undo,
+  onRedo: redo,
+  onEscape: () => setTool('select'),
+})
 
-    if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
-      e.preventDefault()
-      undo()
-    }
-    if ((e.ctrlKey && e.key === 'y') || (e.ctrlKey && e.key === 'z' && e.shiftKey)) {
-      e.preventDefault()
-      redo()
-    }
-    if (e.key === 'Escape') {
-      setTool('select')
-    }
-    // Tool shortcuts
-    if (e.key === 'v' || e.key === 'V') {
-      setTool('select')
-    }
-    if (e.key === 'l' || e.key === 'L') {
-      setTool('line')
-    }
-    if (e.key === 'a' || e.key === 'A') {
-      setTool('arrow')
-    }
-    if (e.key === 's' || e.key === 'S') {
-      setTool('stamp')
-    }
-    if (e.key === 'r' || e.key === 'R') {
-      setTool('rectangle')
-    }
-    if (e.key === 'c' || e.key === 'C') {
-      setTool('circle')
-    }
-    if (e.key === 'e' || e.key === 'E') {
-      setTool('ellipse')
-    }
-    if (e.key === 't' || e.key === 'T') {
-      setTool('text-annotation')
+// Listen for tool shortcut events from composable
+onMounted(() => {
+  const handleToolShortcut = (e: Event) => {
+    const event = e as CustomEvent<{ tool: string }>
+    if (event.detail?.tool) {
+      setTool(event.detail.tool as typeof currentTool.value)
     }
   }
-  window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('tool-shortcut', handleToolShortcut)
   onUnmounted(() => {
-    window.removeEventListener('keydown', handleKeyDown)
+    window.removeEventListener('tool-shortcut', handleToolShortcut)
   })
 })
 
