@@ -189,9 +189,51 @@
 
 <script setup lang="ts">
 import { getStroke } from 'perfect-freehand'
-import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, UserPresence, DocumentLayer } from '~/types'
+import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, StampElement, UserPresence, DocumentLayer } from '~/types'
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
 import type { PDFLoadingState } from '~/types'
+
+// Stamp configurations with styling
+const STAMP_CONFIGS = {
+  APPROVED: {
+    text: 'APPROVED',
+    backgroundColor: '#10B981',  // Green
+    textColor: '#FFFFFF',
+    borderColor: '#059669',
+    fontSize: 24,
+    padding: 12,
+    borderRadius: 4,
+  },
+  REVISED: {
+    text: 'REVISED',
+    backgroundColor: '#F59E0B',  // Amber
+    textColor: '#FFFFFF',
+    borderColor: '#D97706',
+    fontSize: 24,
+    padding: 12,
+    borderRadius: 4,
+  },
+  NOTE: {
+    text: 'NOTE',
+    backgroundColor: '#3B82F6',  // Blue
+    textColor: '#FFFFFF',
+    borderColor: '#2563EB',
+    fontSize: 20,
+    padding: 10,
+    borderRadius: 4,
+  },
+  'FOR REVIEW': {
+    text: 'FOR REVIEW',
+    backgroundColor: '#EF4444',  // Red
+    textColor: '#FFFFFF',
+    borderColor: '#DC2626',
+    fontSize: 20,
+    padding: 10,
+    borderRadius: 4,
+  },
+} as const
+
+export type StampType = keyof typeof STAMP_CONFIGS
 
 const props = defineProps<{
   whiteboardId: string
@@ -202,6 +244,7 @@ const props = defineProps<{
   currentTool: string
   currentColor: string
   currentSize: number
+  currentStampType?: StampType
 }>()
 
 const emit = defineEmits<{
@@ -286,6 +329,10 @@ const currentArrowEnd = ref<{x: number, y: number} | null>(null)
 const lineStart = ref<{x: number, y: number} | null>(null)
 const currentLineEnd = ref<{x: number, y: number} | null>(null)
 
+// Shape drawing state
+const shapeStart = ref<{x: number, y: number} | null>(null)
+const currentShapeEnd = ref<{x: number, y: number} | null>(null)
+
 // PDF loading state
 const pdfLoadingState = ref<PDFLoadingState>({
   loading: false,
@@ -365,6 +412,44 @@ function eraseElementAt(x: number, y: number) {
   }
 }
 
+/**
+ * Place a stamp at the given position
+ * Stamps are placed centered on the click position
+ */
+function placeStamp(x: number, y: number, stampType: StampType) {
+  const config = STAMP_CONFIGS[stampType]
+  const fontSize = config.fontSize
+
+  // Estimate text width (approximate based on character count)
+  const textWidth = config.text.length * fontSize * 0.6
+  const width = textWidth + config.padding * 2
+  const height = fontSize + config.padding * 2
+
+  const element: CanvasElement = {
+    id: `${props.userId}-${Date.now()}`,
+    type: 'stamp',
+    userId: props.userId,
+    userName: props.userName,
+    timestamp: Date.now(),
+    data: {
+      stampType,
+      text: config.text,
+      x: x - width / 2,  // Center on click
+      y: y - height / 2,
+      width,
+      height,
+      backgroundColor: config.backgroundColor,
+      textColor: config.textColor,
+      borderColor: config.borderColor,
+      fontSize,
+      padding: config.padding,
+      borderRadius: config.borderRadius,
+    } as StampElement,
+  }
+
+  emit('element-add', element)
+}
+
 // Mouse handlers
 function handleMouseDown(event: any) {
   if (props.currentTool === 'pan') {
@@ -379,6 +464,13 @@ function handleMouseDown(event: any) {
 
   // Drawing tools
   const pos = getPointerPos(event)
+
+  // Stamp tool - place stamp immediately on click
+  if (props.currentTool === 'stamp' && props.currentStampType) {
+    placeStamp(pos.x, pos.y, props.currentStampType)
+    return
+  }
+
   isDrawing.value = true
 
   // Arrow tool - start drawing arrow
@@ -392,6 +484,13 @@ function handleMouseDown(event: any) {
   if (props.currentTool === 'line') {
     lineStart.value = pos
     currentLineEnd.value = pos
+    return
+  }
+
+  // Shape tools - start drawing shape
+  if (props.currentTool === 'rectangle' || props.currentTool === 'circle' || props.currentTool === 'ellipse') {
+    shapeStart.value = pos
+    currentShapeEnd.value = pos
     return
   }
 
@@ -428,6 +527,12 @@ function handleMouseMove(event: any) {
   // Update line preview
   if (props.currentTool === 'line' && lineStart.value) {
     currentLineEnd.value = pos
+    return
+  }
+
+  // Update shape preview
+  if ((props.currentTool === 'rectangle' || props.currentTool === 'circle' || props.currentTool === 'ellipse') && shapeStart.value) {
+    currentShapeEnd.value = pos
     return
   }
 
