@@ -13,6 +13,29 @@
       @touchmove="handleTouchMove"
       @touchend="handleTouchEnd"
     >
+      <!-- Document Background Layer (non-interactive, rendered first) -->
+      <v-layer ref="documentLayerRef" :config="{ listening: false }">
+        <template v-for="layer in visibleLayers" :key="layer.id">
+          <v-group :config="{
+            x: layer.x,
+            y: layer.y,
+            scaleX: layer.scale,
+            scaleY: layer.scale,
+            opacity: layer.opacity,
+          }">
+            <v-image
+              :config="{
+                image: getLayerImage(layer.src),
+                width: layer.width,
+                height: layer.height,
+                listening: false,
+              }"
+            />
+          </v-group>
+        </template>
+      </v-layer>
+
+      <!-- Main Layer (drawings, annotations) -->
       <v-layer ref="layerRef">
         <!-- Background -->
         <v-rect
@@ -83,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, ImageElement, TextElement, UserPresence } from '~/types'
+import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, ImageElement, TextElement, UserPresence, DocumentLayer } from '~/types'
 
 const props = defineProps<{
   whiteboardId: string
@@ -99,25 +122,38 @@ const props = defineProps<{
 const emit = defineEmits<{
   'element-add': [element: CanvasElement]
   'cursor-update': [x: number, y: number]
-  'layer-change': [layers: any[]]
 }>()
 
-// Document layer management
+// Document layer composable
 const {
   visibleLayers,
   addImageLayer,
   addPDFLayer,
   updateLayer,
   removeLayer,
-  setActiveLayer,
-  state: layerState,
-  getLayer,
 } = useDocumentLayer()
+
+// Layer image cache to prevent reloading
+const layerImageCache = ref<Map<string, HTMLImageElement>>(new Map())
+
+function getLayerImage(src: string): HTMLImageElement | null {
+  // Check cache first
+  if (layerImageCache.value.has(src)) {
+    return layerImageCache.value.get(src)!
+  }
+
+  // Create and cache new image
+  const img = new Image()
+  img.src = src
+  layerImageCache.value.set(src, img)
+  return img
+}
 
 // Container ref
 const containerRef = ref<HTMLDivElement | null>(null)
 const stageRef = ref<any>(null)
 const layerRef = ref<any>(null)
+const documentLayerRef = ref<any>(null)
 
 // Stage configuration
 const stageConfig = ref({
@@ -149,6 +185,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  layerImageCache.value.clear()
   window.removeEventListener('resize', handleResize)
 })
 
@@ -381,65 +418,6 @@ function exportAsImage(): string | null {
   return stage.toDataURL({ pixelRatio: 2 })
 }
 
-/**
- * Bring layer to front (highest z-index)
- */
-function bringLayerToFront(layerId: string) {
-  const layers = layerState.value.layers
-  const index = layers.findIndex(l => l.id === layerId)
-  if (index > -1) {
-    const [layer] = layers.splice(index, 1)
-    layers.push(layer)
-    emit('layer-change', layers)
-  }
-}
-
-/**
- * Send layer to back (lowest z-index)
- */
-function sendLayerToBack(layerId: string) {
-  const layers = layerState.value.layers
-  const index = layers.findIndex(l => l.id === layerId)
-  if (index > -1) {
-    const [layer] = layers.splice(index, 1)
-    layers.unshift(layer)
-    emit('layer-change', layers)
-  }
-}
-
-/**
- * Toggle layer visibility
- */
-function toggleLayerVisibility(layerId: string) {
-  const layer = layerState.value.layers.find(l => l.id === layerId)
-  if (layer) {
-    layer.visible = !layer.visible
-    emit('layer-change', layerState.value.layers)
-  }
-}
-
-/**
- * Delete layer
- */
-function deleteLayer(layerId: string) {
-  removeLayer(layerId)
-  emit('layer-change', layerState.value.layers)
-}
-
-/**
- * Get all layers for external consumption
- */
-function getAllLayers() {
-  return layerState.value.layers
-}
-
-/**
- * Get active layer ID
- */
-function getActiveLayerId() {
-  return layerState.value.activeLayerId
-}
-
 defineExpose({
   exportAsImage,
   addImageLayer,
@@ -447,14 +425,5 @@ defineExpose({
   updateLayer,
   removeLayer,
   visibleLayers,
-  layerState,
-  setActiveLayer,
-  bringLayerToFront,
-  sendLayerToBack,
-  toggleLayerVisibility,
-  deleteLayer,
-  getAllLayers,
-  getActiveLayerId,
-  getLayer,
 })
 </script>
