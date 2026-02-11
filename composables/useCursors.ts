@@ -1,4 +1,5 @@
 import type { UserPresence, DrawingTool } from '~/types'
+import { useDebounceFn } from '@vueuse/core'
 
 export interface CursorState {
   user: {
@@ -66,8 +67,9 @@ export function useCursors(
     handleAwarenessChange()
   }
 
-  // Update local cursor position via awareness
-  function updateLocalCursor(x: number, y: number, tool?: DrawingTool) {
+  // Throttled cursor update function (~60fps max)
+  // Uses VueUse's useDebounceFn for RAF-style timing
+  const updateLocalCursor = useDebounceFn((x: number, y: number, tool?: DrawingTool) => {
     if (!awareness) return
 
     awareness.setLocalState({
@@ -79,7 +81,7 @@ export function useCursors(
       cursor: { x, y },
       tool,
     })
-  }
+  }, 16) // 16ms = ~60fps max
 
   // Cleanup function
   function cleanup() {
