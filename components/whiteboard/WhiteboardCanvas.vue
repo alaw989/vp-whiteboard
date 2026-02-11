@@ -504,16 +504,6 @@ function handleKeyDown(event: KeyboardEvent) {
     return
   }
 
-  // H key - switch to pan tool
-  if (event.key === 'h' || event.key === 'H') {
-    event.preventDefault()
-    // Emit to parent to switch tool - parent will emit back via props
-    const emitToolChange = (getCurrentInstance()?.proxy as any)?.$parent?.$emit?.('select-tool', 'pan')
-    // If no parent emit available, we'll handle via toolbar
-    window.dispatchEvent(new CustomEvent('switch-tool', { detail: 'pan' }))
-    return
-  }
-
   // Delete/Backspace - remove selected element
   if ((event.key === 'Delete' || event.key === 'Backspace') && hasSelection.value) {
     // Don't delete if user is typing in an input

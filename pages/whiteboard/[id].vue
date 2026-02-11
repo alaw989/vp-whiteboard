@@ -412,6 +412,19 @@ useKeyboardShortcuts({
   onUndo: undo,
   onRedo: redo,
   onEscape: () => setTool('select'),
+  toolShortcuts: {
+    'v': 'select',
+    'h': 'pan',
+    'p': 'pen',
+    'l': 'line',
+    'a': 'arrow',
+    't': 'text-annotation',
+    'r': 'rectangle',
+    'c': 'circle',
+    'e': 'ellipse',
+    's': 'stamp',
+    'x': 'eraser',
+  },
 })
 
 // Listen for tool shortcut events from composable

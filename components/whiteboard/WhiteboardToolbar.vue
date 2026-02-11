@@ -255,8 +255,8 @@ function handleDocumentClick(event: MouseEvent) {
 }
 
 const tools = [
-  { id: 'select' as DrawingTool, name: 'Select', icon: 'mdi:cursor-default' },
-  { id: 'pan' as DrawingTool, name: 'Pan', icon: 'mdi:pan' },
+  { id: 'select' as DrawingTool, name: 'Select (V)', icon: 'mdi:cursor-default' },
+  { id: 'pan' as DrawingTool, name: 'Pan (H)', icon: 'mdi:pan' },
   { id: 'pen' as DrawingTool, name: 'Pen', icon: 'mdi:pencil' },
   { id: 'highlighter' as DrawingTool, name: 'Highlighter', icon: 'mdi:marker' },
   { id: 'line' as DrawingTool, name: 'Line (L)', icon: 'mdi:vector-line' },
