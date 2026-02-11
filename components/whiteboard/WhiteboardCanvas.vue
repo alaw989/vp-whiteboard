@@ -12,6 +12,7 @@
       @touchstart="handleTouchStart"
       @touchmove="handleTouchMove"
       @touchend="handleTouchEnd"
+      @click="handleStageClick"
     >
       <!-- Document Background Layer (non-interactive, rendered first) -->
       <v-layer ref="documentLayerRef" :config="{ listening: false }">
@@ -58,57 +59,98 @@
               :config="{
                 ...getStrokeConfig(element),
                 closed: true,
+                id: element.id,
               }"
+              @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
             />
 
             <!-- Line elements -->
             <v-line
               v-else-if="element.type === 'line'"
-              :config="getLineConfig(element)"
+              :config="{
+                ...getLineConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
             />
 
             <!-- Arrow elements -->
             <v-arrow
               v-else-if="element.type === 'arrow'"
-              :config="getArrowConfig(element)"
+              :config="{
+                ...getArrowConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
             />
 
             <!-- Rectangle elements -->
             <v-rect
               v-else-if="element.type === 'rectangle'"
-              :config="getRectConfig(element)"
+              :config="{
+                ...getRectConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
             />
 
             <!-- Circle elements -->
             <v-circle
               v-else-if="element.type === 'circle'"
-              :config="getCircleConfig(element)"
+              :config="{
+                ...getCircleConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
             />
 
             <!-- Ellipse elements -->
             <v-ellipse
               v-else-if="element.type === 'ellipse'"
-              :config="getEllipseConfig(element)"
+              :config="{
+                ...getEllipseConfig(element),
+                id: element.id,
+              }"
               @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
             />
 
             <!-- Image elements -->
             <v-image
               v-else-if="element.type === 'image'"
-              :config="getImageConfig(element)"
+              :config="{
+                ...getImageConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
             />
 
             <!-- Text elements -->
             <v-text
               v-else-if="element.type === 'text'"
-              :config="getTextConfig(element)"
+              :config="{
+                ...getTextConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
             />
 
             <!-- Text annotation elements (text + leader line in group) -->
             <v-group
               v-else-if="element.type === 'text-annotation'"
-              :config="getTextAnnotationConfig(element)"
+              :config="{
+                ...getTextAnnotationConfig(element),
+                id: element.id,
+              }"
               @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
             >
               <v-line :config="getTextAnnotationLineConfig(element)" />
               <v-text :config="getTextAnnotationTextConfig(element)" />
@@ -117,8 +159,12 @@
             <!-- Stamp elements (rect + text in group) -->
             <v-group
               v-else-if="element.type === 'stamp'"
-              :config="getStampGroupConfig(element)"
+              :config="{
+                ...getStampGroupConfig(element),
+                id: element.id,
+              }"
               @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
             >
               <v-rect :config="getStampRectConfig(element)" />
               <v-text :config="getStampTextConfig(element)" />
@@ -163,6 +209,22 @@
             :config="currentLeaderLinePreview"
           />
         </v-group>
+      </v-layer>
+
+      <!-- Transformer Layer (on top for selection handles) -->
+      <v-layer ref="transformerLayerRef" name="transformerLayer">
+        <v-transformer
+          ref="transformerRef"
+          :config="{
+            anchorSize: 10,
+            anchorStroke: '#3B82F6',
+            anchorFill: '#FFFFFF',
+            anchorCornerRadius: 2,
+            borderStroke: '#3B82F6',
+            borderDash: [4, 4],
+            rotateAnchorOffset: 20,
+          }"
+        />
       </v-layer>
     </v-stage>
 
@@ -223,6 +285,7 @@ import { getStroke } from 'perfect-freehand'
 import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, StampElement, UserPresence, DocumentLayer } from '~/types'
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
 import type { PDFLoadingState } from '~/types'
+import { useSelection } from '~/composables/useSelection'
 
 // Stamp configurations with styling
 const STAMP_CONFIGS = {
@@ -281,6 +344,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'element-add': [element: CanvasElement]
   'element-delete': [elementId: string]
+  'element-update': [elementId: string, updates: Partial<CanvasElement>]
   'cursor-update': [x: number, y: number]
 }>()
 
@@ -292,6 +356,18 @@ const {
   updateLayer,
   removeLayer,
 } = useDocumentLayer()
+
+// Selection composable
+const {
+  selectedId,
+  hasSelection,
+  transformerRef,
+  selectElement,
+  deselect,
+  deleteSelected,
+  selectElementAtPosition,
+  handleStageClick,
+} = useSelection(stageRef, computed(() => props.elements))
 
 // Layer image cache to prevent reloading - use plain Map (non-reactive)
 // to avoid triggering re-renders when cache is updated
@@ -328,6 +404,7 @@ const containerRef = ref<HTMLDivElement | null>(null)
 const stageRef = ref<any>(null)
 const layerRef = ref<any>(null)
 const documentLayerRef = ref<any>(null)
+const transformerLayerRef = ref<any>(null)
 
 // Stage configuration
 const stageConfig = ref({
@@ -488,8 +565,10 @@ function handleMouseDown(event: any) {
     return
   }
 
+  // Select tool - handle element selection
   if (props.currentTool === 'select') {
-    // Handle selection (implemented in 03-06)
+    const pos = getPointerPos(event)
+    selectElementAtPosition(pos.x, pos.y)
     return
   }
 
@@ -812,6 +891,73 @@ function handleMouseUp(event: any) {
   currentStrokePoints.value = []
 }
 
+/**
+ * Handle drag end for selected elements
+ * Updates element position in Yjs after drag completes
+ */
+function handleDragEnd(event: any) {
+  if (props.currentTool !== 'select' || !selectedId.value) return
+
+  const node = event.target
+  const element = props.elements.find(el => el.id === selectedId.value)
+  if (!element) return
+
+  // Get new position from the node
+  const newPosition = node.position()
+  const newScale = node.scale()
+  const newRotation = node.rotation()
+
+  // Build update based on element type
+  const updates: Partial<CanvasElement> = {}
+
+  // Handle different element types with different position properties
+  if (element.type === 'rectangle' || element.type === 'ellipse' || element.type === 'text' || element.type === 'image') {
+    // These use x, y
+    const data = element.data as any
+    updates.data = {
+      ...data,
+      x: newPosition.x,
+      y: newPosition.y,
+      scaleX: newScale.x,
+      scaleY: newScale.y,
+      rotation: newRotation,
+    }
+  } else if (element.type === 'circle') {
+    // Circles use cx, cy
+    const data = element.data as any
+    updates.data = {
+      ...data,
+      cx: newPosition.x,
+      cy: newPosition.y,
+      scaleX: newScale.x,
+      scaleY: newScale.y,
+      rotation: newRotation,
+    }
+  } else if (element.type === 'stamp' || element.type === 'text-annotation') {
+    // Groups use x, y
+    const data = element.data as any
+    updates.data = {
+      ...data,
+      x: newPosition.x,
+      y: newPosition.y,
+      scaleX: newScale.x,
+      scaleY: newScale.y,
+      rotation: newRotation,
+    }
+  } else if (element.type === 'stroke' || element.type === 'line' || element.type === 'arrow') {
+    // Lines and arrows need point transformation
+    const data = element.data as any
+    updates.data = {
+      ...data,
+      scaleX: newScale.x,
+      scaleY: newScale.y,
+      rotation: newRotation,
+    }
+  }
+
+  emit('element-update', selectedId.value, updates)
+}
+
 // Touch handlers
 function handleTouchStart(event: any) {
   event.evt.preventDefault()
@@ -1018,7 +1164,6 @@ function getStampGroupConfig(element: CanvasElement) {
   return {
     x: data.x,
     y: data.y,
-    draggable: props.currentTool === 'select',
   }
 }
 
@@ -1057,8 +1202,10 @@ function getStampTextConfig(element: CanvasElement) {
 // Element click handler for selection
 function handleElementClick(element: CanvasElement, evt: any) {
   if (props.currentTool === 'select') {
-    // Will be implemented in 03-06
-    console.log('Selected element:', element.id)
+    const node = evt.target
+    // For groups (stamps, text-annotations), get the parent group
+    const targetNode = node.getParent()?.className === 'Group' ? node.getParent() : node
+    selectElement(element.id, targetNode)
     evt.cancelBubble = true
   }
 }
