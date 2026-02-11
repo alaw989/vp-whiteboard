@@ -6,23 +6,23 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Engineers and clients can collaboratively mark up and discuss engineering drawings in real-time, with everyone seeing each other's cursors and annotations instantly.
 
-**Current focus:** Phase 3: Drawing Tools
+**Current focus:** Phase 4: Canvas Navigation
 
 ## Current Position
 
-Phase: 3 of 8 (Drawing Tools)
-Plan: 8 of 8 in current phase
+Phase: 4 of 8 (Canvas Navigation)
+Plan: 1 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed Plan 08: Keyboard Shortcuts for Undo/Redo
+Last activity: 2026-02-11 — Completed Plan 01: Mouse Wheel Zoom with Viewport Composable
 
-Progress: [██████████] 100%
+Progress: [███-------] 33%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 19
+- Total plans completed: 20
 - Average duration: 3 min
-- Total execution time: 1.01 hours
+- Total execution time: 1.05 hours
 
 **By Phase:**
 
@@ -31,7 +31,7 @@ Progress: [██████████] 100%
 | 1 | 5/5 | 13 min | 3 min |
 | 2 | 4/4 | 13 min | 3 min |
 | 3 | 8/8 | 30 min | 4 min |
-| 4 | 0/3 | - | - |
+| 4 | 1/3 | 20 min | 20 min |
 | 5 | 0/4 | - | - |
 | 6 | 0/3 | - | - |
 | 7 | 0/4 | - | - |
@@ -42,6 +42,7 @@ Progress: [██████████] 100%
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
+| Phase 04-canvas-navigation P01 | 20min | 3 tasks | 2 files |
 | Phase 03-drawing-tools P08 | 5min | 4 tasks | 2 files |
 | Phase 03-drawing-tools P06 | 5min | 4 tasks | 3 files |
 | Phase 03-drawing-tools P05 | 5min | 3 tasks | 3 files |
@@ -112,6 +113,10 @@ Recent decisions affecting current work:
 - **Keyboard shortcut composable pattern** (03-08) - reusable event handler with lifecycle hooks for cleanup
 - **Flexible Ref/function typing for canUndo/canRedo** (03-08) - supports different state management patterns
 - **Element deletion through Yjs** (03-08) - all deletions tracked by UndoManager for undo capability
+- **Viewport composable pattern** (04-01) - centralized reactive viewport state with pointer-relative zoom
+- **Merged viewport config with width/height via computed** (04-01) - container dimensions separate from viewport transform state
+- **Readonly refs for exported viewport state** (04-01) - prevents external mutation, all changes through composable functions
+- **Optional callback pattern for viewport changes** (04-01) - onViewportChange enables future sync without tight coupling
 
 ### Pending Todos
 
@@ -128,5 +133,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 03-08 (Keyboard Shortcuts for Undo/Redo), Phase 3 Drawing Tools complete
+Stopped at: Completed 04-01 (Mouse Wheel Zoom with Viewport Composable)
 Resume file: None
