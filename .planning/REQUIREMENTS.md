@@ -125,48 +125,48 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FILE-01 | Phase 1 | Pending |
-| FILE-02 | Phase 1 | Pending |
+| FILE-01 | Phase 1, 2 | Pending |
+| FILE-02 | Phase 1, 2 | Pending |
 | FILE-03 | Phase 1 | Pending |
-| FILE-04 | Phase 1 | Pending |
-| DRAW-01 | Phase 2 | Pending |
-| DRAW-02 | Phase 2 | Pending |
-| DRAW-03 | Phase 2 | Pending |
-| DRAW-04 | Phase 2 | Pending |
-| DRAW-05 | Phase 2 | Pending |
-| DRAW-06 | Phase 2 | Pending |
-| DRAW-07 | Phase 2 | Pending |
-| DRAW-08 | Phase 2 | Pending |
-| DRAW-09 | Phase 2 | Pending |
-| NAVI-01 | Phase 3 | Pending |
-| NAVI-02 | Phase 3 | Pending |
-| NAVI-03 | Phase 3 | Pending |
-| STYLE-01 | Phase 2 | Pending |
-| STYLE-02 | Phase 2 | Pending |
-| STYLE-03 | Phase 2 | Pending |
-| COLL-01 | Phase 4 | Pending |
-| COLL-02 | Phase 4 | Pending |
-| COLL-03 | Phase 4 | Pending |
-| COLL-04 | Phase 4 | Pending |
+| FILE-04 | Phase 1, 2 | Pending |
+| DRAW-01 | Phase 3 | Pending |
+| DRAW-02 | Phase 3 | Pending |
+| DRAW-03 | Phase 3 | Pending |
+| DRAW-04 | Phase 3 | Pending |
+| DRAW-05 | Phase 3 | Pending |
+| DRAW-06 | Phase 3 | Pending |
+| DRAW-07 | Phase 3 | Pending |
+| DRAW-08 | Phase 3 | Pending |
+| DRAW-09 | Phase 3 | Pending |
+| NAVI-01 | Phase 4 | Pending |
+| NAVI-02 | Phase 4 | Pending |
+| NAVI-03 | Phase 4 | Pending |
+| STYLE-01 | Phase 3 | Pending |
+| STYLE-02 | Phase 3 | Pending |
+| STYLE-03 | Phase 3 | Pending |
+| COLL-01 | Phase 5 | Pending |
+| COLL-02 | Phase 5 | Pending |
+| COLL-03 | Phase 5 | Pending |
+| COLL-04 | Phase 5 | Pending |
 | SESS-01 | Phase 1 | Pending |
 | SESS-02 | Phase 1 | Pending |
 | SESS-03 | Phase 1 | Pending |
 | SESS-04 | Phase 1 | Pending |
 | SESS-05 | Phase 1 | Pending |
-| MEAS-01 | Phase 5 | Pending |
-| MEAS-02 | Phase 5 | Pending |
-| MEAS-03 | Phase 5 | Pending |
-| MEAS-04 | Phase 5 | Pending |
-| UNDO-01 | Phase 2 | Pending |
-| UNDO-02 | Phase 2 | Pending |
-| UNDO-03 | Phase 2 | Pending |
+| MEAS-01 | Phase 7 | Pending |
+| MEAS-02 | Phase 7 | Pending |
+| MEAS-03 | Phase 7 | Pending |
+| MEAS-04 | Phase 7 | Pending |
+| UNDO-01 | Phase 3 | Pending |
+| UNDO-02 | Phase 3 | Pending |
+| UNDO-03 | Phase 3 | Pending |
 | EXPR-01 | Phase 6 | Pending |
 | EXPR-02 | Phase 6 | Pending |
 | EXPR-03 | Phase 6 | Pending |
-| PERF-01 | Phase 7 | Pending |
-| PERF-02 | Phase 7 | Pending |
-| PERF-03 | Phase 7 | Pending |
-| PERF-04 | Phase 7 | Pending |
+| PERF-01 | Phase 8 | Pending |
+| PERF-02 | Phase 8 | Pending |
+| PERF-03 | Phase 2, 8 | Pending |
+| PERF-04 | Phase 1, 8 | Pending |
 | PERF-05 | Phase 1 | Pending |
 | MOBL-01 | Phase 8 | Pending |
 | MOBL-02 | Phase 8 | Pending |
@@ -179,4 +179,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-10*
-*Last updated: 2026-02-10 after initial definition*
+*Last updated: 2026-02-10 after roadmap creation*
