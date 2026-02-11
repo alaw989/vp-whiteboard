@@ -102,11 +102,23 @@
     <template v-for="[id, presence] in connectedUsers" :key="id">
       <CursorPointer v-if="presence?.cursor" :presence="presence" />
     </template>
+
+    <!-- PDF Loading Indicator -->
+    <PDFLoadingIndicator
+      :loading="pdfLoadingState.loading"
+      :file-name="pdfFileName"
+      :state="pdfLoadingState"
+      :cancellable="pdfAbortController !== null"
+      @cancel="cancelPDFLoad"
+      @close="closeLoadingIndicator"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, ImageElement, TextElement, UserPresence, DocumentLayer } from '~/types'
+import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
+import type { PDFLoadingState } from '~/types'
 
 const props = defineProps<{
   whiteboardId: string
@@ -172,6 +184,16 @@ const viewport = ref({ x: 0, y: 0, zoom: 1 })
 // Drawing state
 const isDrawing = ref(false)
 const currentStrokePoints = ref<[number, number][]>([])
+
+// PDF loading state
+const pdfLoadingState = ref<PDFLoadingState>({
+  loading: false,
+  loaded: 0,
+  total: 100,
+  percent: 0,
+})
+const pdfFileName = ref<string>('')
+const pdfAbortController = ref<AbortController | null>(null)
 
 // Initialize stage size
 onMounted(() => {
@@ -418,8 +440,93 @@ function exportAsImage(): string | null {
   return stage.toDataURL({ pixelRatio: 2 })
 }
 
+// Load PDF and add to canvas
+async function loadPDF(arrayBuffer: ArrayBuffer, fileName: string) {
+  // Cancel any existing load
+  if (pdfAbortController.value) {
+    pdfAbortController.value.abort()
+  }
+
+  // Create new abort controller
+  pdfAbortController.value = new AbortController()
+  pdfFileName.value = fileName
+
+  const { loadAndRenderPage } = usePDFRendering()
+
+  try {
+    // Reset loading state
+    pdfLoadingState.value = { loading: true, loaded: 0, total: 100, percent: 0 }
+
+    // Load and render first page
+    const { dataUrl, totalPages } = await loadAndRenderPage(arrayBuffer, 1, {
+      onProgress: (state) => {
+        pdfLoadingState.value = state
+      },
+      signal: pdfAbortController.value.signal,
+    })
+
+    // Create image element from rendered PDF
+    const img = new Image()
+    img.src = dataUrl
+
+    await new Promise((resolve, reject) => {
+      img.onload = resolve
+      img.onerror = reject
+    })
+
+    // Add as canvas element
+    const element: CanvasElement = {
+      id: `${props.userId}-pdf-${Date.now()}`,
+      type: 'image',
+      userId: props.userId,
+      userName: props.userName,
+      timestamp: Date.now(),
+      data: {
+        src: dataUrl,
+        x: 100,
+        y: 100,
+        width: img.width,
+        height: img.height,
+      } as ImageElement,
+    }
+
+    emit('element-add', element)
+
+    // Clear loading state
+    pdfLoadingState.value = { loading: false, loaded: 1, total: 1, percent: 100 }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      // User cancelled - clear state
+      pdfLoadingState.value = { loading: false, loaded: 0, total: 0, percent: 0 }
+    } else {
+      // Error occurred
+      const message = error instanceof Error ? error.message : 'Failed to load PDF'
+      pdfLoadingState.value = {
+        loading: false,
+        loaded: 0,
+        total: 0,
+        percent: 0,
+        error: message,
+      }
+    }
+  } finally {
+    pdfAbortController.value = null
+  }
+}
+
+// Cancel PDF loading
+function cancelPDFLoad() {
+  pdfAbortController.value?.abort()
+}
+
+// Close loading indicator
+function closeLoadingIndicator() {
+  pdfLoadingState.value = { loading: false, loaded: 0, total: 0, percent: 0 }
+}
+
 defineExpose({
   exportAsImage,
+  loadPDF,
   addImageLayer,
   addPDFLayer,
   updateLayer,
