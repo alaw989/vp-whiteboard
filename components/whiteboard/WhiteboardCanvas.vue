@@ -460,17 +460,46 @@ onMounted(() => {
 
   // Handle window resize
   window.addEventListener('resize', handleResize)
+
+  // Add keyboard shortcuts for selection
+  window.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
   layerImageCache.clear()
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('keydown', handleKeyDown)
 })
 
 function handleResize() {
   if (containerRef.value) {
     stageConfig.value.width = containerRef.value.offsetWidth || 2000
     stageConfig.value.height = containerRef.value.offsetHeight || 1500
+  }
+}
+
+/**
+ * Handle keyboard shortcuts for selection
+ */
+function handleKeyDown(event: KeyboardEvent) {
+  // Delete/Backspace - remove selected element
+  if ((event.key === 'Delete' || event.key === 'Backspace') && hasSelection.value) {
+    // Don't delete if user is typing in an input
+    if (document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'TEXTAREA' &&
+        document.activeElement?.getAttribute('contenteditable') !== 'true') {
+      event.preventDefault()
+      const id = deleteSelected()
+      if (id) {
+        emit('element-delete', id)
+      }
+    }
+  }
+
+  // Escape - deselect
+  if (event.key === 'Escape' && hasSelection.value) {
+    event.preventDefault()
+    deselect()
   }
 }
 
