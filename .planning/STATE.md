@@ -11,25 +11,25 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 2 of 8 (Document Rendering)
-Plan: 1 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed 02-01: PDF.js Configuration
+Last activity: 2026-02-11 — Completed 02-03: Upload-to-Canvas Integration
 
-Progress: [███░░░░░░] 25%
+Progress: [██████░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
+- Total plans completed: 7
 - Average duration: 3 min
-- Total execution time: 0.28 hours
+- Total execution time: 0.39 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 5/5 | 13 min | 3 min |
-| 2 | 1/4 | 4 min | 4 min |
+| 2 | 2/4 | 10 min | 5 min |
 | 3 | 0/8 | - | - |
 | 4 | 0/3 | - | - |
 | 5 | 0/4 | - | - |
@@ -44,6 +44,7 @@ Progress: [███░░░░░░] 25%
 *Updated after each plan completion*
 | Phase 01-foundation P01-05 | 4min | 3 tasks | 4 files |
 | Phase 02-document-rendering P01 | 4min | 3 tasks | 5 files |
+| Phase 02-document-rendering P03 | 6min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,9 @@ Recent decisions affecting current work:
 - **Default scale 1.5 for PDF rendering** (02-01) - balance between quality and file size
 - **Client-side only PDF.js plugin** (02-01) - avoids SSR hydration errors
 - **Dynamic import of pdfjs-dist in composable** (02-01) - SSR compatibility
+- **PDF files rendered to dataURL images for Konva Image consumption** (02-03) - enables proper canvas export and layer management
+- **Layer state managed separately from canvas elements** (02-03) - enables independent document tracking and layer panel UI
+- **Supabase storage retained for file uploads** (02-03) - production-ready, no downgrade to local files needed
 
 ### Pending Todos
 
@@ -85,5 +89,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 02-01: PDF.js Configuration
+Stopped at: Completed 02-03: Upload-to-Canvas Integration
 Resume file: None
