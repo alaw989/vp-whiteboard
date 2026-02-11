@@ -48,11 +48,11 @@ export interface CanvasState {
 
 export interface CanvasElement {
   id: string
-  type: 'stroke' | 'line' | 'rectangle' | 'circle' | 'image' | 'text'
+  type: 'stroke' | 'line' | 'rectangle' | 'circle' | 'ellipse' | 'image' | 'text' | 'arrow' | 'stamp' | 'text-annotation'
   userId: string
   userName: string
   timestamp: number
-  data: StrokeElement | LineElement | RectangleElement | CircleElement | ImageElement | TextElement
+  data: StrokeElement | LineElement | RectangleElement | CircleElement | EllipseElement | ImageElement | TextElement | ArrowElement | StampElement | TextAnnotationElement
 }
 
 export interface StrokeElement {
@@ -89,6 +89,54 @@ export interface CircleElement {
   fill?: string
 }
 
+export interface EllipseElement {
+  x: number
+  y: number
+  radiusX: number
+  radiusY: number
+  rotation: number
+  stroke: string
+  strokeWidth: number
+  fill?: string
+}
+
+export interface ArrowElement {
+  points: [number, number][]  // [x1, y1, x2, y2] flattened
+  pointerLength: number
+  pointerWidth: number
+  stroke: string
+  strokeWidth: number
+  fill: string  // Arrow head color
+}
+
+export interface StampElement {
+  stampType: 'APPROVED' | 'REVISED' | 'NOTE' | 'FOR REVIEW'
+  text: string
+  x: number
+  y: number
+  width: number
+  height: number
+  backgroundColor: string
+  textColor: string
+  borderColor: string
+  fontSize: number
+  padding: number
+  borderRadius: number
+}
+
+export interface TextAnnotationElement {
+  text: string
+  x: number
+  y: number
+  fontSize: number
+  color: string
+  fontFamily: string
+  leaderLine: {
+    start: [number, number]
+    end: [number, number]
+  }
+}
+
 export interface ImageElement {
   src: string
   x: number
@@ -119,7 +167,7 @@ export interface ViewportState {
 }
 
 // Drawing Tool Types
-export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'rectangle' | 'circle' | 'text' | 'eraser'
+export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser'
 
 export interface ToolSettings {
   tool: DrawingTool
