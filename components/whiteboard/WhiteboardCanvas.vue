@@ -67,6 +67,12 @@
               :config="getLineConfig(element)"
             />
 
+            <!-- Arrow elements -->
+            <v-arrow
+              v-else-if="element.type === 'arrow'"
+              :config="getArrowConfig(element)"
+            />
+
             <!-- Rectangle elements -->
             <v-rect
               v-else-if="element.type === 'rectangle'"
@@ -106,6 +112,18 @@
           <v-line
             v-if="currentStrokePoints.length > 0"
             :config="currentStrokeConfig"
+          />
+
+          <!-- Current arrow preview -->
+          <v-arrow
+            v-if="currentArrowPreview"
+            :config="currentArrowPreview"
+          />
+
+          <!-- Current line preview -->
+          <v-line
+            v-if="currentLinePreview"
+            :config="currentLinePreview"
           />
 
           <!-- Current leader line preview for text annotation -->
@@ -629,6 +647,23 @@ function getLineConfig(element: CanvasElement) {
   }
 }
 
+function getArrowConfig(element: CanvasElement) {
+  const data = element.data as ArrowElement
+  // Flatten points array: [[x1, y1], [x2, y2]] -> [x1, y1, x2, y2]
+  const points = data.points.flatMap(p => p)
+
+  return {
+    points,
+    pointerLength: data.pointerLength || 10,
+    pointerWidth: data.pointerWidth || 10,
+    stroke: data.stroke,
+    strokeWidth: data.strokeWidth,
+    fill: data.fill,
+    lineCap: 'round',
+    lineJoin: 'round',
+  }
+}
+
 function getRectConfig(element: CanvasElement) {
   const data = element.data as RectangleElement
   return {
@@ -769,6 +804,36 @@ const currentStrokeConfig = computed(() => {
     lineCap: 'round',
     lineJoin: 'round',
     closed: true,
+  }
+})
+
+// Current arrow preview config
+const currentArrowPreview = computed(() => {
+  if (!arrowStart.value || !currentArrowEnd.value) return null
+
+  return {
+    points: [arrowStart.value.x, arrowStart.value.y, currentArrowEnd.value.x, currentArrowEnd.value.y],
+    pointerLength: 10,
+    pointerWidth: 10,
+    stroke: props.currentColor,
+    strokeWidth: props.currentSize,
+    fill: props.currentColor,
+    lineCap: 'round',
+    lineJoin: 'round',
+    dash: [5, 5],  // Dashed line for preview
+  }
+})
+
+// Current line preview config
+const currentLinePreview = computed(() => {
+  if (!lineStart.value || !currentLineEnd.value) return null
+
+  return {
+    points: [lineStart.value.x, lineStart.value.y, currentLineEnd.value.x, currentLineEnd.value.y],
+    stroke: props.currentColor,
+    strokeWidth: props.currentSize,
+    lineCap: 'round',
+    dash: [5, 5],  // Dashed line for preview
   }
 })
 
