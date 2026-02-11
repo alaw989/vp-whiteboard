@@ -72,6 +72,17 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   const yCursors = ydoc.getMap<UserPresence>('cursors')
   const yMeta = ydoc.getMap<any>('meta')
 
+  // Active strokes map for real-time stroke broadcasting
+  // Strokes are stored here while being drawn, moved to yElements on completion
+  const yActiveStrokes = ydoc.getMap<Record<string, [number, number, number][]>>('activeStrokes')
+
+  // Local reactive ref for observing remote active strokes (filtered to exclude own strokes)
+  const activeStrokes = ref<Record<string, [number, number, number][]>>({})
+
+  // Track last broadcast time for throttling stroke points
+  const STROKE_THROTTLE_MS = 16 // ~60fps max
+  const lastBroadcastTime = new Map<string, number>()
+
   // Local state
   const isConnected = ref(wsProvider !== null)
   const connectionStatus = ref(wsProvider !== null ? 'connected' : 'disconnected')
@@ -100,6 +111,27 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         }
       })
       connectedUsers.value = users
+    })
+
+    // Watch for remote active strokes (in-progress drawings from other users)
+    // Filter out own strokes to avoid rendering duplicate
+    yActiveStrokes.observe((event) => {
+      event.changes.keys.forEach((change, key) => {
+        const strokeId = key as string
+        // Skip if this is our own stroke
+        if (strokeId.startsWith(userId)) {
+          return
+        }
+
+        const points = yActiveStrokes.get(strokeId)
+        if (points && points.length > 0) {
+          // Add or update remote active stroke
+          activeStrokes.value[strokeId] = points
+        } else {
+          // Remove stroke (completed or deleted)
+          delete activeStrokes.value[strokeId]
+        }
+      })
     })
 
     // Cleanup cursor for current user on disconnect
@@ -258,6 +290,51 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     ydoc.destroy()
   }
 
+  /**
+   * Start a new active stroke for real-time broadcasting
+   * Creates empty array in yActiveStrokes for this stroke ID
+   */
+  function startActiveStroke(strokeId: string) {
+    ydoc.transact(() => {
+      yActiveStrokes.set(strokeId, [])
+    }, userId)
+  }
+
+  /**
+   * Broadcast a stroke point in real-time
+   * Appends point to existing stroke array in yActiveStrokes
+   * Includes 16ms throttling to prevent excessive network traffic
+   */
+  function broadcastStrokePoint(strokeId: string, point: [number, number, number]) {
+    const now = Date.now()
+    const lastBroadcast = lastBroadcastTime.get(strokeId) || 0
+
+    // Throttle: only broadcast if at least 16ms have passed (~60fps max)
+    if (now - lastBroadcast < STROKE_THROTTLE_MS) {
+      return
+    }
+
+    lastBroadcastTime.set(strokeId, now)
+
+    ydoc.transact(() => {
+      const existing = yActiveStrokes.get(strokeId) || []
+      yActiveStrokes.set(strokeId, [...existing, point])
+    }, userId)
+  }
+
+  /**
+   * End an active stroke and move it to permanent elements
+   * Removes from yActiveStrokes and adds to yElements
+   */
+  function endActiveStroke(strokeId: string, element: CanvasElement) {
+    ydoc.transact(() => {
+      yActiveStrokes.delete(strokeId)
+      yElements.push([element])
+    }, userId)
+    // Clean up throttling state
+    lastBroadcastTime.delete(strokeId)
+  }
+
   return {
     // State
     isConnected,
@@ -267,6 +344,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     elements: computed(() => getElements()),
     canUndo: computed(() => undoManager.canUndo()),
     canRedo: computed(() => undoManager.canRedo()),
+    activeStrokes,
 
     // Methods
     updateCursor,
@@ -279,6 +357,11 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     exportState,
     importState,
     cleanup,
+
+    // Active stroke methods for real-time broadcasting
+    startActiveStroke,
+    broadcastStrokePoint,
+    endActiveStroke,
 
     // Viewport sync methods
     getViewport,
