@@ -106,6 +106,16 @@
               <v-line :config="getTextAnnotationLineConfig(element)" />
               <v-text :config="getTextAnnotationTextConfig(element)" />
             </v-group>
+
+            <!-- Stamp elements (rect + text in group) -->
+            <v-group
+              v-else-if="element.type === 'stamp'"
+              :config="getStampGroupConfig(element)"
+              @click="handleElementClick(element, $event)"
+            >
+              <v-rect :config="getStampRectConfig(element)" />
+              <v-text :config="getStampTextConfig(element)" />
+            </v-group>
           </template>
 
           <!-- Current stroke being drawn -->
@@ -901,6 +911,20 @@ function getCircleConfig(element: CanvasElement) {
   }
 }
 
+function getEllipseConfig(element: CanvasElement) {
+  const data = element.data as EllipseElement
+  return {
+    x: data.x,
+    y: data.y,
+    radiusX: data.radiusX,
+    radiusY: data.radiusY,
+    rotation: data.rotation,
+    stroke: data.stroke,
+    strokeWidth: data.strokeWidth,
+    fill: data.fill || 'transparent',
+  }
+}
+
 function getImageConfig(element: CanvasElement) {
   const data = element.data as ImageElement
   const image = new Image()
@@ -964,6 +988,48 @@ function getTextAnnotationLineConfig(element: CanvasElement) {
     stroke: data.color,
     strokeWidth: 2,
     lineCap: 'round',
+  }
+}
+
+// Stamp config helpers
+function getStampGroupConfig(element: CanvasElement) {
+  const data = element.data as StampElement
+  return {
+    x: data.x,
+    y: data.y,
+    draggable: props.currentTool === 'select',
+  }
+}
+
+function getStampRectConfig(element: CanvasElement) {
+  const data = element.data as StampElement
+  return {
+    width: data.width,
+    height: data.height,
+    fill: data.backgroundColor,
+    stroke: data.borderColor,
+    strokeWidth: 2,
+    cornerRadius: data.borderRadius,
+    shadowColor: 'rgba(0, 0, 0, 0.2)',
+    shadowBlur: 4,
+    shadowOffset: { x: 0, y: 2 },
+  }
+}
+
+function getStampTextConfig(element: CanvasElement) {
+  const data = element.data as StampElement
+  return {
+    text: data.text,
+    x: data.width / 2,
+    y: data.height / 2,
+    fontSize: data.fontSize,
+    fill: data.textColor,
+    fontFamily: 'Arial, sans-serif',
+    fontStyle: 'bold',
+    align: 'center',
+    verticalAlign: 'middle',
+    offsetX: 0,
+    offsetY: 0,
   }
 }
 
