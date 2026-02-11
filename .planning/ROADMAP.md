@@ -66,13 +66,13 @@ Plans:
 3. Large PDF files load with progress indicator and don't crash the browser
 4. Multiple files can be uploaded and managed within a session
 
-**Plans**: TBD
+**Plans**: 4 plans in 3 waves
 
 Plans:
-- [ ] 02-01: PDF.js worker setup for off-main-thread rendering
-- [ ] 02-02: Document-as-background-layer integration with Konva
-- [ ] 02-03: Layer management for multiple documents
-- [ ] 02-04: Lazy page loading for large PDFs
+- [ ] 02-01-PLAN.md — PDF.js worker setup and usePDFRendering composable (Wave 1)
+- [ ] 02-02-PLAN.md — Document-as-background-layer integration with Konva (Wave 2)
+- [ ] 02-03-PLAN.md — Layer management for multiple documents (Wave 2)
+- [ ] 02-04-PLAN.md — Lazy page loading and progress indicator (Wave 3)
 
 ### Phase 3: Drawing Tools
 
