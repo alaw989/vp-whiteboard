@@ -99,9 +99,11 @@
     </v-stage>
 
     <!-- Collaborative cursors -->
-    <template v-for="[id, presence] in connectedUsers" :key="id">
-      <CursorPointer v-if="presence?.cursor" :presence="presence" />
-    </template>
+    <ClientOnly>
+      <template v-for="[id, presence] in connectedUsers" :key="id">
+        <CursorPointer v-if="presence?.cursor" :presence="presence" />
+      </template>
+    </ClientOnly>
 
     <!-- PDF Loading Indicator -->
     <PDFLoadingIndicator
@@ -145,21 +147,35 @@ const {
   removeLayer,
 } = useDocumentLayer()
 
-// Layer image cache to prevent reloading
-const layerImageCache = ref<Map<string, HTMLImageElement>>(new Map())
+// Layer image cache to prevent reloading - use plain Map (non-reactive)
+// to avoid triggering re-renders when cache is updated
+const layerImageCache = new Map<string, HTMLImageElement>()
 
 function getLayerImage(src: string): HTMLImageElement | null {
   // Check cache first
-  if (layerImageCache.value.has(src)) {
-    return layerImageCache.value.get(src)!
+  if (layerImageCache.has(src)) {
+    const cached = layerImageCache.get(src)!
+    // Only return if image is loaded or failed (complete)
+    if (cached.complete) return cached
   }
 
-  // Create and cache new image
+  // Create and cache new image (this won't trigger re-render since Map is non-reactive)
   const img = new Image()
   img.src = src
-  layerImageCache.value.set(src, img)
+  layerImageCache.set(src, img)
   return img
 }
+
+// Pre-load layer images when layers change to avoid render-time loading
+watch(visibleLayers, (layers) => {
+  for (const layer of layers) {
+    if (layer.src && !layerImageCache.has(layer.src)) {
+      const img = new Image()
+      img.src = layer.src
+      layerImageCache.set(layer.src, img)
+    }
+  }
+}, { deep: true })
 
 // Container ref
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -207,7 +223,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  layerImageCache.value.clear()
+  layerImageCache.clear()
   window.removeEventListener('resize', handleResize)
 })
 

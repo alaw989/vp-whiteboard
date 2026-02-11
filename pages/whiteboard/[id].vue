@@ -102,7 +102,14 @@
 
         <!-- User List Overlay -->
         <div class="absolute top-4 right-4 z-10">
-          <UserList :users="connectedUsers" />
+          <ClientOnly>
+            <UserList :users="connectedUsers" />
+            <template #fallback>
+              <div class="bg-white rounded-lg shadow-sm border border-neutral-200 p-3">
+                <div class="text-sm text-neutral-400">Loading users...</div>
+              </div>
+            </template>
+          </ClientOnly>
         </div>
       </main>
     </div>
