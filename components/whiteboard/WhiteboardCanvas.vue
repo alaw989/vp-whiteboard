@@ -618,6 +618,113 @@ function handleMouseUp(event: any) {
     return
   }
 
+  // Complete rectangle drawing
+  if (props.currentTool === 'rectangle' && shapeStart.value && currentShapeEnd.value) {
+    const start = shapeStart.value
+    const end = currentShapeEnd.value
+
+    const x = Math.min(start.x, end.x)
+    const y = Math.min(start.y, end.y)
+    const width = Math.abs(end.x - start.x)
+    const height = Math.abs(end.y - start.y)
+
+    if (width > 5 && height > 5) {  // Minimum size to avoid accidental clicks
+      const element: CanvasElement = {
+        id: `${props.userId}-${Date.now()}`,
+        type: 'rectangle',
+        userId: props.userId,
+        userName: props.userName,
+        timestamp: Date.now(),
+        data: {
+          x,
+          y,
+          width,
+          height,
+          stroke: props.currentColor,
+          strokeWidth: props.currentSize,
+          fill: 'transparent',
+        } as RectangleElement,
+      }
+      emit('element-add', element)
+    }
+
+    shapeStart.value = null
+    currentShapeEnd.value = null
+    isDrawing.value = false
+    return
+  }
+
+  // Complete circle drawing
+  if (props.currentTool === 'circle' && shapeStart.value && currentShapeEnd.value) {
+    const start = shapeStart.value
+    const end = currentShapeEnd.value
+
+    const dx = end.x - start.x
+    const dy = end.y - start.y
+    const radius = Math.sqrt(dx * dx + dy * dy)
+
+    if (radius > 5) {  // Minimum radius
+      const element: CanvasElement = {
+        id: `${props.userId}-${Date.now()}`,
+        type: 'circle',
+        userId: props.userId,
+        userName: props.userName,
+        timestamp: Date.now(),
+        data: {
+          cx: start.x,
+          cy: start.y,
+          radius,
+          stroke: props.currentColor,
+          strokeWidth: props.currentSize,
+          fill: 'transparent',
+        } as CircleElement,
+      }
+      emit('element-add', element)
+    }
+
+    shapeStart.value = null
+    currentShapeEnd.value = null
+    isDrawing.value = false
+    return
+  }
+
+  // Complete ellipse drawing
+  if (props.currentTool === 'ellipse' && shapeStart.value && currentShapeEnd.value) {
+    const start = shapeStart.value
+    const end = currentShapeEnd.value
+
+    const x = Math.min(start.x, end.x)
+    const y = Math.min(start.y, end.y)
+    const width = Math.abs(end.x - start.x)
+    const height = Math.abs(end.y - start.y)
+
+    if (width > 5 && height > 5) {
+      const element: CanvasElement = {
+        id: `${props.userId}-${Date.now()}`,
+        type: 'ellipse',
+        userId: props.userId,
+        userName: props.userName,
+        timestamp: Date.now(),
+        data: {
+          x: x + width / 2,  // Konva ellipse uses center position
+          y: y + height / 2,
+          radiusX: width / 2,
+          radiusY: height / 2,
+          rotation: 0,
+          stroke: props.currentColor,
+          strokeWidth: props.currentSize,
+          fill: 'transparent',
+        } as EllipseElement,
+      }
+      emit('element-add', element)
+    }
+
+    shapeStart.value = null
+    currentShapeEnd.value = null
+    isDrawing.value = false
+    return
+  }
+
   // Complete text annotation - show input dialog
   if (props.currentTool === 'text-annotation' && textAnnotationStart.value && currentLeaderLineEnd.value) {
     const start = textAnnotationStart.value
