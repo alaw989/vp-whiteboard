@@ -383,6 +383,12 @@ onMounted(() => {
       setTool('select')
     }
     // Tool shortcuts
+    if (e.key === 'l' || e.key === 'L') {
+      setTool('line')
+    }
+    if (e.key === 'a' || e.key === 'A') {
+      setTool('arrow')
+    }
     if (e.key === 't' || e.key === 'T') {
       setTool('text-annotation')
     }
