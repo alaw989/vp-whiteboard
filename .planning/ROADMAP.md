@@ -189,13 +189,20 @@ Plans:
 2. User can measure distance between two points with units displayed
 3. User can measure area of rectangles and circles
 
-**Plans**: TBD
+**Plans**: 4 plans in 4 waves
+
+| Wave | Plans | Description |
+|------|-------|-------------|
+| 1 | 07-01 | Scale setting interface and coordinate system |
+| 2 | 07-02 | Distance measurement tool |
+| 3 | 07-03 | Area measurement tool |
+| 4 | 07-04 | Measurement display and labeling |
 
 Plans:
-- [ ] 07-01: Scale setting interface and coordinate system
-- [ ] 07-02: Distance measurement tool
-- [ ] 07-03: Area measurement tool
-- [ ] 07-04: Measurement display and labeling
+- [ ] 07-01-PLAN.md — Scale state management, ScaleBadge, ScaleToolPalette (Wave 1)
+- [ ] 07-02-PLAN.md — Distance measurement with snapping, useMeasurements, useSnapping (Wave 2)
+- [ ] 07-03-PLAN.md — Area measurement for shapes, select-then-measure workflow (Wave 3)
+- [ ] 07-04-PLAN.md — Editable measurements, export integration, scale warnings (Wave 4)
 
 ### Phase 8: Performance & Mobile
 
@@ -233,8 +240,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 1. Foundation | 5/5 | Complete | 2025-02-10 |
 | 2. Document Rendering | 4/4 | Complete | 2025-02-10 |
 | 3. Drawing Tools | 8/8 | Complete | 2025-02-10 |
-| 4. Canvas Navigation | 0/3 | Not started | - |
-| 5. Real-time Collaboration | 0/4 | Not started | - |
-| 6. Export | 0/3 | Not started | - |
-| 7. Measurement Tools | 0/4 | Not started | - |
+| 4. Canvas Navigation | 3/3 | Complete | 2025-02-10 |
+| 5. Real-time Collaboration | 4/4 | Complete | 2025-02-10 |
+| 6. Export | 3/3 | Complete | 2025-02-11 |
+| 7. Measurement Tools | 0/4 | Ready to start | - |
 | 8. Performance & Mobile | 0/6 | Not started | - |
