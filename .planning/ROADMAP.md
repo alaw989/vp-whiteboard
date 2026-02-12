@@ -220,15 +220,23 @@ Plans:
 5. UI is responsive on mobile screens
 6. Two-finger pan gesture works on touch devices
 
-**Plans**: TBD
+**Plans**: 6 plans in 4 waves
+
+| Wave | Plans | Description |
+|------|-------|-------------|
+| 1 | 08-06 | Responsive UI foundation (bottom sheet toolbar) |
+| 2 | 08-01, 08-05 | Viewport clipping, two-finger pan gesture |
+| 3 | 08-03, 08-04 | WebSocket reconnection, touch drawing with pointer events |
+| 4 | 08-02 | CRDT garbage collection (assess if needed) |
 
 Plans:
-- [ ] 08-01: Viewport clipping for large canvases
-- [ ] 08-02: CRDT memory garbage collection
-- [ ] 08-03: WebSocket reconnection with exponential backoff
-- [ ] 08-04: Touch gesture support for drawing
-- [ ] 08-05: Two-finger pan gesture
-- [ ] 08-06: Responsive UI for mobile screens
+- [x] 08-RESEARCH.md — Performance and mobile implementation research (Wave 1)
+- [ ] 08-06-PLAN.md — Responsive UI for mobile screens (Wave 1)
+- [ ] 08-01-PLAN.md — Viewport clipping for large canvases (Wave 2)
+- [ ] 08-05-PLAN.md — Two-finger pan gesture (Wave 2)
+- [ ] 08-03-PLAN.md — WebSocket reconnection with exponential backoff (Wave 3)
+- [ ] 08-04-PLAN.md — Touch gesture support for drawing (Wave 3)
+- [ ] 08-02-PLAN.md — CRDT memory garbage collection (Wave 4)
 
 ## Progress
 
@@ -244,4 +252,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Real-time Collaboration | 4/4 | Complete | 2025-02-10 |
 | 6. Export | 3/3 | Complete | 2025-02-11 |
 | 7. Measurement Tools | 4/4 | Complete | 2025-02-11 |
-| 8. Performance & Mobile | 0/6 | Not started | - |
+| 8. Performance & Mobile | 0/6 | Research complete | - |
