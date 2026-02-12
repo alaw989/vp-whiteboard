@@ -353,6 +353,38 @@ export function useViewport(options: ViewportOptions) {
 
     // Remote viewport sync
     applyRemoteViewport: applyRemoteViewportInternal,
+
+    // Viewport bounds calculation for culling
+    getViewportBounds: (width: number, height: number, padding?: number) =>
+      getViewportBounds(width, height, viewport.value, padding),
+  }
+}
+
+// Padding for viewport culling to ensure smooth edge transitions
+export const VIEWPORT_PADDING = 100
+
+/**
+ * Calculate viewport bounds in canvas coordinates
+ * Returns the visible area with optional padding for culling
+ *
+ * @param containerWidth - Container width in screen pixels
+ * @param containerHeight - Container height in screen pixels
+ * @param viewport - Current viewport state
+ * @param padding - Extra padding around visible area (default: VIEWPORT_PADDING)
+ * @returns Bounds in canvas coordinates { left, top, right, bottom }
+ */
+export function getViewportBounds(
+  containerWidth: number,
+  containerHeight: number,
+  viewport: ViewportState,
+  padding: number = VIEWPORT_PADDING
+): { left: number; top: number; right: number; bottom: number } {
+  const { x, y, zoom } = viewport
+  return {
+    left: -x / zoom - padding,
+    top: -y / zoom - padding,
+    right: (-x + containerWidth) / zoom + padding,
+    bottom: (-y + containerHeight) / zoom + padding,
   }
 }
 
