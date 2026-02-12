@@ -137,6 +137,15 @@ export interface TextAnnotationElement {
   }
 }
 
+// Scale state for measurement tools
+export interface ScaleState {
+  pixelsPerInch: number      // e.g., 96 means 96px = 1 inch
+  unit: 'inches' | 'feet'    // Display unit preference
+  label: string               // e.g., '1" = 10'' - user-friendly format
+  lastUpdatedBy: string       // userId for conflict avoidance
+  timestamp: number          // For change detection
+}
+
 export interface ImageElement {
   src: string
   x: number
@@ -172,7 +181,7 @@ export interface SharedViewportState extends ViewportState {
 }
 
 // Drawing Tool Types
-export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser'
+export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser' | 'measure-distance' | 'measure-area'
 
 export interface ToolSettings {
   tool: DrawingTool
