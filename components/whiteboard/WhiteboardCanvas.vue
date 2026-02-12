@@ -573,6 +573,7 @@ const {
   disablePan,
   startPan,
   stopPan,
+  setViewportDirect,
   applyRemoteViewport,
 } = useViewport({
   stageRef,
@@ -635,6 +636,13 @@ watch(visibleLayers, (layers) => {
 
 // Drawing state
 const isDrawing = ref(false)
+
+// Gesture state for two-finger pan
+const gestureState = ref({
+  isPanning: false,
+  initialPositions: [] as Array<{x: number, y: number}>,
+  lastViewport: { x: 0, y: 0, zoom: 1 },
+})
 const currentStrokePoints = ref<[number, number, number][]>([])
 const currentStrokeId = ref<string | null>(null)
 
@@ -1336,16 +1344,76 @@ function handleDragEnd(event: any) {
 
 // Touch handlers
 function handleTouchStart(event: any) {
-  event.evt.preventDefault()
-  handleMouseDown(event)
+  const touches = event.evt.touches
+  const touchCount = touches.length
+
+  // Two-finger pan gesture
+  if (touchCount === 2) {
+    // Enter pan mode
+    gestureState.value.isPanning = true
+    gestureState.value.initialPositions = [
+      { x: touches[0].clientX, y: touches[0].clientY },
+      { x: touches[1].clientX, y: touches[1].clientY },
+    ]
+    gestureState.value.lastViewport = { x: viewport.value.x, y: viewport.value.y, zoom: viewport.value.zoom }
+    event.evt.preventDefault()
+    return
+  }
+
+  // Single touch - proceed to drawing
+  if (touchCount === 1) {
+    event.evt.preventDefault()
+    handleMouseDown(event)
+    return
+  }
 }
 
 function handleTouchMove(event: any) {
-  event.evt.preventDefault()
-  handleMouseMove(event)
+  const touches = event.evt.touches
+  const touchCount = touches.length
+
+  // Handle two-finger pan
+  if (gestureState.value.isPanning && touchCount === 2) {
+    const currentPositions = [
+      { x: touches[0].clientX, y: touches[0].clientY },
+      { x: touches[1].clientX, y: touches[1].clientY },
+    ]
+
+    // Calculate delta from first finger movement
+    const deltaX = currentPositions[0].x - gestureState.value.initialPositions[0].x
+    const deltaY = currentPositions[0].y - gestureState.value.initialPositions[0].y
+
+    // Update viewport directly (no sync during gesture)
+    setViewportDirect({
+      x: gestureState.value.lastViewport.x + deltaX,
+      y: gestureState.value.lastViewport.y + deltaY,
+    })
+
+    event.evt.preventDefault()
+    return
+  }
+
+  // Single touch - proceed to drawing
+  if (touchCount === 1) {
+    event.evt.preventDefault()
+    handleMouseMove(event)
+    return
+  }
 }
 
 function handleTouchEnd(event: any) {
+  const touches = event.evt.touches
+  const touchCount = touches.length
+
+  // Exit pan mode if less than 2 touches
+  if (touchCount < 2) {
+    if (gestureState.value.isPanning) {
+      gestureState.value.isPanning = false
+      gestureState.value.initialPositions = []
+    }
+  }
+
+  // Always call handleMouseUp for proper cleanup
   event.evt.preventDefault()
   handleMouseUp(event)
 }
@@ -2089,4 +2157,11 @@ defineExpose({
   getStaleMeasurements,
 })
 </script>
+
+<style scoped>
+.whiteboard-container {
+  touch-action: none;
+  /* Prevent browser default gestures like pinch-zoom and scroll */
+}
+</style>
 
