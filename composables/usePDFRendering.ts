@@ -1,4 +1,5 @@
-import type { PDFDocumentProxy, PDFPageProxy, PDFRenderOptions, PDFLoadingState } from '~/types'
+import type { PDFLoadingState } from '~/types'
+import type * as PDFJS from 'pdfjs-dist'
 
 // Default scale for PDF rendering (higher = better quality, larger images)
 const DEFAULT_SCALE = 1.5
@@ -14,7 +15,7 @@ async function loadPDFDocument(
     onProgress?: (state: PDFLoadingState) => void
     signal?: AbortSignal
   } = {}
-): Promise<PDFDocumentProxy> {
+): Promise<PDFJS.PDFDocumentProxy> {
   const { onProgress, signal } = options
   const pdfjsLib = await import('pdfjs-dist')
 
@@ -82,7 +83,7 @@ async function loadPDFDocument(
  * Supports cancellation via AbortSignal
  */
 async function renderPageToImage(
-  page: PDFPageProxy,
+  page: PDFJS.PDFPageProxy,
   options: {
     scale?: number
     onProgress?: (percent: number) => void
@@ -113,7 +114,7 @@ async function renderPageToImage(
   const renderTask = page.render({
     canvasContext: context,
     viewport: viewport,
-  })
+  } as any)
 
   // Set up abort handler for render task
   const abortHandler = () => {
@@ -196,7 +197,7 @@ async function loadAndRenderPage(
  * Cleanup PDF resources to prevent memory leaks
  * Call this when done with a PDF document
  */
-function cleanupPDFDocument(pdfDocument: PDFDocumentProxy | null) {
+function cleanupPDFDocument(pdfDocument: PDFJS.PDFDocumentProxy | null) {
   pdfDocument?.cleanup()
 }
 

@@ -4,7 +4,7 @@ import path from 'path'
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads')
 
 export default defineEventHandler(async (event) => {
-  const filename = event.context.params.filename
+  const filename = event.context.params?.filename
 
   if (!filename) {
     throw createError({

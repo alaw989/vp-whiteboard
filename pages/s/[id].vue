@@ -24,10 +24,11 @@
 </template>
 
 <script setup lang="ts">
-import type { Session } from '~/types'
+import type { Session, ApiResponse } from '~/types'
 
 const route = useRoute()
-const shortId = route.params.id as string
+// Nuxt route params have complex union types - using any for dynamic param access
+const shortId = String((route.params as any).id || '')
 
 const { data, pending, error } = await useFetch<ApiResponse<Session>>(`/api/session/${shortId}`)
 const session = computed(() => data.value?.success ? data.value.data : null)

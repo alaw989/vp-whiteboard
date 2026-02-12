@@ -10,7 +10,7 @@
 
       <!-- Name label -->
       <div class="cursor-label" :style="labelStyle">
-        {{ presence.user?.name || 'Guest' }}
+        {{ presence.name || 'Guest' }}
       </div>
     </div>
   </ClientOnly>
@@ -25,11 +25,11 @@ const props = defineProps<{
 
 // Position style - using raw canvas coordinates
 const cursorStyle = computed(() => ({
-  position: 'absolute',
+  position: 'absolute' as const,
   left: `${props.presence.cursor?.x || 0}px`,
   top: `${props.presence.cursor?.y || 0}px`,
   zIndex: 1000,
-  pointerEvents: 'none', // Don't interfere with canvas clicks
+  pointerEvents: 'none' as const, // Don't interfere with canvas clicks
   transition: 'left 0.1s ease-out, top 0.1s ease-out',
 }))
 

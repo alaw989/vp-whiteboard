@@ -48,7 +48,7 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const response: ApiResponse = {
+    const response: ApiResponse<unknown> = {
       success: true,
       data: whiteboard,
     }
@@ -59,7 +59,7 @@ export default defineEventHandler(async (event) => {
       throw error
     }
 
-    const response: ApiResponse = {
+    const response: ApiResponse<unknown> = {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to update whiteboard',
     }

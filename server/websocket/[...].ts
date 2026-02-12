@@ -2,37 +2,36 @@
 // This route enables Yjs y-websocket to work with Nitro
 // Configured for instant retry reconnection (no exponential backoff)
 
-import { WebSocketServer, WebSocket } from 'ws'
-import { parse } from 'querystring'
+import type { Peer } from 'crossws'
 
 // Store active connections
-const connections = new Map<string, Set<any>>()
+const connections = new Map<string, Set<Peer>>()
 
 // Store user info per connection
-const connectionUsers = new Map<any, { userId: string; userName: string; lastHeartbeat: number }>()
+const connectionUsers = new Map<Peer, { userId: string; userName: string; lastHeartbeat: number }>()
 
 export default defineWebSocketHandler({
-  // Configure heartbeat for connection health monitoring
-  heartbeat: {
-    interval: 30000, // 30 seconds
-    message: JSON.stringify({ type: 'ping' }),
-  },
-
   async open(peer) {
-    const url = new URL(peer.url || '', `ws://${peer.headers?.host || 'localhost'}`)
+    const url = new URL(peer.request.url || '', `ws://${peer.request.headers?.get('host') || 'localhost'}`)
     const pathname = url.pathname
 
     // Extract room/whiteboard ID from pathname
     // Expected format: /ws/whiteboard:{id} or /ws/{id}
     const match = pathname.match(/(?:whiteboard:)?([^/]+)$/)
-    const roomId = match ? match[1] : 'default'
+    const roomId = match && match[1] ? match[1] : 'default'
 
     // Get user info from query params
-    const userId = url.searchParams.get('userId') || 'anonymous'
-    const userName = url.searchParams.get('userName') || 'Anonymous'
+    const userId = url.searchParams.get('userId')
+    const userName = url.searchParams.get('userName')
 
     // Store user info with heartbeat timestamp
-    connectionUsers.set(peer, { userId, userName, lastHeartbeat: Date.now() })
+    const userIdVal: string = (userId as any) || 'anonymous'
+    const userNameVal: string = (userName as any) || 'Anonymous'
+    connectionUsers.set(peer, {
+      userId: userIdVal,
+      userName: userNameVal,
+      lastHeartbeat: Date.now()
+    })
 
     // Add to room
     if (!connections.has(roomId)) {
@@ -46,8 +45,8 @@ export default defineWebSocketHandler({
     // Notify others in room
     peer.publish(roomId, {
       type: 'user-joined',
-      userId,
-      userName,
+      userId: userIdVal,
+      userName: userNameVal,
       timestamp: Date.now(),
     })
 
@@ -55,7 +54,7 @@ export default defineWebSocketHandler({
     peer.send(JSON.stringify({
       type: 'connected',
       roomId,
-      userId,
+      userId: userIdVal,
       userCount: connections.get(roomId)?.size || 0,
       // Indicate instant retry is supported
       instantRetry: true,
@@ -79,12 +78,12 @@ export default defineWebSocketHandler({
       }
 
       // Get room from subscriptions
-      const url = new URL(peer.url || '', `ws://${peer.headers?.host || 'localhost'}`)
+      const url = new URL(peer.request.url || '', `ws://${peer.request.headers?.get('host') || 'localhost'}`)
       const pathname = url.pathname
       const match = pathname.match(/(?:whiteboard:)?([^/]+)$/)
-      const roomId = match ? match[1] : 'default'
+      const roomId = match && match[1] ? match[1] : 'default'
 
-      // Forward message to room (Yjs handles the actual CRDT logic)
+      // Forward message to room (Yjs handles actual CRDT logic)
       peer.publish(roomId, data)
     } catch (error) {
       console.error('WebSocket message error:', error)

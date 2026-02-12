@@ -12,6 +12,7 @@ export interface CursorState {
     y: number
   }
   tool?: DrawingTool
+  lastSeen: number
 }
 
 export function useCursors(
@@ -52,6 +53,7 @@ export function useCursors(
           user: state.user,
           cursor: state.cursor,
           tool: state.tool,
+          lastSeen: Date.now(),
         })
       }
     })
@@ -123,5 +125,5 @@ function getUserColor(userId: string): string {
   for (let i = 0; i < userId.length; i++) {
     hash = userId.charCodeAt(i) + ((hash << 5) - hash)
   }
-  return colors[Math.abs(hash) % colors.length]
+  return colors[Math.abs(hash) % colors.length]!
 }

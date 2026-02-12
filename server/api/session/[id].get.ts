@@ -86,7 +86,7 @@ export default defineEventHandler(async (event) => {
       throw error
     }
 
-    const response: ApiResponse = {
+    const response: ApiResponse<unknown> = {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to fetch session',
     }

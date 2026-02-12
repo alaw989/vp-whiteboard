@@ -160,7 +160,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
 
   // Active strokes map for real-time stroke broadcasting
   // Strokes are stored here while being drawn, moved to yElements on completion
-  const yActiveStrokes = ydoc.getMap<Record<string, [number, number, number][]>>('activeStrokes')
+  const yActiveStrokes = ydoc.getMap<[number, number, number][]>('activeStrokes')
 
   // Local reactive ref for observing remote active strokes (filtered to exclude own strokes)
   const activeStrokes = ref<Record<string, [number, number, number][]>>({})
@@ -286,9 +286,9 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         }
 
         const points = yActiveStrokes.get(strokeId)
-        if (points && points.length > 0) {
+        if (points && points.length! > 0) {
           // Add or update remote active stroke
-          activeStrokes.value[strokeId] = points
+          activeStrokes.value[strokeId] = points!
         } else {
           // Remove stroke (completed or deleted)
           delete activeStrokes.value[strokeId]
@@ -468,7 +468,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
    */
   function startActiveStroke(strokeId: string) {
     ydoc.transact(() => {
-      yActiveStrokes.set(strokeId, [])
+      yActiveStrokes.set(strokeId, [] as [number, number, number][])
     }, userId)
   }
 
@@ -495,7 +495,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
 
     ydoc.transact(() => {
       const existing = yActiveStrokes.get(strokeId) || []
-      yActiveStrokes.set(strokeId, [...existing, point])
+      yActiveStrokes.set(strokeId, [...(existing as [number, number, number][]), point])
     }, userId)
   }
 
@@ -559,10 +559,10 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
 
 // Helper: Get consistent color for user
 function getUserColor(userId: string): string {
-  const colors = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899']
+  const colors = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899'] as const
   let hash = 0
   for (let i = 0; i < userId.length; i++) {
     hash = userId.charCodeAt(i) + ((hash << 5) - hash)
   }
-  return colors[Math.abs(hash) % colors.length]
+  return colors[Math.abs(hash) % colors.length]!
 }

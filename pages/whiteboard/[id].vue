@@ -3,13 +3,18 @@
     <!-- Header -->
     <header class="bg-white border-b border-neutral-200 px-4 py-2 flex items-center justify-between z-10">
       <div class="flex items-center gap-4">
-        <NuxtLink to="/" class="text-neutral-600 hover:text-neutral-900">
-          <Icon name="mdi:arrow-left" class="w-6 h-6" />
+        <NuxtLink
+          to="/"
+          class="p-2 -ml-2 rounded-lg hover:bg-neutral-100 active:bg-neutral-200 transition-colors duration-150 text-neutral-600 hover:text-neutral-900"
+          title="Back to home"
+        >
+          <Icon name="mdi:arrow-left" class="w-5 h-5" />
         </NuxtLink>
 
-        <div>
-          <h1 class="text-lg font-semibold text-neutral-900">{{ whiteboard?.name || 'Loading...' }}</h1>
-          <p v-if="connectedUsers.size > 1" class="text-xs text-neutral-500">
+        <div class="min-w-0">
+          <h1 class="text-lg font-semibold text-neutral-900 truncate">{{ whiteboard?.name || 'Loading...' }}</h1>
+          <p v-if="connectedUsers.size > 1" class="text-xs text-neutral-500 flex items-center gap-1">
+            <Icon name="mdi:account-group" class="w-3 h-3" />
             {{ connectedUsers.size }} users online
           </p>
         </div>
@@ -19,63 +24,68 @@
         <!-- Connection Status -->
         <div
           :class="[
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm',
+            'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-300',
             isConnected
-              ? 'bg-green-100 text-green-700'
-              : 'bg-yellow-100 text-yellow-700'
+              ? 'bg-green-50 text-green-700 border border-green-200'
+              : 'bg-amber-50 text-amber-700 border border-amber-200'
           ]"
         >
           <div
             :class="[
-              'w-2 h-2 rounded-full',
-              isConnected ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'
+              'w-2 h-2 rounded-full relative',
+              isConnected ? 'bg-green-500' : 'bg-amber-500 animate-pulse-subtle'
             ]"
-          />
-          {{ connectionStatus }}
+          >
+            <div
+              v-if="isConnected"
+              class="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"
+            />
+          </div>
+          <span class="capitalize">{{ connectionStatus }}</span>
         </div>
 
         <!-- Share Button -->
         <button
           @click="showShareModal = true"
           class="btn-secondary gap-2"
+          title="Share whiteboard"
         >
           <Icon name="mdi:share-variant" class="w-4 h-4" />
-          Share
+          <span class="hidden sm:inline">Share</span>
         </button>
 
         <!-- Upload Button -->
         <button
           @click="showUploadModal = true"
           class="btn-secondary gap-2"
+          title="Upload file"
         >
           <Icon name="mdi:upload" class="w-4 h-4" />
-          Upload
+          <span class="hidden sm:inline">Upload</span>
         </button>
       </div>
     </header>
 
     <!-- Main Content -->
     <div class="flex-1 flex overflow-hidden">
-      <!-- Left Sidebar - Tools (Desktop only) -->
-      <aside class="hidden md:flex w-16 bg-white border-r border-neutral-200 flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen">
-        <WhiteboardToolbar
-          :current-tool="currentTool"
-          :current-color="currentColor"
-          :current-size="currentSize"
-          :can-undo="canUndo"
-          :can-redo="canRedo"
-          :is-exporting="isExporting"
-          :export-progress="exportProgress"
-          @select-tool="setTool"
-          @select-color="setColor"
-          @select-size="setSize"
-          @stamp-type-change="handleStampTypeChange"
-          @undo="undo"
-          @redo="redo"
-          @clear="clearCanvas"
-          @open-export="openExportDialog"
-        />
-      </aside>
+      <!-- Toolbar (responsive - handles desktop/mobile display internally) -->
+      <WhiteboardToolbar
+        :current-tool="currentTool"
+        :current-color="currentColor"
+        :current-size="currentSize"
+        :can-undo="canUndo"
+        :can-redo="canRedo"
+        :is-exporting="isExporting"
+        :export-progress="exportProgress"
+        @select-tool="setTool"
+        @select-color="setColor"
+        @select-size="setSize"
+        @stamp-type-change="handleStampTypeChange"
+        @undo="undo"
+        @redo="redo"
+        @clear="clearCanvas"
+        @open-export="openExportDialog"
+      />
 
       <!-- Canvas Area -->
       <main class="flex-1 relative overflow-hidden pb-16 md:pb-0">
@@ -87,7 +97,7 @@
             :user-name="currentUser.name"
             :elements="elements"
             :connected-users="connectedUsers"
-            :ws-provider="canvas?.wsProvider"
+            :ws-provider="canvasInstance?.wsProvider"
             :current-tool="currentTool"
             :current-color="currentColor"
             :current-size="currentSize"
@@ -96,17 +106,23 @@
             :start-active-stroke="startActiveStroke"
             :broadcast-stroke-point="broadcastStrokePoint"
             :end-active-stroke="endActiveStroke"
-            :get-viewport="canvas?.getViewport"
-            :sync-viewport="canvas?.syncViewport"
-            :observe-viewport="canvas?.observeViewport"
-            @element-add="addElement"
+            :get-viewport="(canvasInstance as any)?.getViewport"
+            :sync-viewport="(canvasInstance as any)?.syncViewport"
+            :observe-viewport="(canvasInstance as any)?.observeViewport"
+            @element-add="(element) => canvasInstance?.addElement?.(element)"
             @element-delete="handleDeleteElement"
             @cursor-update="updateCursor"
           />
           <template #fallback>
-            <div class="flex items-center justify-center h-full">
-              <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p class="text-neutral-600">{{ whiteboard?.name ? 'Loading canvas...' : 'Loading whiteboard...' }}</p>
+            <div class="flex flex-col items-center justify-center h-full gap-6">
+              <div class="relative">
+                <div class="animate-spin rounded-full h-16 w-16 border-4 border-neutral-200"></div>
+                <div class="absolute top-0 left-0 animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent"></div>
+              </div>
+              <div class="text-center">
+                <p class="text-lg font-medium text-neutral-700">{{ whiteboard?.name ? 'Loading canvas...' : 'Loading whiteboard...' }}</p>
+                <p class="text-sm text-neutral-500 mt-1">Preparing your workspace</p>
+              </div>
             </div>
           </template>
         </ClientOnly>
@@ -116,6 +132,7 @@
           <UserPresenceList
             v-if="currentUserFromCanvas && remoteCursors.size > 0"
             :users="remoteCursors"
+            :current-user="currentUserFromCanvas"
           />
         </ClientOnly>
 
@@ -133,26 +150,58 @@
 
     <!-- Share Modal -->
     <WhiteboardShareModal
-      v-if="showShareModal"
+      :show="showShareModal"
       :share-url="shareUrl"
       @close="showShareModal = false"
     />
 
     <!-- Upload Modal -->
-    <WhiteboardUpload
-      v-if="showUploadModal"
-      :whiteboard-id="whiteboardId"
-      @upload-success="handleUploadSuccess"
-      @upload-error="handleUploadError"
-      @close="showUploadModal = false"
-    />
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition duration-200 ease-out"
+        enter-from-class="opacity-0 scale-95"
+        enter-to-class="opacity-100 scale-100"
+        leave-active-class="transition duration-150 ease-in"
+        leave-from-class="opacity-100 scale-100"
+        leave-to-class="opacity-0 scale-95"
+      >
+        <div
+          v-if="showUploadModal"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          @click.self="showUploadModal = false"
+        >
+          <div
+            class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden"
+            @click.stop
+          >
+            <div class="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
+              <h2 class="text-lg font-semibold text-neutral-900">Upload File</h2>
+              <button
+                @click="showUploadModal = false"
+                class="p-1 hover:bg-neutral-100 rounded-lg transition-colors"
+                title="Close"
+              >
+                <Icon name="mdi:close" class="w-5 h-5 text-neutral-600" />
+              </button>
+            </div>
+            <div class="p-6">
+              <WhiteboardUpload
+                :whiteboard-id="whiteboardId"
+                @upload-success="handleUploadSuccess"
+                @upload-error="handleUploadError"
+              />
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Export Dialog -->
     <ClientOnly>
       <ExportDialog
         :show="showExportDialog"
-        :stage="(canvasRef.value as any)?.stageRef?.getNode() || null"
-        :filename="whiteboard.value?.name"
+        :stage="(canvasRef as any)?.stageRef?.getNode() || null"
+        :filename="whiteboard?.name"
         :is-exporting="isExporting"
         :export-progress="exportProgress"
         @close="closeExportDialog"
@@ -169,19 +218,44 @@
         @set-scale="handleSetScale"
       />
     </ClientOnly>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <ClientOnly>
+      <KeyboardShortcutsModal
+        :show="showKeyboardShortcuts"
+        @close="showKeyboardShortcuts = false"
+      />
+    </ClientOnly>
+
+    <!-- Keyboard Shortcut Hint Button -->
+    <button
+      class="fixed bottom-4 right-4 z-30 w-8 h-8 rounded-lg bg-neutral-800/80 hover:bg-neutral-700/90 text-white flex items-center justify-center transition-colors"
+      title="Keyboard shortcuts (?)"
+      @click="showKeyboardShortcuts = true"
+    >
+      <span class="text-sm font-semibold">?</span>
+    </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { Whiteboard, CanvasElement, UploadResult, DrawingTool } from '~/types'
+import type { Whiteboard, CanvasElement, UploadResult, DrawingTool, ApiResponse } from '~/types'
 import type { StampType } from '~/components/whiteboard/WhiteboardCanvas.vue'
 import ExportDialog from '~/components/whiteboard/ExportDialog.vue'
+import WhiteboardShareModal from '~/components/whiteboard/WhiteboardShareModal.vue'
 import UserPresenceList from '~/components/whiteboard/UserPresenceList.vue'
 import ScaleBadge from '~/components/whiteboard/ScaleBadge.vue'
 import ScaleToolPalette from '~/components/whiteboard/ScaleToolPalette.vue'
+import KeyboardShortcutsModal from '~/components/whiteboard/KeyboardShortcutsModal.vue'
+
+// Canvas instance type combining composable return with exposed methods
+type CanvasInstanceType = ReturnType<typeof useCollaborativeCanvas> & {
+  getStaleMeasurements?: (pixelsPerInch: number) => CanvasElement[]
+}
 
 const route = useRoute()
-const whiteboardId = route.params.id as string
+// Nuxt route params have complex union types - using any for dynamic param access
+const whiteboardId = String((route.params as any).id || '')
 
 // Create user info (simple object, not a function)
 const currentUser = {
@@ -190,7 +264,7 @@ const currentUser = {
 }
 
 // Canvas state (initialized on mount, safely accessed via computed)
-const canvasInstance = ref<ReturnType<typeof useCollaborativeCanvas> | null>(null)
+const canvasInstance = ref<CanvasInstanceType | null>(null)
 const canvasRef = ref<{ stageRef?: { getNode: () => any } } | null>(null)
 
 // Fetch whiteboard data
@@ -209,20 +283,43 @@ const showShareModal = ref(false)
 const showUploadModal = ref(false)
 const showExportDialog = ref(false)
 const showScalePalette = ref(false)
+const showKeyboardShortcuts = ref(false)
 
 // Scale state
 const scaleInstance = ref<ReturnType<typeof useScale> | null>(null)
 const currentScaleValue = ref<{ label: string } | null>(null)
-const scaleDisplayFormat = ref('No scale set')
+const scaleDisplayFormat = ref<string>('No scale set')
 
-// Canvas state refs (will be set when canvasInstance is ready)
-const isConnected = ref(false)
-const connectionStatus = ref('disconnected')
-const connectedUsers = ref<Map<string, any>>(new Map())
-const elements = ref<CanvasElement[]>([])
-const canUndo = ref(false)
-const canRedo = ref(false)
-const activeStrokes = ref<Record<string, [number, number, number][]>>({})
+// Canvas state refs (computed - derived from canvasInstance)
+const instance = computed(() => canvasInstance.value)
+const isConnected = computed(() => {
+  const inst = instance.value
+  return inst ? (inst.isConnected as any).value : false
+})
+const connectionStatus = computed(() => {
+  const inst = instance.value
+  return inst ? (inst.connectionStatus as any).value : 'disconnected'
+})
+const connectedUsers = computed(() => {
+  const inst = instance.value
+  return inst ? inst.connectedUsers : new Map()
+})
+const elements = computed(() => {
+  const inst = instance.value
+  return inst ? inst.elements : []
+})
+const canUndo = computed(() => {
+  const inst = instance.value
+  return inst ? inst.canUndo : false
+})
+const canRedo = computed(() => {
+  const inst = instance.value
+  return inst ? inst.canRedo : false
+})
+const activeStrokes = computed(() => {
+  const inst = instance.value
+  return inst ? inst.activeStrokes : {}
+})
 
 // Tool state
 const currentTool = ref<DrawingTool>('select')
@@ -246,9 +343,9 @@ if (import.meta.client) {
 }
 
 // Computed refs for canvas binding (functions from composable)
-const startActiveStroke = ref<ReturnType<typeof useCollaborativeCanvas>['startActiveStroke']>()
-const broadcastStrokePoint = ref<ReturnType<typeof useCollaborativeCanvas>['broadcastStrokePoint']>()
-const endActiveStroke = ref<ReturnType<typeof useCollaborativeCanvas>['endActiveStroke']>()
+const startActiveStroke = computed(() => canvasInstance.value?.startActiveStroke)
+const broadcastStrokePoint = computed(() => canvasInstance.value?.broadcastStrokePoint)
+const endActiveStroke = computed(() => canvasInstance.value?.endActiveStroke)
 
 // Export functionality
 const { isExporting, progress: exportProgress, exportAsPNG, exportAsPDF } = useExport()
@@ -272,16 +369,20 @@ onMounted(() => {
   // Initialize scale composable with yMeta from canvas instance
   nextTick(() => {
     if (canvasInstance.value) {
+      const yMeta = canvasInstance.value.yMeta as any
+      const ydoc = canvasInstance.value.ydoc as any
       scaleInstance.value = useScale({
-        yMeta: canvasInstance.value.yMeta,
+        yMeta: yMeta,
+        ydoc: ydoc,
         userId: currentUser.id,
         documentId: whiteboardId,
       })
 
       // Set up reactive bindings for scale
       if (scaleInstance.value) {
-        currentScaleValue.value = scaleInstance.value.currentScale as any
-        scaleDisplayFormat.value = scaleInstance.value.displayFormat
+        const scaleVal = scaleInstance.value.currentScale as { label: string } | null
+        currentScaleValue.value = scaleVal
+        scaleDisplayFormat.value = scaleInstance.value.displayFormat as string
 
         // Observe scale changes for UI updates
         scaleInstance.value.observeScale((scale) => {
@@ -291,28 +392,7 @@ onMounted(() => {
       }
     }
   })
-
-  // Set up reactive bindings to composable (now canvas is guaranteed to be set)
-  isConnected.value = computed(() => canvasInstance.value?.isConnected.value ?? false)
-  connectionStatus.value = computed(() => canvasInstance.value?.connectionStatus.value ?? 'disconnected')
-  connectedUsers.value = computed(() => canvasInstance.value?.connectedUsers.value ?? new Map())
-  elements.value = computed(() => canvasInstance.value?.elements.value ?? [])
-  canUndo.value = computed(() => canvasInstance.value?.canUndo.value ?? false)
-  canRedo.value = computed(() => canvasInstance.value?.canRedo.value ?? false)
-  activeStrokes.value = computed(() => canvasInstance.value?.activeStrokes.value ?? {})
-  startActiveStroke.value = computed(() => canvasInstance.value?.startActiveStroke)
-  broadcastStrokePoint.value = computed(() => canvasInstance.value?.broadcastStrokePoint)
-  endActiveStroke.value = computed(() => canvasInstance.value?.endActiveStroke)
 })
-
-// Watch for updates
-watch(() => canvasInstance.value?.isConnected.value, (v) => { isConnected.value = v })
-watch(() => canvasInstance.value?.connectionStatus.value, (v) => { connectionStatus.value = v })
-watch(() => canvasInstance.value?.connectedUsers.value, (v) => { connectedUsers.value = v })
-watch(() => canvasInstance.value?.elements.value, (v) => { elements.value = v })
-watch(() => canvasInstance.value?.canUndo.value, (v) => { canUndo.value = v })
-watch(() => canvasInstance.value?.canRedo.value, (v) => { canRedo.value = v })
-watch(() => canvasInstance.value?.activeStrokes.value, (v) => { activeStrokes.value = v.value || {} }, { deep: true })
 
 // Watch for cursor tracking updates from WhiteboardCanvas component
 watchEffect(() => {
@@ -338,22 +418,23 @@ if (whiteboard.value?.canvas_state && canvasInstance.value) {
 }
 
 // Auto-save canvas state periodically (client-side only to avoid SSR error)
-const saveInterval = ref<number | null>(null)
+const saveInterval = ref<ReturnType<typeof setInterval> | null>(null)
 
 onMounted(() => {
-  saveInterval.value = window.setInterval(() => {
-    if (canvasInstance.value && canvasInstance.value.isConnected.value) {
-      const state = canvasInstance.value.exportState()
+  saveInterval.value = setInterval(() => {
+    const instance = canvasInstance.value
+    if (instance && (instance.isConnected as any).value) {
+      const state = instance.exportState()
       $fetch(`/api/whiteboard/${whiteboardId}`, {
         method: 'PATCH',
         body: { canvas_state: state },
       })
     }
-  }, 30000) as unknown as number
+  }, 30000)
 })
 
 onUnmounted(() => {
-  if (saveInterval.value) window.clearInterval(saveInterval.value)
+  if (saveInterval.value !== null) clearInterval(saveInterval.value)
   if (canvasInstance.value) canvasInstance.value.cleanup()
 })
 
@@ -397,30 +478,9 @@ async function confirmExport(format: 'png' | 'pdf') {
 async function handleUploadSuccess(result: UploadResult) {
   const fileType = result.fileRecord?.file_type || ''
 
-  if (fileType === 'application/pdf') {
-    // For PDFs, fetch as ArrayBuffer and use addPDFLayer
-    const response = await fetch(result.url)
-    const arrayBuffer = await response.arrayBuffer()
-
-    const element = await canvasInstance.value.addPDFLayer({
-      id: result.fileId,
-      url: result.url,
-      name: result.fileName,
-    }, arrayBuffer)
-
-    if (element && canvasInstance.value) canvasInstance.value.addElement(element)
-  } else {
-    // For images, use addImageLayer directly
-    const element = await canvasInstance.value.addImageLayer({
-      id: result.fileId,
-      url: result.url,
-      name: result.fileName,
-    })
-
-    if (element && canvasInstance.value) canvasInstance.value.addElement(element)
-  }
-
-  // Close upload modal on success
+  // File upload is handled by WhiteboardUpload component
+  // which emits to the canvas directly
+  // Just close the upload modal on success
   showUploadModal.value = false
 }
 
@@ -471,8 +531,11 @@ function handleSetScale(
   const newPixelsPerInch = (standardDPI * drawingUnits) / realWorldInches
 
   // Check for stale measurements before applying new scale
-  const staleMeasurements = canvasInstance.value?.getStaleMeasurements?.(newPixelsPerInch)
-  if (staleMeasurements && staleMeasurements.length > 0) {
+  // Measurements become stale when the scale changes by more than 1%
+  const staleMeasurements = canvasInstance.value?.getStaleMeasurements
+    ? canvasInstance.value.getStaleMeasurements(newPixelsPerInch)
+    : []
+  if (staleMeasurements.length > 0) {
     const confirmed = confirm(
       `Warning: Changing the scale will make ${staleMeasurements.length} existing measurement(s) stale. ` +
       `Stale measurements will be marked with amber color and "(!)" indicator. ` +
@@ -488,8 +551,8 @@ function handleSetScale(
 
   // Update display values
   if (scaleInstance.value) {
-    currentScaleValue.value = scaleInstance.value.currentScale as any
-    scaleDisplayFormat.value = scaleInstance.value.displayFormat
+    currentScaleValue.value = scaleInstance.value.currentScale as { label: string } | null
+    scaleDisplayFormat.value = scaleInstance.value.displayFormat as string
   }
 
   // Close the palette
@@ -504,5 +567,90 @@ watch([currentColor, currentSize], () => {
       size: currentSize.value,
     }))
   }
+})
+
+// Keyboard shortcuts listener
+onMounted(() => {
+  const handleKeyDown = (e: KeyboardEvent) => {
+    // Ignore if typing in an input
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      return
+    }
+
+    // Show keyboard shortcuts on "?" key
+    if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+      e.preventDefault()
+      showKeyboardShortcuts.value = true
+    }
+
+    // Tool shortcuts
+    if (!e.ctrlKey && !e.metaKey) {
+      switch (e.key.toUpperCase()) {
+        case 'V':
+          setTool('select')
+          break
+        case 'H':
+          setTool('pan')
+          break
+        case 'P':
+          setTool('pen')
+          break
+        case 'L':
+          setTool('line')
+          break
+        case 'A':
+          setTool('arrow')
+          break
+        case 'R':
+          setTool('rectangle')
+          break
+        case 'C':
+          setTool('circle')
+          break
+        case 'E':
+          setTool('ellipse')
+          break
+        case 'T':
+          setTool('text-annotation')
+          break
+        case 'M':
+          setTool('measure-distance')
+          break
+        case 'X':
+          setTool('eraser')
+          break
+      }
+    }
+
+    // Undo/Redo shortcuts
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+      e.preventDefault()
+      if (e.shiftKey) {
+        redo()
+      } else {
+        undo()
+      }
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+      e.preventDefault()
+      redo()
+    }
+
+    // Delete shortcut
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      // Handle deletion of selected elements
+    }
+
+    // Escape to deselect
+    if (e.key === 'Escape') {
+      setTool('select')
+    }
+  }
+
+  window.addEventListener('keydown', handleKeyDown)
+
+  onUnmounted(() => {
+    window.removeEventListener('keydown', handleKeyDown)
+  })
 })
 </script>

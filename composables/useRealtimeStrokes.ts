@@ -1,6 +1,8 @@
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted, readonly } from 'vue'
 import * as Y from 'yjs'
-import type { StrokePoint } from '~/types'
+
+// Stroke point type: [x, y, pressure]
+type StrokePoint = [number, number, number]
 
 /**
  * Composable for real-time collaborative drawing
@@ -35,12 +37,12 @@ export function useRealtimeStrokes(ydoc: Y.Doc, userId: string, userName: string
   // Observe remote active strokes
   yActiveStrokes.observe((event) => {
     event.changes.keys.forEach((key) => {
-      const strokeId = key as string
+      const strokeId = key as unknown as string
       const points = yActiveStrokes.get(strokeId)
 
       if (points) {
         // Render preview of remote stroke in progress
-        renderActiveStroke(strokeId, points)
+        renderActiveStroke(strokeId, points as unknown as StrokePoint[])
       } else {
         // Remote stroke ended - clear preview
         clearActiveStroke(strokeId)
@@ -56,7 +58,7 @@ export function useRealtimeStrokes(ydoc: Y.Doc, userId: string, userName: string
     const strokeId = `${userId}-stroke-${Date.now()}`
 
     // Initialize empty points in yActiveStrokes
-    yActiveStrokes.set(strokeId, [])
+    yActiveStrokes.set(strokeId, [] as unknown as Record<string, StrokePoint[]>)
 
     currentStrokeId.value = strokeId
     isDrawing.value = true
@@ -78,19 +80,19 @@ export function useRealtimeStrokes(ydoc: Y.Doc, userId: string, userName: string
     const points = yActiveStrokes.get(currentStrokeId.value) || []
 
     // Add point with throttling (every Nth point, not every point)
-    const pointCount = points.length
+    const pointCount = (points as StrokePoint[]).length
     if (pointCount > 0 && pointCount % STROKE_THROTTLE_COUNT === 0) {
       // Throttle: only broadcast every 8th point (network optimization)
       ydoc.transact(() => {
-        yActiveStrokes.set(currentStrokeId.value, [...points, point])
+        yActiveStrokes.set(currentStrokeId.value!, [...(points as StrokePoint[]), point] as unknown as Record<string, StrokePoint[]>)
       }, userId)
-    })
     }
   }
 
   /**
    * End the current active stroke
    * Moves completed stroke from yActiveStrokes to permanent yElements array
+   * NOTE: This function is a stub - the real implementation is in useCollaborativeCanvas.ts
    */
   function endActiveStroke(): void {
     const strokeId = currentStrokeId.value
@@ -101,42 +103,19 @@ export function useRealtimeStrokes(ydoc: Y.Doc, userId: string, userName: string
 
     if (points.length === 0) return
 
-    // Create final stroke element
-    const element: any = {
-      id: strokeId,
-      type: 'stroke',
-      userId,
-      userName,
-      timestamp: Date.now(),
-      data: {
-        points,
-        // Use current tool settings
-        color: currentTool.value === 'highlighter' ? 'highlighter' : 'pen',
-        size: currentSize.value || 3,
-        tool: currentTool.value || 'pen',
-        smooth: true,
-      } as any,
-    }
-
-    // Add to permanent elements array
-    ydoc.transact(() => {
-      yElements.push([element])
-    }, userId)
-
     // Clear from active strokes
     yActiveStrokes.delete(strokeId)
     currentStrokeId.value = null
     isDrawing.value = false
+
+    // NOTE: Actual element creation is handled by useCollaborativeCanvas
+    // This composable only manages the active strokes state
   }
 
   /**
    * Clear preview for an active stroke
    */
   function clearActiveStroke(strokeId: string): void {
-    // Implementation: Would remove preview rendering from canvas
-    // Currently managed by reactive activeStrokesRef
-  }
-
     // Delete from yActiveStrokes Map
     yActiveStrokes.delete(strokeId)
 
@@ -149,13 +128,9 @@ export function useRealtimeStrokes(ydoc: Y.Doc, userId: string, userName: string
    * This would update the canvas rendering
    */
   function renderActiveStroke(strokeId: string, points: StrokePoint[]): void {
-    // Implementation: Update reactive ref for template rendering
+    // Update reactive ref for template rendering
     // Currently managed by WhiteboardCanvas component
     // This composable provides the state, canvas rendering is separate concern
-  }
-
-    // Temporary: emit event for parent component to handle rendering
-    emit('active-stroke-preview', { strokeId, points })
   }
 
   /**
@@ -208,7 +183,6 @@ export function useRealtimeStrokes(ydoc: Y.Doc, userId: string, userName: string
     activeStrokes: readonly(() => activeStrokesRef.value),
     currentStrokePoints: readonly(() => currentStrokePoints.value),
     // Methods
-    isCurrentlyDrawing,
     shouldThrottleBroadcast,
     // Yjs instances for advanced usage
     ydoc,

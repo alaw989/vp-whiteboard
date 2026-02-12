@@ -4,12 +4,13 @@ import type { ScaleState } from '~/types'
 
 export interface UseScaleOptions {
   yMeta: Y.Map<any>
+  ydoc: Y.Doc
   userId: string
   documentId?: string  // For per-document scale support
 }
 
 export function useScale(options: UseScaleOptions) {
-  const { yMeta, userId, documentId } = options
+  const { yMeta, ydoc, userId, documentId } = options
 
   // Current scale state (null means no scale set)
   const currentScale = ref<ScaleState | null>(null)
@@ -132,7 +133,7 @@ export function useScale(options: UseScaleOptions) {
     }
 
     // Store in yMeta
-    yMeta.transact(() => {
+    ydoc.transact(() => {
       const scaleState: ScaleState = {
         pixelsPerInch: calculatedPixelsPerInch,
         unit: realWorldUnit === 'feet' ? 'feet' : 'inches',
@@ -142,7 +143,7 @@ export function useScale(options: UseScaleOptions) {
       }
       yMeta.set(scaleKey, scaleState)
       currentScale.value = scaleState
-    }, userId)
+    })
   }
 
   /**

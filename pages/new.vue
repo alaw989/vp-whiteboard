@@ -135,7 +135,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Whiteboard } from '~/types'
+import type { Whiteboard, ApiResponse } from '~/types'
 
 const router = useRouter()
 

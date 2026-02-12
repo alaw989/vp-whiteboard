@@ -363,6 +363,7 @@
             color: cursorState.user.color,
             cursor: cursorState.cursor,
             tool: cursorState.tool,
+            lastSeen: cursorState.lastSeen,
           }"
         />
       </template>
@@ -543,6 +544,7 @@ const {
   getStaleMeasurements,
   updateMeasurementEndpoint,
   updateMeasurementValue,
+  findAreaMeasurementsFor,
 } = useMeasurements({
   yElements: yElementsProxy,
   userId: props.userId,
@@ -551,7 +553,7 @@ const {
 })
 
 // Snapping composable
-const { findSnapPoint, clearSnapPoint } = useSnapping({ threshold: 10 })
+const { findSnapPoint } = useSnapping({ threshold: 10 })
 
 // Selection composable
 const {
@@ -660,13 +662,15 @@ function getElementBoundingBox(element: CanvasElement): { left: number; right: n
       if (points.length === 0) {
         bbox = { left: 0, right: 0, top: 0, bottom: 0 }
       } else {
-        let minX = points[0][0], maxX = points[0][0]
-        let minY = points[0][1], maxY = points[0][1]
+        const first = points[0]!
+        let minX = first[0], maxX = first[0]
+        let minY = first[1], maxY = first[1]
         for (let i = 1; i < points.length; i++) {
-          minX = Math.min(minX, points[i][0])
-          maxX = Math.max(maxX, points[i][0])
-          minY = Math.min(minY, points[i][1])
-          maxY = Math.max(maxY, points[i][1])
+          const p = points[i]!
+          minX = Math.min(minX, p[0])
+          maxX = Math.max(maxX, p[0])
+          minY = Math.min(minY, p[1])
+          maxY = Math.max(maxY, p[1])
         }
         // Add padding for stroke width
         const padding = data.size / 2 + 10
@@ -702,13 +706,15 @@ function getElementBoundingBox(element: CanvasElement): { left: number; right: n
       if (points.length < 2) {
         bbox = { left: 0, right: 0, top: 0, bottom: 0 }
       } else {
-        let minX = points[0][0], maxX = points[0][0]
-        let minY = points[0][1], maxY = points[0][1]
-        for (let i = 2; i < points.length; i += 2) {
-          minX = Math.min(minX, points[i])
-          maxX = Math.max(maxX, points[i])
-          minY = Math.min(minY, points[i + 1])
-          maxY = Math.max(maxY, points[i + 1])
+        const first = points[0]!
+        let minX = first[0], maxX = first[0]
+        let minY = first[1], maxY = first[1]
+        for (let i = 1; i < points.length; i++) {
+          const p = points[i]!
+          minX = Math.min(minX, p[0])
+          maxX = Math.max(maxX, p[0])
+          minY = Math.min(minY, p[1])
+          maxY = Math.max(maxY, p[1])
         }
         // Add padding for arrowhead and stroke
         const padding = Math.max(data.pointerLength, data.strokeWidth) + 10
@@ -1060,7 +1066,7 @@ function handleKeyDown(event: KeyboardEvent) {
 
         // Also clean up any area measurements linked to this element
         const areaMeasurementIds = findAreaMeasurementsFor(id)
-        areaMeasurementIds.forEach(areaId => emit('element-delete', areaId))
+        areaMeasurementIds.forEach((areaId: string) => emit('element-delete', areaId))
       }
     }
   }
@@ -1119,7 +1125,7 @@ function eraseElementAt(x: number, y: number) {
   const shapes = stage.getAllIntersections({ x, y })
 
   // Filter out document layer and background
-  const canvasShapes = shapes.filter(shape => {
+  const canvasShapes = shapes.filter((shape: any) => {
     const parent = shape.getParent()
     const layer = parent?.getParent()
     return layer?.name !== 'documentLayer'
@@ -1275,8 +1281,8 @@ function handleMouseDown(event: any) {
     textAnnotationStart.value = pos
     currentLeaderLineEnd.value = pos
   } else {
-    // Other tools
-    currentStrokePoints.value = [[pos.x, pos.y]]
+    // Other tools - add default pressure of 0.5
+    currentStrokePoints.value = [[pos.x, pos.y, 0.5]]
   }
 }
 
@@ -1695,8 +1701,8 @@ function handlePointerMove(event: any) {
       // Calculate movement delta from first pointer
       // We need to track the movement, but for simplicity use current position
       // relative to the last viewport position
-      const pointer1 = pointers[0]
-      const pointer2 = pointers[1]
+      const pointer1 = pointers[0]!
+      const pointer2 = pointers[1]!
 
       // Calculate centroid
       const centerX = (pointer1.x + pointer2.x) / 2
@@ -1803,7 +1809,7 @@ function getStrokeConfig(element: CanvasElement) {
  */
 function getActiveStrokeConfig(strokeId: string, points: [number, number, number][]) {
   // Extract userId from strokeId to get user color
-  const userId = strokeId.split('-')[0]
+  const userId = strokeId.split('-')[0]!
   const userColor = getUserColor(userId)
 
   // Use perfect-freehand to render smooth stroke as filled polygon
@@ -2361,12 +2367,12 @@ function cancelAnnotation() {
  * Matches the color generation in useCollaborativeCanvas.ts
  */
 function getUserColor(userId: string): string {
-  const colors = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899']
+  const colors = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899'] as const
   let hash = 0
   for (let i = 0; i < userId.length; i++) {
     hash = userId.charCodeAt(i) + ((hash << 5) - hash)
   }
-  return colors[Math.abs(hash) % colors.length]
+  return colors[Math.abs(hash) % colors.length]!
 }
 
 /**

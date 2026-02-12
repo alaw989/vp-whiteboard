@@ -1,6 +1,7 @@
 <template>
-  <!-- Desktop Sidebar Toolbar -->
-  <div class="toolbar hidden md:flex flex-col gap-2 p-2 bg-white rounded-lg shadow-sm border border-neutral-200 overflow-y-auto">
+  <!-- Desktop Sidebar Toolbar (with wrapper for proper positioning) -->
+  <div class="hidden md:flex w-16 bg-white border-r border-neutral-200 flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen flex-shrink-0">
+    <div class="toolbar flex flex-col gap-2 p-2 bg-white rounded-lg shadow-sm border border-neutral-200 overflow-y-auto w-full scrollbar-thin">
     <!-- Drawing Tools -->
     <div class="flex flex-col gap-1">
       <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Tools</h4>
@@ -17,7 +18,7 @@
           @click="handleStampClick"
           title="Stamp (S)"
         >
-          <Icon name="mdi:stamp" class="w-5 h-5" />
+          <Icon name="mdi:certificate" class="w-5 h-5" />
         </button>
 
         <!-- Stamp type dropdown menu -->
@@ -44,12 +45,12 @@
       <button
         v-for="tool in tools"
         :key="tool.id"
-        :title="tool.name"
+        :title="`${tool.name} (${tool.shortcut})`"
         :class="[
-          'p-2 rounded-lg transition-colors',
+          'p-2 rounded-lg transition-all duration-150',
           currentTool === tool.id
-            ? 'bg-blue-100 text-blue-600'
-            : 'hover:bg-neutral-100 text-neutral-600'
+            ? 'bg-blue-100 text-blue-600 shadow-sm'
+            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
         ]"
         @click="$emit('select-tool', tool.id)"
       >
@@ -70,8 +71,10 @@
           :key="color"
           :title="color"
           :class="[
-            'w-7 h-7 rounded-md transition-transform hover:scale-110',
-            currentColor === color ? 'ring-2 ring-offset-1 ring-neutral-400' : ''
+            'w-7 h-7 rounded-md transition-all duration-150',
+            currentColor === color
+              ? 'ring-2 ring-offset-1 ring-blue-500 scale-110 shadow-sm'
+              : 'hover:scale-110 hover:shadow-sm active:scale-95'
           ]"
           :style="{ backgroundColor: color }"
           @click="$emit('select-color', color)"
@@ -82,7 +85,7 @@
       <input
         type="color"
         :value="currentColor"
-        class="w-full h-7 rounded cursor-pointer"
+        class="w-full h-7 rounded cursor-pointer transition-transform hover:scale-105"
         @input="$emit('select-color', ($event.target as HTMLInputElement).value)"
       />
     </div>
@@ -99,10 +102,10 @@
           v-for="size in sizes"
           :key="size"
           :class="[
-            'flex items-center gap-2 px-2 py-1 rounded-md transition-colors',
+            'flex items-center gap-2 px-2 py-1 rounded-md transition-all duration-150',
             currentSize === size
-              ? 'bg-blue-100 text-blue-600'
-              : 'hover:bg-neutral-100 text-neutral-600'
+              ? 'bg-blue-100 text-blue-600 shadow-sm'
+              : 'hover:bg-neutral-100 text-neutral-600 hover:scale-[1.02] active:scale-95'
           ]"
           @click="$emit('select-size', size)"
         >
@@ -125,9 +128,9 @@
       <button
         :disabled="!canUndo"
         :class="[
-          'p-2 rounded-lg transition-colors flex items-center justify-center',
+          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
           canUndo
-            ? 'hover:bg-neutral-100 text-neutral-600'
+            ? 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
             : 'opacity-40 cursor-not-allowed text-neutral-400'
         ]"
         title="Undo (Ctrl+Z)"
@@ -139,9 +142,9 @@
       <button
         :disabled="!canRedo"
         :class="[
-          'p-2 rounded-lg transition-colors flex items-center justify-center',
+          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
           canRedo
-            ? 'hover:bg-neutral-100 text-neutral-600'
+            ? 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
             : 'opacity-40 cursor-not-allowed text-neutral-400'
         ]"
         title="Redo (Ctrl+Y)"
@@ -151,7 +154,7 @@
       </button>
 
       <button
-        class="p-2 rounded-lg hover:bg-neutral-100 text-neutral-600 transition-colors"
+        class="p-2 rounded-lg hover:bg-red-50 hover:text-red-600 text-neutral-600 transition-all duration-150 hover:scale-105 active:scale-95"
         title="Clear Canvas"
         @click="$emit('clear')"
       >
@@ -169,8 +172,10 @@
       <button
         :disabled="isExporting"
         :class="[
-          'p-2 rounded-lg transition-colors',
-          isExporting ? 'animate-pulse bg-blue-100 text-blue-600' : 'hover:bg-neutral-100 text-neutral-600'
+          'p-2 rounded-lg transition-all duration-150',
+          isExporting
+            ? 'animate-pulse bg-blue-100 text-blue-600'
+            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
         ]"
         :title="isExporting ? `Exporting ${exportProgress}%` : 'Export canvas'"
         @click="$emit('open-export')"
@@ -178,11 +183,12 @@
         <Icon :name="isExporting ? 'mdi:loading' : 'mdi:download'" class="w-5 h-5" />
       </button>
     </div>
+    </div>
   </div>
 
   <!-- Mobile Bottom Sheet Toolbar -->
   <div
-    class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-20 transition-all duration-300"
+    class="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-neutral-200 z-20 transition-all duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"
     :style="{ paddingBottom: 'env(safe-area-inset-bottom, 16px)' }"
   >
     <!-- Collapsed State - Primary Tools Strip -->
@@ -194,11 +200,11 @@
       <button
         v-for="tool in primaryTools"
         :key="tool.id"
-        :title="tool.name"
+        :title="`${tool.name} (${tools.find(t => t.id === tool.id)?.shortcut || ''})`"
         :class="[
-          'w-11 h-11 rounded-lg transition-colors flex items-center justify-center',
+          'w-11 h-11 rounded-lg transition-all duration-150 flex items-center justify-center active:scale-95',
           currentTool === tool.id
-            ? 'bg-blue-100 text-blue-600'
+            ? 'bg-blue-100 text-blue-600 shadow-sm'
             : 'hover:bg-neutral-100 text-neutral-600'
         ]"
         @click="handleMobileToolSelect(tool.id)"
@@ -209,7 +215,7 @@
       <!-- Color picker quick access (shows current color) -->
       <button
         :class="[
-          'w-11 h-11 rounded-lg transition-colors flex items-center justify-center border-2',
+          'w-11 h-11 rounded-lg transition-all duration-150 flex items-center justify-center border-2 active:scale-95 shadow-sm',
           currentColor === '#000000' ? 'border-neutral-300' : ''
         ]"
         :style="{ borderColor: currentColor === '#000000' ? '#d1d5db' : currentColor }"
@@ -226,7 +232,7 @@
         <button
           :disabled="!canUndo"
           :class="[
-            'w-11 h-11 rounded-lg transition-colors flex items-center justify-center',
+            'w-11 h-11 rounded-lg transition-all duration-150 flex items-center justify-center active:scale-95',
             canUndo
               ? 'hover:bg-neutral-100 text-neutral-600'
               : 'opacity-40 cursor-not-allowed text-neutral-400'
@@ -239,7 +245,7 @@
         <button
           :disabled="!canRedo"
           :class="[
-            'w-11 h-11 rounded-lg transition-colors flex items-center justify-center',
+            'w-11 h-11 rounded-lg transition-all duration-150 flex items-center justify-center active:scale-95',
             canRedo
               ? 'hover:bg-neutral-100 text-neutral-600'
               : 'opacity-40 cursor-not-allowed text-neutral-400'
@@ -253,7 +259,7 @@
 
       <!-- Expand button -->
       <button
-        class="w-11 h-11 rounded-lg hover:bg-neutral-100 text-neutral-600 transition-colors flex items-center justify-center"
+        class="w-11 h-11 rounded-lg hover:bg-neutral-100 text-neutral-600 transition-all duration-150 flex items-center justify-center active:scale-95"
         @click="toolbarExpanded = true"
       >
         <Icon name="mdi:chevron-up" class="w-6 h-6" />
@@ -263,13 +269,13 @@
     <!-- Expanded State - Full Tool Palette -->
     <div
       v-else
-      class="max-h-80 overflow-y-auto"
+      class="max-h-80 overflow-y-auto scrollbar-thin"
     >
       <!-- Header with collapse button -->
-      <div class="flex items-center justify-between px-4 py-3 border-b border-neutral-200">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-neutral-200 bg-neutral-50/50">
         <h3 class="text-sm font-semibold text-neutral-700">Tools</h3>
         <button
-          class="w-10 h-10 rounded-lg hover:bg-neutral-100 text-neutral-600 transition-colors flex items-center justify-center"
+          class="w-10 h-10 rounded-lg hover:bg-neutral-200 text-neutral-600 transition-colors flex items-center justify-center active:scale-95"
           @click="toolbarExpanded = false"
         >
           <Icon name="mdi:chevron-down" class="w-6 h-6" />
@@ -292,7 +298,7 @@
               @click="handleStampClick"
               title="Stamp"
             >
-              <Icon name="mdi:stamp" class="w-6 h-6" />
+              <Icon name="mdi:certificate" class="w-6 h-6" />
             </button>
 
             <!-- Stamp type dropdown menu -->
@@ -321,9 +327,9 @@
             :key="tool.id"
             :title="tool.name"
             :class="[
-              'w-11 h-11 rounded-lg transition-colors flex items-center justify-center mx-auto',
+              'w-11 h-11 rounded-lg transition-all duration-150 flex items-center justify-center mx-auto active:scale-95',
               currentTool === tool.id
-                ? 'bg-blue-100 text-blue-600'
+                ? 'bg-blue-100 text-blue-600 shadow-sm'
                 : 'hover:bg-neutral-100 text-neutral-600'
             ]"
             @click="handleMobileToolSelect(tool.id)"
@@ -336,14 +342,14 @@
       <!-- Color Section -->
       <div class="p-4 border-b border-neutral-200">
         <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Color</h4>
-        <div class="flex gap-2 overflow-x-auto pb-2">
+        <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
           <button
             v-for="color in colors"
             :key="color"
             :title="color"
             :class="[
-              'w-11 h-11 rounded-md transition-transform hover:scale-110 flex-shrink-0',
-              currentColor === color ? 'ring-2 ring-offset-1 ring-blue-500' : ''
+              'w-11 h-11 rounded-md transition-all duration-150 flex-shrink-0 active:scale-95',
+              currentColor === color ? 'ring-2 ring-offset-1 ring-blue-500 shadow-sm scale-105' : 'hover:scale-110'
             ]"
             :style="{ backgroundColor: color }"
             @click="handleMobileColorSelect(color)"
@@ -351,7 +357,7 @@
           <input
             type="color"
             :value="currentColor"
-            class="w-11 h-11 rounded cursor-pointer flex-shrink-0"
+            class="w-11 h-11 rounded cursor-pointer flex-shrink-0 transition-transform hover:scale-105"
             @input="handleMobileColorSelect(($event.target as HTMLInputElement).value)"
           />
         </div>
@@ -360,14 +366,14 @@
       <!-- Size Section -->
       <div class="p-4 border-b border-neutral-200">
         <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Stroke Size</h4>
-        <div class="flex gap-2 overflow-x-auto pb-2">
+        <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
           <button
             v-for="size in sizes"
             :key="size"
             :class="[
-              'w-14 h-11 rounded-lg transition-colors flex-shrink-0 flex items-center justify-center gap-2',
+              'w-14 h-11 rounded-lg transition-all duration-150 flex-shrink-0 flex items-center justify-center gap-2 active:scale-95',
               currentSize === size
-                ? 'bg-blue-100 text-blue-600'
+                ? 'bg-blue-100 text-blue-600 shadow-sm'
                 : 'hover:bg-neutral-100 text-neutral-600'
             ]"
             @click="handleMobileSizeSelect(size)"
@@ -388,7 +394,7 @@
           <button
             :disabled="!canUndo"
             :class="[
-              'w-11 h-11 rounded-lg transition-colors flex items-center justify-center mx-auto',
+              'w-11 h-11 rounded-lg transition-all duration-150 flex items-center justify-center mx-auto active:scale-95',
               canUndo
                 ? 'hover:bg-neutral-100 text-neutral-600'
                 : 'opacity-40 cursor-not-allowed text-neutral-400'
@@ -402,7 +408,7 @@
           <button
             :disabled="!canRedo"
             :class="[
-              'w-11 h-11 rounded-lg transition-colors flex items-center justify-center mx-auto',
+              'w-11 h-11 rounded-lg transition-all duration-150 flex items-center justify-center mx-auto active:scale-95',
               canRedo
                 ? 'hover:bg-neutral-100 text-neutral-600'
                 : 'opacity-40 cursor-not-allowed text-neutral-400'
@@ -414,7 +420,7 @@
           </button>
 
           <button
-            class="w-11 h-11 rounded-lg hover:bg-neutral-100 text-neutral-600 transition-colors flex items-center justify-center mx-auto"
+            class="w-11 h-11 rounded-lg hover:bg-red-50 hover:text-red-600 text-neutral-600 transition-all duration-150 flex items-center justify-center mx-auto active:scale-95"
             title="Clear Canvas"
             @click="$emit('clear')"
           >
@@ -424,7 +430,7 @@
           <button
             :disabled="isExporting"
             :class="[
-              'w-11 h-11 rounded-lg transition-colors flex items-center justify-center mx-auto',
+              'w-11 h-11 rounded-lg transition-all duration-150 flex items-center justify-center mx-auto active:scale-95',
               isExporting ? 'animate-pulse bg-blue-100 text-blue-600' : 'hover:bg-neutral-100 text-neutral-600'
             ]"
             :title="isExporting ? `Exporting ${exportProgress}%` : 'Export canvas'"
@@ -439,7 +445,7 @@
     <!-- Backdrop overlay when expanded -->
     <div
       v-if="toolbarExpanded"
-      class="fixed inset-0 bg-black/20 z-[-1]"
+      class="fixed inset-0 bg-black/20 backdrop-blur-[2px] z-[-1] transition-opacity duration-200"
       @click="toolbarExpanded = false"
     />
   </div>
@@ -564,19 +570,19 @@ function handleDocumentClick(event: MouseEvent) {
 }
 
 const tools = [
-  { id: 'select' as DrawingTool, name: 'Select (V)', icon: 'mdi:cursor-default' },
-  { id: 'pan' as DrawingTool, name: 'Pan (H)', icon: 'mdi:pan' },
-  { id: 'pen' as DrawingTool, name: 'Pen', icon: 'mdi:pencil' },
-  { id: 'highlighter' as DrawingTool, name: 'Highlighter', icon: 'mdi:marker' },
-  { id: 'line' as DrawingTool, name: 'Line (L)', icon: 'mdi:vector-line' },
-  { id: 'arrow' as DrawingTool, name: 'Arrow (A)', icon: 'mdi:arrow-top-right' },
-  { id: 'text-annotation' as DrawingTool, name: 'Text Annotation (T)', icon: 'mdi:comment-text-outline' },
-  { id: 'rectangle' as DrawingTool, name: 'Rectangle (R)', icon: 'mdi:rectangle-outline' },
-  { id: 'circle' as DrawingTool, name: 'Circle (C)', icon: 'mdi:circle-outline' },
-  { id: 'ellipse' as DrawingTool, name: 'Ellipse (E)', icon: 'mdi:ellipse-outline' },
-  { id: 'eraser' as DrawingTool, name: 'Eraser', icon: 'mdi:eraser' },
-  { id: 'measure-distance' as DrawingTool, name: 'Measure Distance (M)', icon: 'mdi:ruler' },
-  { id: 'measure-area' as DrawingTool, name: 'Measure Area', icon: 'mdi:chart-box-outline' },
+  { id: 'select' as DrawingTool, name: 'Select', shortcut: 'V', icon: 'mdi:cursor-default' },
+  { id: 'pan' as DrawingTool, name: 'Pan', shortcut: 'H', icon: 'mdi:pan' },
+  { id: 'pen' as DrawingTool, name: 'Pen', shortcut: 'P', icon: 'mdi:pencil' },
+  { id: 'highlighter' as DrawingTool, name: 'Highlighter', shortcut: 'B', icon: 'mdi:marker' },
+  { id: 'line' as DrawingTool, name: 'Line', shortcut: 'L', icon: 'mdi:vector-line' },
+  { id: 'arrow' as DrawingTool, name: 'Arrow', shortcut: 'A', icon: 'mdi:arrow-top-right' },
+  { id: 'text-annotation' as DrawingTool, name: 'Text Annotation', shortcut: 'T', icon: 'mdi:comment-text-outline' },
+  { id: 'rectangle' as DrawingTool, name: 'Rectangle', shortcut: 'R', icon: 'mdi:rectangle-outline' },
+  { id: 'circle' as DrawingTool, name: 'Circle', shortcut: 'C', icon: 'mdi:circle-outline' },
+  { id: 'ellipse' as DrawingTool, name: 'Ellipse', shortcut: 'E', icon: 'mdi:ellipse-outline' },
+  { id: 'eraser' as DrawingTool, name: 'Eraser', shortcut: 'X', icon: 'mdi:eraser' },
+  { id: 'measure-distance' as DrawingTool, name: 'Measure Distance', shortcut: 'M', icon: 'mdi:ruler' },
+  { id: 'measure-area' as DrawingTool, name: 'Measure Area', shortcut: 'Shift+M', icon: 'mdi:chart-box-outline' },
 ] as const
 
 // Use centralized color and size constants from types

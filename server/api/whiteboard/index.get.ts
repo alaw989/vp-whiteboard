@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
 
   // Return mock data if Supabase is not configured (for testing)
   if (!supabaseUrl || !supabaseKey) {
-    const response: ApiResponse = {
+    const response: ApiResponse<unknown> = {
       success: true,
       data: [
         {
@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const response: ApiResponse = {
+    const response: ApiResponse<unknown> = {
       success: true,
       data: whiteboards || [],
     }
@@ -73,7 +73,7 @@ export default defineEventHandler(async (event) => {
       throw error
     }
 
-    const response: ApiResponse = {
+    const response: ApiResponse<unknown> = {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to list whiteboards',
     }

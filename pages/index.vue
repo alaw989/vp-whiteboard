@@ -31,7 +31,7 @@
         <Icon name="mdi:alert-circle" class="w-16 h-16 text-red-500 mx-auto mb-4" />
         <h2 class="text-xl font-semibold text-gray-900 mb-2">Failed to Load Whiteboards</h2>
         <p class="text-gray-600 mb-4">{{ error }}</p>
-        <button @click="refresh" class="btn-primary">
+        <button @click="() => refresh()" class="btn-primary">
           Try Again
         </button>
       </div>
@@ -88,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Whiteboard } from '~/types'
+import type { Whiteboard, ApiResponse } from '~/types'
 
 // Fetch whiteboards
 const { data, pending, error, refresh } = await useFetch<ApiResponse<Whiteboard[]>>('/api/whiteboard')

@@ -56,7 +56,7 @@ export function useDrawingTools() {
 
     // Handle eraser - returns position for hit detection
     if (toolSettings.value.tool === 'eraser') {
-      const lastPoint = currentStroke.value[currentStroke.value.length - 1]
+      const lastPoint = currentStroke.value[currentStroke.value.length - 1]!
       isDrawing.value = false
       currentStroke.value = []
       return { isEraser: true, x: lastPoint[0], y: lastPoint[1] }
@@ -94,6 +94,7 @@ export function useDrawingTools() {
 
     // Convert to SVG path
     const [first, ...rest] = outlinePoints
+    if (!first) return ''
     let path = `M ${first[0].toFixed(2)} ${first[1].toFixed(2)}`
 
     for (const point of rest) {
@@ -133,12 +134,13 @@ export function useDrawingTools() {
   function simplifyStroke(points: [number, number, number][], tolerance = 2): [number, number, number][] {
     if (points.length <= 2) return points
 
-    const simplified: [number, number, number][] = [points[0]]
+    const first = points[0]!
+    const simplified: [number, number, number][] = [first]
 
     for (let i = 1; i < points.length - 1; i++) {
-      const prev = simplified[simplified.length - 1]
-      const curr = points[i]
-      const next = points[i + 1]
+      const prev = simplified[simplified.length - 1]!
+      const curr = points[i]!
+      const next = points[i + 1]!
 
       // Distance from prev to curr
       const dist1 = Math.sqrt(
@@ -156,7 +158,8 @@ export function useDrawingTools() {
       }
     }
 
-    simplified.push(points[points.length - 1])
+    const last = points[points.length - 1]!
+    simplified.push(last)
 
     return simplified
   }

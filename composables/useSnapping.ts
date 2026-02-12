@@ -118,8 +118,8 @@ export function useSnapping(options: SnappingOptions = {}) {
     const data = element.data as StrokeElement
     if (data.points.length === 0) return []
 
-    const firstPoint = data.points[0]
-    const lastPoint = data.points[data.points.length - 1]
+    const firstPoint = data.points[0]!
+    const lastPoint = data.points[data.points.length - 1]!
 
     return [
       {
