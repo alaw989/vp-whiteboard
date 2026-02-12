@@ -118,7 +118,18 @@
             :users="remoteCursors"
           />
         </ClientOnly>
+
+        <!-- Scale Badge -->
+        <ClientOnly>
+          <ScaleBadge
+            v-if="scaleInstance"
+            :display-format="scaleDisplayFormat"
+            :current-scale="currentScaleValue"
+            @open-scale-dialog="showScalePalette = true"
+          />
+        </ClientOnly>
       </main>
+    </div>
 
     <!-- Share Modal -->
     <WhiteboardShareModal
@@ -140,12 +151,22 @@
     <ClientOnly>
       <ExportDialog
         :show="showExportDialog"
-        :stage="canvasRef.value as any)?.stageRef?.getNode() || null"
+        :stage="(canvasRef.value as any)?.stageRef?.getNode() || null"
         :filename="whiteboard.value?.name"
         :is-exporting="isExporting"
         :export-progress="exportProgress"
         @close="closeExportDialog"
         @export="confirmExport"
+      />
+    </ClientOnly>
+
+    <!-- Scale Tool Palette -->
+    <ClientOnly>
+      <ScaleToolPalette
+        :show="showScalePalette"
+        :current-scale="currentScaleValue"
+        @close="showScalePalette = false"
+        @set-scale="handleSetScale"
       />
     </ClientOnly>
   </div>
@@ -156,6 +177,8 @@ import type { Whiteboard, CanvasElement, UploadResult } from '~/types'
 import type { StampType } from '~/components/whiteboard/WhiteboardCanvas.vue'
 import ExportDialog from '~/components/whiteboard/ExportDialog.vue'
 import UserPresenceList from '~/components/whiteboard/UserPresenceList.vue'
+import ScaleBadge from '~/components/whiteboard/ScaleBadge.vue'
+import ScaleToolPalette from '~/components/whiteboard/ScaleToolPalette.vue'
 
 const route = useRoute()
 const whiteboardId = route.params.id as string
@@ -184,6 +207,12 @@ const shareUrl = computed(() => {
 const showShareModal = ref(false)
 const showUploadModal = ref(false)
 const showExportDialog = ref(false)
+const showScalePalette = ref(false)
+
+// Scale state
+const scaleInstance = ref<ReturnType<typeof useScale> | null>(null)
+const currentScaleValue = ref<{ label: string } | null>(null)
+const scaleDisplayFormat = ref('No scale set')
 
 // Canvas state refs (will be set when canvasInstance is ready)
 const isConnected = ref(false)
@@ -212,6 +241,29 @@ onMounted(() => {
     currentUser.id,
     currentUser.name
   )
+
+  // Initialize scale composable with yMeta from canvas instance
+  nextTick(() => {
+    if (canvasInstance.value) {
+      scaleInstance.value = useScale({
+        yMeta: canvasInstance.value.yMeta,
+        userId: currentUser.id,
+        documentId: whiteboardId,
+      })
+
+      // Set up reactive bindings for scale
+      if (scaleInstance.value) {
+        currentScaleValue.value = scaleInstance.value.currentScale as any
+        scaleDisplayFormat.value = scaleInstance.value.displayFormat
+
+        // Observe scale changes for UI updates
+        scaleInstance.value.observeScale((scale) => {
+          currentScaleValue.value = scale
+          scaleDisplayFormat.value = scale.label
+        })
+      }
+    }
+  })
 
   // Set up reactive bindings to composable (now canvas is guaranteed to be set)
   isConnected.value = computed(() => canvasInstance.value?.isConnected.value ?? false)
@@ -370,6 +422,25 @@ function handleDeleteElement(elementId: string) {
 
 function updateCursor(x: number, y: number) {
   canvasInstance.value?.updateCursor(x, y)
+}
+
+// Scale handlers
+function handleSetScale(
+  drawingUnits: number,
+  drawingUnit: 'inches',
+  realWorldUnits: number,
+  realWorldUnit: 'feet' | 'inches'
+) {
+  scaleInstance.value?.setScale(drawingUnits, drawingUnit, realWorldUnits, realWorldUnit)
+
+  // Update display values
+  if (scaleInstance.value) {
+    currentScaleValue.value = scaleInstance.value.currentScale as any
+    scaleDisplayFormat.value = scaleInstance.value.displayFormat
+  }
+
+  // Close the palette
+  showScalePalette.value = false
 }
 
 // Watch for style changes and persist to localStorage
