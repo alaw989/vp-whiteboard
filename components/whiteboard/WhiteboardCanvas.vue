@@ -2012,3 +2012,145 @@ defineExpose({
   remoteCursors,
 })
 </script>
+
+/**
+ * Get consistent color for user based on userId
+ * Matches color generation in useCollaborativeCanvas.ts
+ */
+function getUserColor(userId: string): string {
+  const colors = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899']
+  let hash = 0
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return colors[Math.abs(hash) % colors.length]
+}
+
+// Measurement config helpers
+function getMeasurementGroupConfig(element: CanvasElement) {
+  return {
+    x: 0,
+    y: 0,
+  }
+}
+
+function getMeasurementLineConfig(element: CanvasElement) {
+  const data = element.data as MeasurementDistanceElement
+  return {
+    points: [data.start[0], data.start[1], data.end[0], data.end[1]],
+    stroke: '#3B82F6',
+    strokeWidth: 2,
+    lineCap: 'round',
+  }
+}
+
+function getMeasurementStartAnchor(element: CanvasElement) {
+  const data = element.data as MeasurementDistanceElement
+  return {
+    x: data.start[0],
+    y: data.start[1],
+    radius: 5,
+    fill: '#3B82F6',
+    stroke: '#FFFFFF',
+    strokeWidth: 2,
+  }
+}
+
+function getMeasurementEndAnchor(element: CanvasElement) {
+  const data = element.data as MeasurementDistanceElement
+  return {
+    x: data.end[0],
+    y: data.end[1],
+    radius: 5,
+    fill: '#3B82F6',
+    stroke: '#FFFFFF',
+    strokeWidth: 2,
+  }
+}
+
+function getMeasurementLabelConfig(element: CanvasElement) {
+  const data = element.data as MeasurementDistanceElement
+  const inches = data.value ?? calculateDistance(data.start, data.end) / data.pixelsPerInch
+  const label = formatDistanceMeasurement(inches, data.precision, data.unit)
+  return {
+    text: label,
+    x: (data.start[0] + data.end[0]) / 2,
+    y: (data.start[1] + data.end[1]) / 2 - 20,
+    fontSize: 14,
+    fill: '#3B82F6',
+    fontFamily: 'Arial, sans-serif',
+  }
+}
+
+// Area measurement label config
+function getAreaLabelConfig(element: CanvasElement) {
+  const data = element.data as MeasurementAreaElement
+  const value = data.value ?? 0
+  const label = formatAreaMeasurement(value, data.precision, data.unit)
+  return {
+    text: label,
+    x: 0,
+    y: 0,
+    fontSize: 12,
+    fill: '#3B82F6',
+    fontFamily: 'Arial, sans-serif',
+  }
+}
+
+function formatAreaMeasurement(sqInches: number, precision: number, unit: 'sq-inches' | 'sq-feet'): string {
+  if (unit === 'sq-feet') {
+    const sqFeet = sqInches / 144
+    return `${sqFeet.toFixed(precision)} sq ft`
+  }
+  return `${sqInches.toFixed(precision)} sq in`
+}
+
+function getAreaLabelPosition(element: CanvasElement): { x: number; y: number } {
+  const data = element.data as MeasurementAreaElement
+  const target = props.elements.find(el => el.id === data.targetElementId)
+  if (!target) return { x: 0, y: 0 }
+
+  // Get center position of target shape
+  const center = getShapeCenterForElement(target)
+
+  // Offset label above shape
+  return {
+    x: center.x,
+    y: center.y - 20  // 20px vertical offset
+  }
+}
+
+function getShapeCenterForElement(element: CanvasElement): { x: number; y: number } {
+  switch (element.type) {
+    case 'rectangle': {
+      const data = element.data as RectangleElement
+      return {
+        x: data.x + data.width / 2,
+        y: data.y + data.height / 2
+      }
+    }
+    case 'circle': {
+      const data = element.data as CircleElement
+      return { x: data.cx, y: data.cy }
+    }
+    case 'ellipse': {
+      const data = element.data as EllipseElement
+      return { x: data.x, y: data.y }
+    }
+    default:
+      return { x: 0, y: 0 }
+  }
+}
+
+function calculateDistance(p1: [number, number], p2: [number, number]): number {
+  return Math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+}
+
+function formatDistanceMeasurement(inches: number, precision: number, unit: 'inches' | 'feet'): string {
+  if (unit === 'feet') {
+    const feet = inches / 12
+    return `${feet.toFixed(precision)}'`
+  }
+  return `${inches.toFixed(precision)}"`
+}
+
