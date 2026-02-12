@@ -285,25 +285,28 @@ const remoteCursors = ref<Map<number, any>>(new Map())
 // Export functionality
 const { isExporting, progress: exportProgress, exportAsPNG, exportAsPDF } = useExport()
 
+// Canvas composable refs - initialized as empty to avoid accessing canvas before it's ready
+const canvas = ref<ReturnType<typeof useCollaborativeCanvas> | null>(null)
+
 // Initialize canvas on client side
 onMounted(() => {
-  canvas = useCollaborativeCanvas(
+  canvas.value = useCollaborativeCanvas(
     whiteboardId,
     currentUser.id,
     currentUser.name
   )
 
-  // Set up reactive bindings to composable
-  isConnected.value = canvas.isConnected.value
-  connectionStatus.value = canvas.connectionStatus.value
-  connectedUsers.value = canvas.connectedUsers.value
-  elements.value = canvas.elements.value
-  canUndo.value = canvas.canUndo.value
-  canRedo.value = canvas.canRedo.value
-  activeStrokes.value = canvas.activeStrokes.value || {}
-  startActiveStroke.value = canvas.startActiveStroke
-  broadcastStrokePoint.value = canvas.broadcastStrokePoint
-  endActiveStroke.value = canvas.endActiveStroke
+  // Set up reactive bindings to composable (now canvas is guaranteed to be set)
+  isConnected.value = computed(() => canvas.value?.isConnected.value ?? false)
+  connectionStatus.value = computed(() => canvas.value?.connectionStatus.value ?? 'disconnected')
+  connectedUsers.value = computed(() => canvas.value?.connectedUsers.value ?? new Map())
+  elements.value = computed(() => canvas.value?.elements.value ?? [])
+  canUndo.value = computed(() => canvas.value?.canUndo.value ?? false)
+  canRedo.value = computed(() => canvas.value?.canRedo.value ?? false)
+  activeStrokes.value = computed(() => canvas.value?.activeStrokes.value ?? {})
+  startActiveStroke.value = computed(() => canvas.value?.startActiveStroke)
+  broadcastStrokePoint.value = computed(() => canvas.value?.broadcastStrokePoint)
+  endActiveStroke.value = computed(() => canvas.value?.endActiveStroke)
 
   // Watch for updates
   watch(() => canvas.isConnected.value, (v) => { isConnected.value = v })
@@ -333,14 +336,14 @@ onMounted(() => {
   })
 
   // Load saved canvas state
-  if (whiteboard.value?.canvas_state) {
-    canvas.importState(whiteboard.value.canvas_state)
+  if (whiteboard.value?.canvas_state && canvas.value) {
+    canvas.value.importState(whiteboard.value.canvas_state)
   }
 
   // Auto-save canvas state periodically
   const saveInterval = setInterval(() => {
-    if (canvas && canvas.isConnected.value) {
-      const state = canvas.exportState()
+    if (canvas.value && canvas.value.isConnected.value) {
+      const state = canvas.value.exportState()
       $fetch(`/api/whiteboard/${whiteboardId}`, {
         method: 'PATCH',
         body: { canvas_state: state },
@@ -404,7 +407,7 @@ function redo() {
 
 function clearCanvas() {
   if (confirm('Are you sure you want to clear the canvas? This cannot be undone.')) {
-    if (canvas) canvas.clearCanvas()
+    canvas.value?.clearCanvas()
   }
 }
 
