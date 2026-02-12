@@ -128,6 +128,8 @@ function toolDisplay(user: any): string {
     'text-annotation': 'Annotating',
     stamp: 'Stamping',
     eraser: 'Erasing',
+    'measure-distance': 'Measuring Distance',
+    'measure-area': 'Measuring Area',
   }
 
   return toolNames[user.tool] || 'Viewing'

@@ -383,6 +383,11 @@ onMounted(() => {
     currentUser.name
   )
 
+  // Load saved canvas state after instance is initialized
+  if (whiteboard.value?.canvas_state && canvasInstance.value) {
+    canvasInstance.value.importState(whiteboard.value.canvas_state)
+  }
+
   // Initialize scale composable with yMeta from canvas instance
   nextTick(() => {
     if (canvasInstance.value) {
@@ -428,11 +433,6 @@ watchEffect(() => {
     }
   }
 })
-
-// Load saved canvas state
-if (whiteboard.value?.canvas_state && canvasInstance.value) {
-  canvasInstance.value.importState(whiteboard.value.canvas_state)
-}
 
 // Auto-save canvas state periodically (client-side only to avoid SSR error)
 const saveInterval = ref<ReturnType<typeof setInterval> | null>(null)
@@ -494,10 +494,35 @@ async function confirmExport(format: 'png' | 'pdf') {
 
 async function handleUploadSuccess(result: UploadResult) {
   const fileType = result.fileRecord?.file_type || ''
+  const canvas = canvasRef.value as any
 
-  // File upload is handled by WhiteboardUpload component
-  // which emits to the canvas directly
-  // Just close the upload modal on success
+  if (!canvas) {
+    console.error('Canvas not available')
+    showUploadModal.value = false
+    return
+  }
+
+  try {
+    if (fileType === 'application/pdf') {
+      // For PDFs, fetch the file and render it
+      const response = await fetch(result.url)
+      const arrayBuffer = await response.arrayBuffer()
+      await canvas.addPDFLayer(
+        { id: result.fileId, url: result.url, name: result.fileName },
+        arrayBuffer
+      )
+    } else if (fileType.startsWith('image/')) {
+      // For images, add as image layer
+      await canvas.addImageLayer({
+        id: result.fileId,
+        url: result.url,
+        name: result.fileName,
+      })
+    }
+  } catch (error) {
+    console.error('Failed to add file to canvas:', error)
+  }
+
   showUploadModal.value = false
 }
 

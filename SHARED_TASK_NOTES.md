@@ -1,16 +1,18 @@
 # VP Whiteboard - Continuous Work Notes
 
-## Session Date: 2026-02-12 (Session #40)
+## Session Date: 2026-02-12 (Session #43)
 
-### Session #40: Status Review
-- ✅ Committed Shift+M shortcut from Session #39 (819c460)
-- ✅ Verified typecheck passes, build succeeds
-- ✅ Verified dev server running
-- ✅ Reviewed loading screen - already has dual-ring spinner, pulse animation
-- ✅ Reviewed mobile bottom sheet - has proper safe-area-inset-bottom, smooth transitions
-- ✅ Reviewed desktop toolbar - has hover states, scale animations, ARIA labels
-- ✅ Reviewed ExportDialog - has smooth transitions, progress indicators
-- ✅ Reviewed ScaleBadge - clean, professional engineering tool styling
+### Session #43: User Presence Tool Display Polish
+- ✅ Added missing measurement tools to UserPresenceList tool display
+- ✅ `measure-distance` now shows "Measuring Distance"
+- ✅ `measure-area` now shows "Measuring Area"
+- ✅ Verified typecheck passes
+
+### Session #42: Canvas State Loading Bug Fix (Committed)
+- ✅ Fixed critical bug: saved canvas state was never loaded on whiteboard open
+- ✅ Moved `importState()` call from module scope into `onMounted` callback
+
+**Bug Details:** The `canvas_instance.importState()` call was placed in module scope (outside any lifecycle hook), but `canvasInstance.value` is only set inside `onMounted`. This meant saved canvas state from the database was never actually loaded when opening a whiteboard.
 
 ## Project Status: ALL PHASES COMPLETE - Code Feature Complete
 
@@ -18,37 +20,36 @@
 
 ### Latest Commits
 ```
+93898b6 docs(shared-notes): update Session #40 - status review
 819c460 feat(a11y): add Shift+M shortcut for measure area tool
 ff8e89c docs(shared-notes): update Session #37 - keyboard shortcuts added
 e2ab9f4 feat(a11y): add keyboard shortcuts for highlighter and stamp tools
 c0404bc docs(shared-notes): update Session #36 - accessibility complete
 ```
 
-### Session #39 (Committed): Shift+M Shortcut for Measure Area
-- ✅ Added Shift+M keyboard shortcut to activate "measure-area" tool
-- ✅ Updated KeyboardShortcutsModal.vue to show Shift+M → Measure area
-- ✅ Fixed keyboard handler to distinguish M (measure-distance) vs Shift+M (measure-area)
-- ✅ README documentation updated with all shortcuts and Mac symbols (⌘)
-
-### Session #38: Documentation Update (staged from previous session)
-- ✅ Updated README.md with complete keyboard shortcuts (organized by category)
-- ✅ Added Accessibility section to README
-- ✅ Added Mac keyboard shortcuts (⌘ symbols)
-- ✅ Included all tools: B (highlighter), S (stamp)
-- ✅ Added Navigation and While Drawing shortcuts sections
-
-### Accessibility Complete
-- ✅ Desktop toolbar ARIA labels for all tools, colors, sizes
-- ✅ Mobile toolbar ARIA labels matching desktop
-- ✅ Stamp dropdown with role="menu" and role="menuitem"
-- ✅ aria-pressed for toggle states
-- ✅ aria-hidden on decorative elements
-- ✅ Keyboard shortcuts: V, H, P, B, L, A, R, S, E, T, M, X
+### Keyboard Shortcuts (All Implemented)
+| Shortcut | Tool |
+|----------|------|
+| V | Select |
+| H | Pan |
+| P | Pen |
+| B | Highlighter |
+| L | Line |
+| A | Arrow |
+| R | Rectangle |
+| C | Circle |
+| E | Ellipse |
+| T | Text annotation |
+| M | Measure distance |
+| Shift+M | Measure area |
+| S | Stamp |
+| X | Eraser |
 
 ### Implementation Complete
 - ✅ Phase 1-7: Foundation, Document Rendering, Drawing Tools, Navigation, Collaboration, Export, Measurement
 - ✅ Phase 8: Performance & Mobile (all 6 plans complete)
-- ✅ Accessibility: Full ARIA label coverage
+- ✅ Accessibility: Full ARIA label coverage + all keyboard shortcuts
+- ✅ Persistence: Canvas state auto-saves and now correctly loads on open
 
 ## Manual UAT Checklist (Requires Hardware/Browser)
 
@@ -73,9 +74,9 @@ c0404bc docs(shared-notes): update Session #36 - accessibility complete
 ## Potential Improvements (Not Required)
 
 Consider these if looking for more work:
-1. Enhanced loading screen with CSS animations (dual-ring spinner, pulsing dot)
-2. Visual polish studying Figma/Miro/Excalidraw patterns
-3. Additional screen reader testing with NVDA/VoiceOver
+1. Visual polish studying Figma/Miro/Excalidraw patterns
+2. Additional screen reader testing with NVDA/VoiceOver
+3. Enhanced loading animations (already has dual-ring spinner)
 
 ## Quick Commands
 
@@ -99,8 +100,10 @@ git log --oneline -5
 - `/whiteboard/new` creates ID, redirects to `/whiteboard/[id]`
 - Shows "Loading canvas..." while ClientOnly component hydrates
 - Connection status shows "disconnected" if WebSocket server unavailable (expected - no external WS server configured)
+- **Canvas state loads from database** (fixed - was broken before)
 
 **Whiteboard Flow:**
 - Toolbar on desktop (left sidebar)
 - Toolbar on mobile (bottom sheet)
 - Full ARIA labels for screen reader accessibility
+- All keyboard shortcuts functional

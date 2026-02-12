@@ -172,7 +172,8 @@ server {
 | C | Circle tool |
 | E | Ellipse tool |
 | T | Text annotation |
-| M | Measurement tool |
+| M | Measurement distance tool |
+| Shift+M | Measurement area tool |
 | S | Stamp tool |
 | X | Eraser tool |
 
