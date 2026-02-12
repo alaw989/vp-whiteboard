@@ -409,7 +409,7 @@ async function confirmExport(format: 'png' | 'pdf') {
   closeExportDialog()
 }
 
-function handleUploadSuccess(result: UploadResult) {
+async function handleUploadSuccess(result: UploadResult) {
   const fileType = result.fileRecord?.file_type || ''
 
   if (fileType === 'application/pdf') {
