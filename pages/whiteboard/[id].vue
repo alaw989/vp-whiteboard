@@ -57,7 +57,7 @@
     <!-- Main Content -->
     <div class="flex-1 flex overflow-hidden">
       <!-- Left Sidebar - Tools -->
-      <aside class="w-16 bg-white border-r border-neutral-200 flex flex-col items-center py-4 gap-2">
+      <aside class="w-16 bg-white border-r border-neutral-200 flex flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen">
         <WhiteboardToolbar
           :current-tool="currentTool"
           :current-color="currentColor"

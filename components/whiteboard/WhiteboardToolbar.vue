@@ -1,5 +1,5 @@
 <template>
-  <div class="toolbar flex flex-col gap-2 p-2 bg-white rounded-lg shadow-sm border border-neutral-200">
+  <div class="toolbar flex flex-col gap-2 p-2 bg-white rounded-lg shadow-sm border border-neutral-200 overflow-y-auto">
     <!-- Drawing Tools -->
     <div class="flex flex-col gap-1">
       <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Tools</h4>
