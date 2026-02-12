@@ -6,23 +6,23 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Engineers and clients can collaboratively mark up and discuss engineering drawings in real-time, with everyone seeing each other's cursors and annotations instantly.
 
-**Current focus:** Phase 6: Export
+**Current focus:** Phase 7: Measurement Tools
 
 ## Current Position
 
-Phase: 7 of 8 (Mobile Support)
-Plan: 1 of 4 in current phase
+Phase: 7 of 8 (Measurement Tools)
+Plan: 2 of 4 in current phase
 Status: Ready to start
-Last activity: 2026-02-11 — Completed Plan 06-03 (Export Dialog)
+Last activity: 2026-02-12 — Completed Phase 07 Plan 01 (Scale Setting Infrastructure)
 
-Progress: [██████████] 70%
+Progress: [██████████] 73%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 33
+- Total plans completed: 34
 - Average duration: 3 min
-- Total execution time: 1.63 hours
+- Total execution time: 1.71 hours
 
 **By Phase:**
 
@@ -34,7 +34,7 @@ Progress: [██████████] 70%
 | 4 | 3/3 | 30 min | 10 min |
 | 5 | 8/8 | 20 min | 5 min |
 | 6 | 3/3 | 8 min | 3 min |
-| 7 | 0/4 | - | - |
+| 7 | 1/4 | 5 min | 5 min |
 | 8 | 0/6 | - | - |
 
 **Recent Trend:**
@@ -42,6 +42,7 @@ Progress: [██████████] 70%
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
+| Phase 07-measurement-tools P01 | 5min | 3 tasks | 5 files |
 | Phase 06-export P03 | 5min | 3 tasks | 4 files |
 | Phase 06-export P02 | 1min | 3 tasks | 3 files |
 | Phase 06-export P01 | 2min | 3 tasks | 4 files |
@@ -65,6 +66,7 @@ Progress: [██████████] 70%
 | Phase 02-document-rendering P04 | 1min | 3 tasks | 3 files |
 | Phase 03 P03-02 | 3min | 3 tasks | 3 files |
 | Phase 03-drawing-tools P06 | 5 | 4 tasks | 3 files |
+| Phase 07-measurement-tools P01 | 5 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -154,6 +156,14 @@ Recent decisions affecting current work:
 - **128px preview width in ExportDialog** (06-03) - within 200-300px range, compact for dialog
 - **try-catch error handling in preview generation** (06-03) - prevents crashes from stage access failures
 - **nextTick() for ref availability** (06-03) - ensures stage node ready before toDataURL() call
+- **Per-document scale with scale:{documentId} key format** (07-01) - each uploaded document remembers its own scale
+- **Standard 96 DPI for screen pixel-to-inch conversion** (07-01) - pixelsPerInch calculation base
+- **Imperial units only for US engineering workflow** (07-01) - inches/feet support, decimal display
+- **Decimal inches display format** (07-01) - 126.5" not feet-inches for engineering precision
+- [Phase 07]: Per-document scale with scale:{documentId} key format
+- [Phase 07]: Standard 96 DPI for screen pixel-to-inch conversion
+- [Phase 07]: Imperial units only for US engineering workflow
+- [Phase 07]: Decimal inches display format
 
 ### Pending Todos
 
@@ -169,6 +179,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-11
-Stopped at: Completed Phase 06 (Export) - ready for Phase 07 (Mobile Support)
+Last session: 2026-02-12
+Stopped at: Completed Phase 07 Plan 01 (Scale Setting Infrastructure) - ready for Plan 02 (Measurement Elements)
 Resume file: None
