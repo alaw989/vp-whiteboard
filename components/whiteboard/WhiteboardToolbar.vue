@@ -105,10 +105,12 @@
     <div class="flex flex-col gap-1">
       <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Size</h4>
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1" role="group" aria-label="Stroke size">
         <button
           v-for="size in sizes"
           :key="size"
+          :aria-label="`Stroke size ${size}px${currentSize === size ? ', selected' : ''}`"
+          :aria-pressed="currentSize === size"
           :class="[
             'flex items-center gap-2 px-2 py-1 rounded-md transition-all duration-150',
             currentSize === size
