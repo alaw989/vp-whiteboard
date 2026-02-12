@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 4: Canvas Navigation** - Zoom, pan, and synchronized view state
 - [ ] **Phase 5: Real-time Collaboration** - Multi-user cursors, presence, and instant sync
 - [ ] **Phase 6: Export** - PNG and PDF export with annotations
-- [ ] **Phase 7: Measurement Tools** - Scale-aware distance and area measurement
+- [x] **Phase 7: Measurement Tools** - Scale-aware distance and area measurement
 - [ ] **Phase 8: Performance & Mobile** - Optimization and touch gesture support
 
 ## Phase Details
@@ -199,10 +199,10 @@ Plans:
 | 4 | 07-04 | Measurement display and labeling |
 
 Plans:
-- [ ] 07-01-PLAN.md — Scale state management, ScaleBadge, ScaleToolPalette (Wave 1)
-- [ ] 07-02-PLAN.md — Distance measurement with snapping, useMeasurements, useSnapping (Wave 2)
-- [ ] 07-03-PLAN.md — Area measurement for shapes, select-then-measure workflow (Wave 3)
-- [ ] 07-04-PLAN.md — Editable measurements, export integration, scale warnings (Wave 4)
+- [x] 07-01-PLAN.md — Scale state management, ScaleBadge, ScaleToolPalette (Wave 1)
+- [x] 07-02-PLAN.md — Distance measurement with snapping, useMeasurements, useSnapping (Wave 2)
+- [x] 07-03-PLAN.md — Area measurement for shapes, select-then-measure workflow (Wave 3)
+- [x] 07-04-PLAN.md — Editable measurements, export integration, scale warnings (Wave 4)
 
 ### Phase 8: Performance & Mobile
 
@@ -243,5 +243,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. Canvas Navigation | 3/3 | Complete | 2025-02-10 |
 | 5. Real-time Collaboration | 4/4 | Complete | 2025-02-10 |
 | 6. Export | 3/3 | Complete | 2025-02-11 |
-| 7. Measurement Tools | 0/4 | Ready to start | - |
+| 7. Measurement Tools | 4/4 | Complete | 2025-02-11 |
 | 8. Performance & Mobile | 0/6 | Not started | - |
