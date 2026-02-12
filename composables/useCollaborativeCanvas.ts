@@ -1,6 +1,84 @@
 import * as Y from 'yjs'
 import type { CanvasElement, UserPresence, DrawingTool, ViewportState, SharedViewportState } from '~/types'
 
+/**
+ * Exponential backoff configuration for WebSocket reconnection
+ */
+interface ReconnectConfig {
+  baseDelay: number    // Starting delay in milliseconds (1000ms = 1 second)
+  maxDelay: number     // Maximum delay in milliseconds (30000ms = 30 seconds)
+  maxAttempts: number  // Maximum number of reconnection attempts
+  jitter: boolean      // Add random jitter to prevent thundering herd
+}
+
+/**
+ * Creates an exponential backoff controller for WebSocket reconnection.
+ *
+ * Benefits of exponential backoff:
+ * - Reduces server load during outages by spacing out retry attempts
+ * - Prevents tight retry loops that consume network bandwidth
+ * - Allows time for network issues to be resolved
+ * - Jitter prevents synchronized reconnection attempts from multiple clients
+ *
+ * @param config - Backoff configuration
+ * @returns Object with nextDelay(), reset(), and shouldRetry() methods
+ */
+function createExponentialBackoff(config: ReconnectConfig) {
+  let attempt = 0
+
+  return {
+    /**
+     * Calculate the next delay using exponential backoff with optional jitter.
+     * Pattern: min(baseDelay * 2^attempt, maxDelay) + jitter
+     *
+     * Progression (with baseDelay=1000ms, maxDelay=30000ms):
+     * - Attempt 0: 1s (±250ms jitter)
+     * - Attempt 1: 2s (±500ms jitter)
+     * - Attempt 2: 4s (±1s jitter)
+     * - Attempt 3: 8s (±2s jitter)
+     * - Attempt 4: 16s (±4s jitter)
+     * - Attempt 5+: 30s (±7.5s jitter, capped at max)
+     *
+     * @returns Delay in milliseconds before next reconnection attempt
+     */
+    nextDelay(): number {
+      const exponential = Math.min(
+        config.baseDelay * Math.pow(2, attempt),
+        config.maxDelay
+      )
+      // Add jitter: +/- 25% of delay to prevent thundering herd
+      const jitterAmount = config.jitter ? exponential * 0.25 : 0
+      const jitter = (Math.random() - 0.5) * 2 * jitterAmount
+
+      attempt++
+      return Math.max(exponential + jitter, config.baseDelay)
+    },
+
+    /**
+     * Reset the attempt counter to zero.
+     * Call this when a successful connection is established.
+     */
+    reset(): void {
+      attempt = 0
+    },
+
+    /**
+     * Check if we should continue attempting reconnection.
+     * @returns true if we haven't exceeded maxAttempts
+     */
+    shouldRetry(): boolean {
+      return attempt < config.maxAttempts
+    },
+
+    /**
+     * Get the current attempt number (1-indexed for display purposes)
+     */
+    getAttempt(): number {
+      return attempt + 1
+    },
+  }
+}
+
 export function useCollaborativeCanvas(whiteboardId: string, userId: string, userName: string) {
   const config = useRuntimeConfig()
   const wsUrl = config.public.wsUrl as string
@@ -25,42 +103,50 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
           userId,
           userName,
         },
-        // Configure for instant retry - minimize backoff
-        // Note: y-websocket uses internal backoff, we override below
       }
     )
 
-    // Configure instant retry reconnection (override y-websocket default)
-    // The default uses exponential backoff which we want to avoid
+    // Configure exponential backoff reconnection (override y-websocket default)
+    // Replaces instant retry with graceful backoff for better UX and reduced server load
     if (wsProvider.wsconnecting) {
       const originalConnect = wsProvider.connect
-      let reconnectAttempts = 0
-      const maxReconnectAttempts = 1000 // Keep trying essentially forever
-      const reconnectDelay = 100 // 100ms delay for instant retry
+      const backoff = createExponentialBackoff({
+        baseDelay: 1000,      // Start with 1 second
+        maxDelay: 30000,      // Cap at 30 seconds
+        maxAttempts: 100,     // Retry many times but not forever
+        jitter: true,         // Add randomness to prevent thundering herd
+      })
 
-      // Override connection close handler for instant retry
+      // Override connection close handler for exponential backoff retry
       wsProvider.on('connection-close', () => {
         connectionStatus.value = 'disconnected'
         isConnected.value = false
         yCursors.delete(userId)
 
-        // Instant retry - no exponential backoff
-        if (reconnectAttempts < maxReconnectAttempts) {
-          reconnectAttempts++
-          console.log(`[WebSocket] Instant reconnect... (attempt ${reconnectAttempts})`)
+        // Exponential backoff retry with jitter
+        if (backoff.shouldRetry()) {
+          const delay = backoff.nextDelay()
+          const delaySeconds = (delay / 1000).toFixed(1)
+          const attempt = backoff.getAttempt()
 
-          // Try to reconnect immediately with small delay to prevent tight loop
+          console.log(`[WebSocket] Reconnecting in ${delaySeconds}s... (attempt ${attempt})`)
+
+          // Schedule reconnection with calculated delay
           setTimeout(() => {
             if (!isConnected.value && wsProvider && !wsProvider.wsconnected) {
+              connectionStatus.value = 'connecting'
               originalConnect.call(wsProvider)
             }
-          }, reconnectDelay)
+          }, delay)
+        } else {
+          console.warn('[WebSocket] Max reconnection attempts reached. Giving up.')
+          connectionStatus.value = 'disconnected'
         }
       })
 
-      // Reset attempts on successful connect
+      // Reset backoff on successful connection
       wsProvider.on('sync', () => {
-        reconnectAttempts = 0
+        backoff.reset()
       })
     }
   } catch (e) {
@@ -136,10 +222,8 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       })
     })
 
-    // Cleanup cursor for current user on disconnect
-    wsProvider.on('connection-close', () => {
-      yCursors.delete(userId)
-    })
+    // Note: connection-close handler for reconnection is registered earlier
+    // Cursor cleanup is handled there as well to avoid duplicate handlers
   }
 
   // Load from localStorage for persistence
