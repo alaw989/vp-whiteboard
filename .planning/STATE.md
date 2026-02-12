@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 8 of 8 (Performance & Mobile)
-Plan: 05 of 6 (Two-Finger Pan Gesture)
+Plan: 01 of 6 (Viewport Clipping)
 Status: In progress - executing Phase 8 plans
-Last activity: 2026-02-12 — Completed Phase 8 Plan 05 (Two-Finger Pan Gesture)
+Last activity: 2026-02-12 — Completed Phase 8 Plan 01 (Viewport Clipping)
 
-Progress: [█████░░░░░] 33%
+Progress: [██░░░░░░░░] 17%
 
 ## Performance Metrics
 
@@ -35,13 +35,14 @@ Progress: [█████░░░░░] 33%
 | 5 | 8/8 | 20 min | 5 min |
 | 6 | 3/3 | 8 min | 3 min |
 | 7 | 4/4 | 62 min | 16 min |
-| 8 | 2/6 | 3 min | 2 min |
+| 8 | 1/6 | 8 min | 8 min |
 
 **Recent Trend:**
 - Last 3 plans: 3 min
 - Trend: Consistent velocity
 
 *Updated after each plan completion*
+| Phase 08-performance-mobile P01 | 8min | 2 tasks | 2 files |
 | Phase 07-measurement-tools P01 | 5min | 3 tasks | 5 files |
 | Phase 06-export P03 | 5min | 3 tasks | 4 files |
 | Phase 06-export P02 | 1min | 3 tasks | 3 files |
@@ -180,6 +181,9 @@ Recent decisions affecting current work:
 - [Phase 08]: Separate toolbar instances for desktop sidebar vs mobile bottom sheet
 - [Phase 08]: Safe-area-inset-bottom padding for notched phones (iPhone X+)
 - [Phase 08]: Two-finger pan gesture using setViewportDirect for high-frequency updates without network sync
+- [Phase 08-performance-mobile]: 500-element threshold before enabling viewport culling to avoid overhead
+- [Phase 08-performance-mobile]: 100px viewport padding for smooth edge transitions when elements enter viewport
+- [Phase 08-performance-mobile]: Non-reactive Map cache for bounding boxes to avoid triggering re-renders
 
 ### Pending Todos
 
@@ -196,5 +200,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed 08-05-PLAN.md (Two-Finger Pan Gesture)
+Stopped at: Completed 08-01-PLAN.md (Viewport Clipping)
 Resume file: None
