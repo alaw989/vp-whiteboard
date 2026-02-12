@@ -44,6 +44,12 @@ A real-time collaborative whiteboard application for structural engineering proj
 - **Two-Finger Pan**: Pan canvas without drawing
 - **Responsive Toolbar**: Bottom sheet on mobile, sidebar on desktop
 
+### Accessibility
+- **Full Keyboard Navigation**: All tools accessible via keyboard shortcuts
+- **Screen Reader Support**: ARIA labels on all interactive elements
+- **Focus Indicators**: Clear visual feedback for keyboard navigation
+- **Semantic Markup**: Proper roles and labels for assistive technology
+
 ## Tech Stack
 
 - **Frontend**: Nuxt 3, Vue 3, Tailwind CSS
@@ -153,11 +159,13 @@ server {
 
 ## Keyboard Shortcuts
 
+### Tools
 | Shortcut | Action |
 |----------|--------|
 | V | Select tool |
 | H | Pan tool |
 | P | Pen tool |
+| B | Highlighter tool |
 | L | Line tool |
 | A | Arrow tool |
 | R | Rectangle tool |
@@ -165,11 +173,33 @@ server {
 | E | Ellipse tool |
 | T | Text annotation |
 | M | Measurement tool |
+| S | Stamp tool |
 | X | Eraser tool |
-| Ctrl+Z | Undo |
-| Ctrl+Y / Ctrl+Shift+Z | Redo |
-| Escape | Select tool |
+
+### Actions
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+Z / ⌘+Z | Undo |
+| Ctrl+Y / ⌘+Shift+Z | Redo |
+| Delete / Backspace | Delete selected |
+| Escape | Deselect / Cancel |
 | ? | Show keyboard shortcuts |
+
+### Navigation
+| Shortcut | Action |
+|----------|--------|
+| Space + Drag | Pan canvas |
+| Mouse Wheel | Zoom in/out |
+| Shift + Wheel | Horizontal pan |
+| Ctrl + Wheel / ⌘ + Wheel | Zoom faster |
+
+### While Drawing
+| Shortcut | Action |
+|----------|--------|
+| Shift | Constrain angle (15°) |
+| Alt / Option | Draw from center |
+| Esc | Cancel drawing |
+| Double-click | Finish shape |
 
 ## Project Structure
 

@@ -634,7 +634,11 @@ onMounted(() => {
           setTool('text-annotation')
           break
         case 'M':
-          setTool('measure-distance')
+          if (e.shiftKey) {
+            setTool('measure-area')
+          } else {
+            setTool('measure-distance')
+          }
           break
         case 'S':
           setTool('stamp')

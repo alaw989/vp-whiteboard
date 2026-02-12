@@ -47,6 +47,7 @@
                   <ShortcutItem shortcut="E" description="Ellipse tool" />
                   <ShortcutItem shortcut="T" description="Text annotation" />
                   <ShortcutItem shortcut="M" description="Measure distance" />
+                  <ShortcutItem shortcut="Shift+M" description="Measure area" />
                   <ShortcutItem shortcut="S" description="Stamp tool" />
                   <ShortcutItem shortcut="X" description="Eraser tool" />
                 </div>

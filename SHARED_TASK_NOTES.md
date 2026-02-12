@@ -1,18 +1,31 @@
 # VP Whiteboard - Continuous Work Notes
 
-## Session Date: 2026-02-12 (Session #37+)
+## Session Date: 2026-02-12 (Session #39)
 
-## Project Status: ALL PHASES COMPLETE - All Accessibility Enhancements Committed
+## Project Status: ALL PHASES COMPLETE - Keyboard Shortcut Polish
 
 **All 8 phases complete (37/37 plans, 100%).** Typecheck passes. Build succeeds. Dev server running.
 
 ### Latest Commits
 ```
+ff8e89c docs(shared-notes): update Session #37 - keyboard shortcuts added
 e2ab9f4 feat(a11y): add keyboard shortcuts for highlighter and stamp tools
 c0404bc docs(shared-notes): update Session #36 - accessibility complete
 9857670 feat(a11y): add ARIA labels to stamp dropdown (desktop + mobile)
-6121132 feat(a11y): add ARIA labels, download icon, and polish UI
 ```
+
+### Session #39: Shift+M Shortcut for Measure Area
+- ✅ Added Shift+M keyboard shortcut to activate "measure-area" tool
+- ✅ Updated KeyboardShortcutsModal.vue to show Shift+M → Measure area
+- ✅ Fixed keyboard handler to distinguish M (measure-distance) vs Shift+M (measure-area)
+- ✅ README documentation updated with all shortcuts (from previous session, staged)
+
+### Session #38: Documentation Update (staged from previous session)
+- ✅ Updated README.md with complete keyboard shortcuts (organized by category)
+- ✅ Added Accessibility section to README
+- ✅ Added Mac keyboard shortcuts (⌘ symbols)
+- ✅ Included all tools: B (highlighter), S (stamp)
+- ✅ Added Navigation and While Drawing shortcuts sections
 
 ### Accessibility Complete
 - ✅ Desktop toolbar ARIA labels for all tools, colors, sizes
