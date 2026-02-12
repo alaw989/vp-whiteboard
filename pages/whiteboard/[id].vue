@@ -77,25 +77,6 @@
         />
       </aside>
 
-      <!-- Mobile Toolbar (shown at bottom on mobile) -->
-      <WhiteboardToolbar
-        :current-tool="currentTool"
-        :current-color="currentColor"
-        :current-size="currentSize"
-        :can-undo="canUndo"
-        :can-redo="canRedo"
-        :is-exporting="isExporting"
-        :export-progress="exportProgress"
-        @select-tool="setTool"
-        @select-color="setColor"
-        @select-size="setSize"
-        @stamp-type-change="handleStampTypeChange"
-        @undo="undo"
-        @redo="redo"
-        @clear="clearCanvas"
-        @open-export="openExportDialog"
-      />
-
       <!-- Canvas Area -->
       <main class="flex-1 relative overflow-hidden pb-16 md:pb-0">
         <ClientOnly>
@@ -125,7 +106,7 @@
           <template #fallback>
             <div class="flex items-center justify-center h-full">
               <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p class="text-neutral-600">Loading whiteboard...</p>
+              <p class="text-neutral-600">{{ whiteboard?.name ? 'Loading canvas...' : 'Loading whiteboard...' }}</p>
             </div>
           </template>
         </ClientOnly>
@@ -356,19 +337,23 @@ if (whiteboard.value?.canvas_state && canvasInstance.value) {
   canvasInstance.value.importState(whiteboard.value.canvas_state)
 }
 
-// Auto-save canvas state periodically
-const saveInterval = setInterval(() => {
-  if (canvasInstance.value && canvasInstance.value.isConnected.value) {
-    const state = canvasInstance.value.exportState()
-    $fetch(`/api/whiteboard/${whiteboardId}`, {
-      method: 'PATCH',
-      body: { canvas_state: state },
-    })
-  }
-}, 30000)
+// Auto-save canvas state periodically (client-side only to avoid SSR error)
+const saveInterval = ref<number | null>(null)
+
+onMounted(() => {
+  saveInterval.value = window.setInterval(() => {
+    if (canvasInstance.value && canvasInstance.value.isConnected.value) {
+      const state = canvasInstance.value.exportState()
+      $fetch(`/api/whiteboard/${whiteboardId}`, {
+        method: 'PATCH',
+        body: { canvas_state: state },
+      })
+    }
+  }, 30000) as unknown as number
+})
 
 onUnmounted(() => {
-  clearInterval(saveInterval)
+  if (saveInterval.value) window.clearInterval(saveInterval.value)
   if (canvasInstance.value) canvasInstance.value.cleanup()
 })
 

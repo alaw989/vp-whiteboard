@@ -182,6 +182,80 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     trackedOrigins: new Set([userId]),
   })
 
+  /**
+   * CRDT Garbage Collection
+   *
+   * Yjs accumulates tombstone records for deleted items, and the UndoManager
+   * retains full history. Over long sessions, this causes memory growth.
+   *
+   * Strategy:
+   * - Clear undo manager history periodically to release tombstone references
+   * - We do NOT compact yElements array directly because:
+   *   1. It would break collaborative context for other users
+   *   2. Active users may have references to old elements
+   *   3. Memory impact of tombstones is minimal compared to active data
+   *
+   * Trade-offs:
+   * - Memory: Bounded growth (undo history is primary memory consumer)
+   * - UX: Undo history is cleared on compaction (users lose redo ability)
+   *
+   * When to manually trigger:
+   * - After user action (e.g., saving document)
+   * - During idle time (debounced user inactivity)
+   * - When memory pressure detected (if available)
+   */
+
+  /**
+   * Compact the CRDT document by clearing undo history.
+   * This invalidates undo/redo but frees memory from accumulated tombstones.
+   */
+  function compactDocument() {
+    console.log('[CRDT] Compacting document - undo history will be cleared')
+
+    ydoc.transact(() => {
+      // Clear undo manager history to release tombstone references
+      // This is the primary source of memory growth in long-running sessions
+      if (undoManager.canUndo()) {
+        undoManager.clear()
+      }
+
+      // Note: We do NOT delete elements from yElements because:
+      // - It would break collaborative state for other users
+      // - Active elements must remain for all participants
+      // - The tombstones cleared by undoManager.clear() are the real memory concern
+    }, 'compaction')
+  }
+
+  /**
+   * Start periodic garbage collection for the CRDT document.
+   *
+   * @param intervalMs - Interval between compaction runs (default: 10 minutes)
+   * @returns Cleanup function to stop the garbage collection
+   */
+  let gcInterval: ReturnType<typeof setInterval> | null = null
+
+  function startGarbageCollection(intervalMs: number = 10 * 60 * 1000) {
+    // Default: 10 minutes
+    if (gcInterval) {
+      clearInterval(gcInterval)
+    }
+
+    gcInterval = setInterval(() => {
+      compactDocument()
+    }, intervalMs)
+
+    console.log(`[CRDT] Garbage collection started (interval: ${intervalMs}ms)`)
+
+    // Return cleanup function
+    return () => {
+      if (gcInterval) {
+        clearInterval(gcInterval)
+        gcInterval = null
+        console.log('[CRDT] Garbage collection stopped')
+      }
+    }
+  }
+
   // Watch connection status if provider exists
   if (wsProvider) {
     wsProvider.on('status', (event: { status: string }) => {
@@ -227,6 +301,8 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   }
 
   // Load from localStorage for persistence
+  let stopGarbageCollection: (() => void) | null = null
+
   onMounted(() => {
     const savedState = localStorage.getItem(`whiteboard:${whiteboardId}`)
     if (savedState && yElements.length === 0) {
@@ -237,6 +313,10 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         console.error('Failed to load saved state:', e)
       }
     }
+
+    // Start garbage collection on mount (10-minute default)
+    // This prevents unbounded memory growth during long sessions
+    stopGarbageCollection = startGarbageCollection()
   })
 
   // Save to localStorage when elements change
@@ -368,6 +448,12 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
 
   // Cleanup on unmount
   function cleanup() {
+    // Stop garbage collection interval
+    if (stopGarbageCollection) {
+      stopGarbageCollection()
+      stopGarbageCollection = null
+    }
+
     yCursors.delete(userId)
     if (wsProvider) {
       wsProvider.disconnect()
@@ -458,6 +544,10 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     getViewport,
     syncViewport,
     observeViewport,
+
+    // CRDT garbage collection methods
+    compactDocument,
+    startGarbageCollection,
 
     // Raw instances for advanced usage
     ydoc,
