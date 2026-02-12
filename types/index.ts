@@ -48,11 +48,11 @@ export interface CanvasState {
 
 export interface CanvasElement {
   id: string
-  type: 'stroke' | 'line' | 'rectangle' | 'circle' | 'ellipse' | 'image' | 'text' | 'arrow' | 'stamp' | 'text-annotation'
+  type: 'stroke' | 'line' | 'rectangle' | 'circle' | 'ellipse' | 'image' | 'text' | 'arrow' | 'stamp' | 'text-annotation' | 'measurement-distance' | 'measurement-area'
   userId: string
   userName: string
   timestamp: number
-  data: StrokeElement | LineElement | RectangleElement | CircleElement | EllipseElement | ImageElement | TextElement | ArrowElement | StampElement | TextAnnotationElement
+  data: StrokeElement | LineElement | RectangleElement | CircleElement | EllipseElement | ImageElement | TextElement | ArrowElement | StampElement | TextAnnotationElement | MeasurementDistanceElement | MeasurementAreaElement
 }
 
 export interface StrokeElement {
@@ -135,6 +135,24 @@ export interface TextAnnotationElement {
     start: [number, number]
     end: [number, number]
   }
+}
+
+// Measurement element types
+export interface MeasurementDistanceElement {
+  start: [number, number]    // Canvas coordinates
+  end: [number, number]      // Canvas coordinates
+  pixelsPerInch: number       // Scale at creation time
+  unit: 'inches' | 'feet'   // Display unit
+  precision: number           // Decimal places (4 for .0001)
+  value?: number             // Calculated real-world distance (cached)
+}
+
+export interface MeasurementAreaElement {
+  targetElementId: string   // ID of shape being measured
+  pixelsPerInch: number
+  unit: 'sq-inches' | 'sq-feet'
+  precision: number
+  value?: number             // Calculated area
 }
 
 // Scale state for measurement tools
