@@ -1,6 +1,6 @@
 # VP Whiteboard - Continuous Work Notes
 
-## Session Date: 2026-02-12 (Session #36)
+## Session Date: 2026-02-12 (Session #37+)
 
 ## Project Status: ALL PHASES COMPLETE - All Accessibility Enhancements Committed
 
@@ -8,6 +8,8 @@
 
 ### Latest Commits
 ```
+e2ab9f4 feat(a11y): add keyboard shortcuts for highlighter and stamp tools
+c0404bc docs(shared-notes): update Session #36 - accessibility complete
 9857670 feat(a11y): add ARIA labels to stamp dropdown (desktop + mobile)
 6121132 feat(a11y): add ARIA labels, download icon, and polish UI
 ```
@@ -18,6 +20,7 @@
 - ✅ Stamp dropdown with role="menu" and role="menuitem"
 - ✅ aria-pressed for toggle states
 - ✅ aria-hidden on decorative elements
+- ✅ Keyboard shortcuts: V, H, P, B, L, A, R, S, E, T, M, X
 
 ### Implementation Complete
 - ✅ Phase 1-7: Foundation, Document Rendering, Drawing Tools, Navigation, Collaboration, Export, Measurement
