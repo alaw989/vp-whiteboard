@@ -39,6 +39,7 @@
                   <ShortcutItem shortcut="V" description="Select tool" />
                   <ShortcutItem shortcut="H" description="Pan tool" />
                   <ShortcutItem shortcut="P" description="Pen tool" />
+                  <ShortcutItem shortcut="B" description="Highlighter tool" />
                   <ShortcutItem shortcut="L" description="Line tool" />
                   <ShortcutItem shortcut="A" description="Arrow tool" />
                   <ShortcutItem shortcut="R" description="Rectangle tool" />
@@ -46,6 +47,7 @@
                   <ShortcutItem shortcut="E" description="Ellipse tool" />
                   <ShortcutItem shortcut="T" description="Text annotation" />
                   <ShortcutItem shortcut="M" description="Measure distance" />
+                  <ShortcutItem shortcut="S" description="Stamp tool" />
                   <ShortcutItem shortcut="X" description="Eraser tool" />
                 </div>
               </div>

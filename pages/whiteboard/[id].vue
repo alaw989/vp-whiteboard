@@ -612,6 +612,9 @@ onMounted(() => {
         case 'P':
           setTool('pen')
           break
+        case 'B':
+          setTool('highlighter')
+          break
         case 'L':
           setTool('line')
           break
@@ -632,6 +635,9 @@ onMounted(() => {
           break
         case 'M':
           setTool('measure-distance')
+          break
+        case 'S':
+          setTool('stamp')
           break
         case 'X':
           setTool('eraser')
