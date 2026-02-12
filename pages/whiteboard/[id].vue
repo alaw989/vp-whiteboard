@@ -285,7 +285,7 @@ const remoteCursors = ref<Map<number, any>>(new Map())
 // Export functionality
 const { isExporting, progress: exportProgress, exportAsPNG, exportAsPDF } = useExport()
 
-// Canvas composable refs - initialized as empty to avoid accessing canvas before it's ready
+// Canvas composable ref - initialized on mount, safely accessed via computed
 const canvas = ref<ReturnType<typeof useCollaborativeCanvas> | null>(null)
 
 // Initialize canvas on client side
