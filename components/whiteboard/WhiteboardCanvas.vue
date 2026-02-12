@@ -51,8 +51,8 @@
 
         <!-- Grid -->
         <v-group :config="{ x: viewport.x, y: viewport.y }">
-          <!-- Render all elements -->
-          <template v-for="element in elements" :key="element.id">
+          <!-- Render visible elements (viewport clipped for performance) -->
+          <template v-for="element in visibleElements" :key="element.id">
             <!-- Stroke elements (freehand drawing) - rendered as filled polygon -->
             <v-line
               v-if="element.type === 'stroke'"
@@ -575,6 +575,7 @@ const {
   stopPan,
   setViewportDirect,
   applyRemoteViewport,
+  getViewportBounds,
 } = useViewport({
   stageRef,
   containerRef,
@@ -630,6 +631,288 @@ watch(visibleLayers, (layers) => {
       const img = new Image()
       img.src = layer.src
       layerImageCache.set(layer.src, img)
+    }
+  }
+}, { deep: true })
+
+// Bounding box cache for viewport clipping - use plain Map (non-reactive)
+// to avoid triggering re-renders when cache is updated
+const boundingBoxCache = new Map<string, { left: number; right: number; top: number; bottom: number }>()
+
+/**
+ * Get bounding box for an element in canvas coordinates
+ * Returns { left, right, top, bottom } with padding for stroke width
+ */
+function getElementBoundingBox(element: CanvasElement): { left: number; right: number; top: number; bottom: number } {
+  // Check cache first
+  if (boundingBoxCache.has(element.id)) {
+    return boundingBoxCache.get(element.id)!
+  }
+
+  let bbox: { left: number; right: number; top: number; bottom: number }
+
+  switch (element.type) {
+    case 'stroke': {
+      const data = element.data as StrokeElement
+      const points = data.points
+      if (points.length === 0) {
+        bbox = { left: 0, right: 0, top: 0, bottom: 0 }
+      } else {
+        let minX = points[0][0], maxX = points[0][0]
+        let minY = points[0][1], maxY = points[0][1]
+        for (let i = 1; i < points.length; i++) {
+          minX = Math.min(minX, points[i][0])
+          maxX = Math.max(maxX, points[i][0])
+          minY = Math.min(minY, points[i][1])
+          maxY = Math.max(maxY, points[i][1])
+        }
+        // Add padding for stroke width
+        const padding = data.size / 2 + 10
+        bbox = {
+          left: minX - padding,
+          right: maxX + padding,
+          top: minY - padding,
+          bottom: maxY + padding,
+        }
+      }
+      break
+    }
+
+    case 'line': {
+      const data = element.data as LineElement
+      const minX = Math.min(data.start[0], data.end[0])
+      const maxX = Math.max(data.start[0], data.end[0])
+      const minY = Math.min(data.start[1], data.end[1])
+      const maxY = Math.max(data.start[1], data.end[1])
+      const padding = data.size / 2 + 10
+      bbox = {
+        left: minX - padding,
+        right: maxX + padding,
+        top: minY - padding,
+        bottom: maxY + padding,
+      }
+      break
+    }
+
+    case 'arrow': {
+      const data = element.data as ArrowElement
+      const points = data.points
+      if (points.length < 2) {
+        bbox = { left: 0, right: 0, top: 0, bottom: 0 }
+      } else {
+        let minX = points[0][0], maxX = points[0][0]
+        let minY = points[0][1], maxY = points[0][1]
+        for (let i = 2; i < points.length; i += 2) {
+          minX = Math.min(minX, points[i])
+          maxX = Math.max(maxX, points[i])
+          minY = Math.min(minY, points[i + 1])
+          maxY = Math.max(maxY, points[i + 1])
+        }
+        // Add padding for arrowhead and stroke
+        const padding = Math.max(data.pointerLength, data.strokeWidth) + 10
+        bbox = {
+          left: minX - padding,
+          right: maxX + padding,
+          top: minY - padding,
+          bottom: maxY + padding,
+        }
+      }
+      break
+    }
+
+    case 'rectangle': {
+      const data = element.data as RectangleElement
+      const padding = data.strokeWidth / 2 + 10
+      bbox = {
+        left: data.x - padding,
+        right: data.x + data.width + padding,
+        top: data.y - padding,
+        bottom: data.y + data.height + padding,
+      }
+      break
+    }
+
+    case 'circle': {
+      const data = element.data as CircleElement
+      const padding = data.strokeWidth / 2 + 10
+      bbox = {
+        left: data.cx - data.radius - padding,
+        right: data.cx + data.radius + padding,
+        top: data.cy - data.radius - padding,
+        bottom: data.cy + data.radius + padding,
+      }
+      break
+    }
+
+    case 'ellipse': {
+      const data = element.data as EllipseElement
+      const padding = data.strokeWidth / 2 + 10
+      bbox = {
+        left: data.x - data.radiusX - padding,
+        right: data.x + data.radiusX + padding,
+        top: data.y - data.radiusY - padding,
+        bottom: data.y + data.radiusY + padding,
+      }
+      break
+    }
+
+    case 'image': {
+      const data = element.data as ImageElement
+      bbox = {
+        left: data.x,
+        right: data.x + data.width,
+        top: data.y,
+        bottom: data.y + data.height,
+      }
+      break
+    }
+
+    case 'text': {
+      const data = element.data as TextElement
+      // Estimate text dimensions (rough approximation)
+      const charWidth = data.fontSize * 0.6
+      const width = data.text.length * charWidth
+      const height = data.fontSize
+      bbox = {
+        left: data.x,
+        right: data.x + width,
+        top: data.y - height,  // Text draws from baseline
+        bottom: data.y,
+      }
+      break
+    }
+
+    case 'stamp': {
+      const data = element.data as StampElement
+      const padding = 10 // border/shadow
+      bbox = {
+        left: data.x - padding,
+        right: data.x + data.width + padding,
+        top: data.y - padding,
+        bottom: data.y + data.height + padding,
+      }
+      break
+    }
+
+    case 'text-annotation': {
+      const data = element.data as TextAnnotationElement
+      const minX = Math.min(data.leaderLine.start[0], data.leaderLine.end[0])
+      const maxX = Math.max(data.leaderLine.start[0], data.leaderLine.end[0])
+      const minY = Math.min(data.leaderLine.start[1], data.leaderLine.end[1])
+      const maxY = Math.max(data.leaderLine.start[1], data.leaderLine.end[1])
+      // Account for text at leader line end
+      const charWidth = data.fontSize * 0.6
+      const textWidth = data.text.length * charWidth
+      const textHeight = data.fontSize + 20
+      bbox = {
+        left: Math.min(minX, data.leaderLine.end[0] - textWidth / 2) - 10,
+        right: Math.max(maxX, data.leaderLine.end[0] + textWidth / 2) + 10,
+        top: Math.min(minY, data.leaderLine.end[1] - textHeight) - 10,
+        bottom: Math.max(maxY, data.leaderLine.end[1] + 20) + 10,
+      }
+      break
+    }
+
+    case 'measurement-distance': {
+      const data = element.data as MeasurementDistanceElement
+      const minX = Math.min(data.start[0], data.end[0])
+      const maxX = Math.max(data.start[0], data.end[0])
+      const minY = Math.min(data.start[1], data.end[1])
+      const maxY = Math.max(data.start[1], data.end[1])
+      // Account for anchors and label
+      const padding = 30 // label + anchors
+      bbox = {
+        left: minX - padding,
+        right: maxX + padding,
+        top: minY - padding,
+        bottom: maxY + padding,
+      }
+      break
+    }
+
+    case 'measurement-area': {
+      const data = element.data as MeasurementAreaElement
+      // Find the target element to get its bounds
+      const target = props.elements.find(el => el.id === data.targetElementId)
+      if (target) {
+        bbox = getElementBoundingBox(target)
+        // Expand slightly for the label
+        const labelPadding = 30
+        bbox = {
+          left: bbox.left,
+          right: bbox.right,
+          top: bbox.top - labelPadding,
+          bottom: bbox.bottom,
+        }
+      } else {
+        bbox = { left: 0, right: 0, top: 0, bottom: 0 }
+      }
+      break
+    }
+
+    default:
+      bbox = { left: 0, right: 0, top: 0, bottom: 0 }
+  }
+
+  // Cache the result
+  boundingBoxCache.set(element.id, bbox)
+  return bbox
+}
+
+/**
+ * Check if an element's bounding box intersects with viewport bounds
+ */
+function isElementInViewport(
+  element: CanvasElement,
+  viewportBounds: { left: number; right: number; top: number; bottom: number }
+): boolean {
+  const bbox = getElementBoundingBox(element)
+
+  // Check for intersection - element is visible if NOT completely outside
+  return !(
+    bbox.right < viewportBounds.left ||
+    bbox.left > viewportBounds.right ||
+    bbox.bottom < viewportBounds.top ||
+    bbox.top > viewportBounds.bottom
+  )
+}
+
+/**
+ * Computed property for visible elements with viewport clipping
+ * Only filters when element count >= 500 for performance
+ */
+const visibleElements = computed(() => {
+  // If we have fewer than 500 elements, return all (no filtering needed)
+  if (props.elements.length < 500) {
+    return props.elements
+  }
+
+  // Get viewport bounds for culling
+  const bounds = getViewportBounds(stageWidth.value, stageHeight.value)
+
+  // Filter elements that intersect with viewport
+  return props.elements.filter(element => isElementInViewport(element, bounds))
+})
+
+// Watch elements changes to clear bounding box cache
+watch(() => props.elements, (newElements, oldElements) => {
+  // Clear cache when elements are added/removed
+  // We could be smarter and only invalidate changed elements, but full clear is simpler
+  const newIds = new Set(newElements.map(el => el.id))
+  const oldIds = new Set(oldElements?.map(el => el.id) || [])
+
+  // Remove cache entries for deleted elements
+  for (const id of boundingBoxCache.keys()) {
+    if (!newIds.has(id)) {
+      boundingBoxCache.delete(id)
+    }
+  }
+
+  // Invalidate cache for modified elements by checking if element data changed
+  for (const newEl of newElements) {
+    const oldEl = oldElements?.find(el => el.id === newEl.id)
+    if (oldEl && JSON.stringify(oldEl.data) !== JSON.stringify(newEl.data)) {
+      boundingBoxCache.delete(newEl.id)
     }
   }
 }, { deep: true })
@@ -728,6 +1011,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   layerImageCache.clear()
+  boundingBoxCache.clear()  // Clear bounding box cache
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('keydown', handleKeyDown)
 
