@@ -1978,6 +1978,27 @@ function cancelMeasurementEdit() {
   pendingMeasurementValue.value = ''
 }
 
+// Get center point of a shape element (for area measurement positioning)
+function getShapeCenter(element: CanvasElement): { x: number; y: number } {
+  switch (element.type) {
+    case 'rectangle': {
+      const data = element.data as RectangleElement
+      return {
+        x: data.x + data.width / 2,
+        y: data.y + data.height / 2
+      }
+    case 'circle': {
+      const data = element.data as CircleElement
+      return { x: data.cx, y: data.cy }
+    case 'ellipse': {
+      const data = element.data as EllipseElement
+      return { x: data.x, y: data.y }
+    default:
+      return { x: 0, y: 0 }
+  }
+}
+
+defineExpose({
 defineExpose({
   exportAsImage,
   loadPDF,
