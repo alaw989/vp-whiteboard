@@ -316,6 +316,20 @@ export function useViewport(options: ViewportOptions) {
     }
   }
 
+  /**
+   * Set viewport directly without triggering sync or callbacks
+   * For high-frequency updates (e.g., touch gestures) to avoid network spam
+   */
+  function setViewportDirect(state: Partial<ViewportState>) {
+    if (state.x !== undefined) viewport.value.x = state.x
+    if (state.y !== undefined) viewport.value.y = state.y
+    if (state.zoom !== undefined) {
+      viewport.value.zoom = Math.min(Math.max(state.zoom, minZoom), maxZoom)
+    }
+    // Note: Does NOT call triggerSync or onViewportChange
+    // Sync will happen when gesture ends (via setViewport)
+  }
+
   return {
     // State (readonly for external use)
     viewport: readonly(viewport),
@@ -335,6 +349,7 @@ export function useViewport(options: ViewportOptions) {
     zoomOut,
     resetZoom,
     setViewport,
+    setViewportDirect,
 
     // Remote viewport sync
     applyRemoteViewport: applyRemoteViewportInternal,
