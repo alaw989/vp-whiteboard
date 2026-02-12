@@ -103,10 +103,11 @@
             </button>
             <button
               :disabled="isExporting"
-              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 flex items-center gap-2 hover:shadow-md disabled:shadow-none"
               @click="handleExport"
             >
               <Icon v-if="isExporting" name="mdi:loading" class="w-4 h-4 animate-spin" />
+              <Icon v-else name="mdi:download" class="w-4 h-4" />
               {{ isExporting ? 'Exporting...' : 'Export' }}
             </button>
           </div>

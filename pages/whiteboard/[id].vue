@@ -235,8 +235,9 @@
 
     <!-- Keyboard Shortcut Hint Button -->
     <button
-      class="fixed bottom-4 right-4 z-30 w-8 h-8 rounded-lg bg-neutral-800/80 hover:bg-neutral-700/90 text-white flex items-center justify-center transition-colors"
+      class="fixed bottom-4 right-4 z-30 w-10 h-10 rounded-xl bg-neutral-800/90 hover:bg-neutral-700 text-white flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg backdrop-blur-sm"
       title="Keyboard shortcuts (?)"
+      aria-label="Show keyboard shortcuts"
       @click="showKeyboardShortcuts = true"
     >
       <span class="text-sm font-semibold">?</span>

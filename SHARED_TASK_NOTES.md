@@ -1,28 +1,21 @@
 # VP Whiteboard - Continuous Work Notes
 
-## Session Date: 2026-02-12 (Session #30)
+## Session Date: 2026-02-12 (Session #33)
 
-## Project Status: ALL PHASES COMPLETE - Code Committed
+## Project Status: ALL PHASES COMPLETE - Ready to Commit
 
-**All 8 phases complete (37/37 plans, 100%).** Typecheck passes. Build succeeds.
+**All 8 phases complete (37/37 plans, 100%).** Typecheck passes. Build succeeds. Dev server running.
 
-### Latest Commit (Session #30)
+### Ready to Commit (Session #31-33)
+Accessibility and UX improvements verified and ready:
+- **WhiteboardToolbar.vue**: Added `role="toolbar"`, `role="group"`, and ARIA labels for desktop and mobile toolbars
+- **ExportDialog.vue**: Added download icon, improved hover states with shadow transition
+- **[id].vue**: Keyboard shortcut hint button made larger (10x10), added scale animation, ARIA label
+
+### Latest Commit
 ```
 361e06a feat(ui): polish loading screens, add hover effects, expand docs
 ```
-
-### Changes Committed This Session
-- CSS utilities: `.card-hover-lift`, `.bg-grid-pattern`, `.animate-fade-in`
-- Enhanced loading screens with dual-ring spinner and pulsing center dot
-- 404 error handling for missing whiteboards
-- Card hover effects on index page
-- README expanded with full features list, keyboard shortcuts, performance notes
-- ROADMAP.md updated to mark all phases complete
-- 08-02-SUMMARY.md documenting GC implementation
-
-### Dev Server Status
-- Running on port 3004 (port 3000 was in use)
-- All pages responding: `/` → 200, `/whiteboard/new` → 200
 
 ### Implementation Complete
 - ✅ Phase 1-7: Foundation, Document Rendering, Drawing Tools, Navigation, Collaboration, Export, Measurement
@@ -49,27 +42,11 @@
 - [ ] Two-Finger Pan - Verify gesture pans viewport without drawing
 - [ ] Mobile Toolbar - Bottom sheet layout on mobile viewport
 
-## Expected Behavior
-
-**Loading Flow:**
-- `/whiteboard/new` creates ID, redirects to `/whiteboard/[id]`
-- Shows "Loading canvas..." while ClientOnly component hydrates
-- Enhanced dual-ring spinner animation with pulsing center dot
-- Gradient background on new whiteboard page
-- Connection status shows "disconnected" if WebSocket server unavailable (expected - no external WS server configured)
-
-**Whiteboard Flow:**
-- Toolbar on desktop (left sidebar)
-- Toolbar on mobile (bottom sheet)
-- Drawing tools: pen, line, arrow, rectangle, circle, ellipse, stamp, measure
-- Keyboard shortcuts: V (select), H (pan), P (pen), L (line), etc.
-- Export to PNG/PDF
-- Scale tool for measurement
-
 ## Next Steps
 
-1. **Manual UAT** - Requires actual hardware/browser testing
-2. **After UAT passes** - Push to main branch
+1. **Commit accessibility improvements** - Run: `git add -A && git commit -m "feat(a11y): add ARIA labels, download icon, and polish UI"`
+2. **Manual UAT** - Requires actual hardware/browser testing
+3. **After UAT passes** - Push to main branch
 
 ## Quick Commands
 
@@ -80,9 +57,13 @@ npm run typecheck
 # Build
 npm run build
 
-# Dev server (background)
+# Dev server status
+pgrep -f "nuxi"  # Should show PID if running
+
+# Start dev server (if not running)
 npm run dev &
 
-# Check server
-curl http://localhost:3000
+# Uncommitted changes
+git diff
 ```
+

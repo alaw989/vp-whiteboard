@@ -1,7 +1,7 @@
 <template>
   <!-- Desktop Sidebar Toolbar (with wrapper for proper positioning) -->
-  <div class="hidden md:flex w-16 bg-white border-r border-neutral-200 flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen flex-shrink-0">
-    <div class="toolbar flex flex-col gap-2 p-2 bg-white rounded-lg shadow-sm border border-neutral-200 overflow-y-auto w-full scrollbar-thin">
+  <div class="hidden md:flex w-16 bg-white border-r border-neutral-200 flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen flex-shrink-0" role="toolbar" aria-label="Whiteboard tools">
+    <div class="toolbar flex flex-col gap-2 p-2 bg-white rounded-lg shadow-sm border border-neutral-200 overflow-y-auto w-full scrollbar-thin" role="group" aria-label="Drawing tools and actions">
     <!-- Drawing Tools -->
     <div class="flex flex-col gap-1">
       <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Tools</h4>
@@ -15,6 +15,9 @@
               ? 'bg-blue-100 text-blue-600'
               : 'hover:bg-neutral-100 text-neutral-600'
           ]"
+          :aria-label="`Stamp tool, press S. Current: ${currentStampType}`"
+          :aria-expanded="showStampMenu"
+          aria-haspopup="menu"
           @click="handleStampClick"
           title="Stamp (S)"
         >
@@ -46,6 +49,8 @@
         v-for="tool in tools"
         :key="tool.id"
         :title="`${tool.name} (${tool.shortcut})`"
+        :aria-label="`${tool.name} tool, press ${tool.shortcut}`"
+        :aria-pressed="currentTool === tool.id"
         :class="[
           'p-2 rounded-lg transition-all duration-150',
           currentTool === tool.id
@@ -65,11 +70,13 @@
     <div class="flex flex-col gap-1">
       <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Color</h4>
 
-      <div class="grid grid-cols-3 gap-1">
+      <div class="grid grid-cols-3 gap-1" role="group" aria-label="Color palette">
         <button
           v-for="color in colors"
           :key="color"
           :title="color"
+          :aria-label="`Color ${color}${currentColor === color ? ', selected' : ''}`"
+          :aria-pressed="currentColor === color"
           :class="[
             'w-7 h-7 rounded-md transition-all duration-150',
             currentColor === color
@@ -85,6 +92,7 @@
       <input
         type="color"
         :value="currentColor"
+        aria-label="Custom color picker"
         class="w-full h-7 rounded cursor-pointer transition-transform hover:scale-105"
         @input="$emit('select-color', ($event.target as HTMLInputElement).value)"
       />
@@ -190,11 +198,15 @@
   <div
     class="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-neutral-200 z-20 transition-all duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"
     :style="{ paddingBottom: 'env(safe-area-inset-bottom, 16px)' }"
+    role="toolbar"
+    aria-label="Mobile whiteboard tools"
   >
     <!-- Collapsed State - Primary Tools Strip -->
     <div
       v-if="!toolbarExpanded"
       class="flex items-center justify-around px-2 py-2"
+      role="group"
+      aria-label="Primary drawing tools"
     >
       <!-- Primary tool buttons -->
       <button
