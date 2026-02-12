@@ -528,7 +528,10 @@ const {
   completeDistanceMeasurement,
   cancelMeasurement,
   getMeasurementLabel,
-} = useMeasurements({
+  isMeasurementStale,
+  getStaleMeasurements,
+  updateMeasurementEndpoint,
+  updateMeasurementValue,
   yElements: { push: (elements: CanvasElement[]) => {
     // Forward to emit for now - parent handles yElements
     elements.forEach(el => emit('element-add', el))
@@ -1582,11 +1585,13 @@ function getMeasurementGroupConfig(element: CanvasElement) {
 
 function getMeasurementLineConfig(element: CanvasElement) {
   const data = element.data as MeasurementDistanceElement
+  const isStale = isMeasurementStale(element, pixelsPerInch.value)
   return {
     points: [data.start[0], data.start[1], data.end[0], data.end[1]],
-    stroke: '#3B82F6',
+    stroke: isStale ? '#F59E0B' : '#3B82F6',  // Amber for stale measurements
     strokeWidth: 2,
     lineCap: 'round',
+    dash: isStale ? [5, 5] : undefined,  // Dashed line for stale
   }
 }
 
@@ -2036,11 +2041,13 @@ function getMeasurementGroupConfig(element: CanvasElement) {
 
 function getMeasurementLineConfig(element: CanvasElement) {
   const data = element.data as MeasurementDistanceElement
+  const isStale = isMeasurementStale(element, pixelsPerInch.value)
   return {
     points: [data.start[0], data.start[1], data.end[0], data.end[1]],
-    stroke: '#3B82F6',
+    stroke: isStale ? '#F59E0B' : '#3B82F6',  // Amber for stale measurements
     strokeWidth: 2,
     lineCap: 'round',
+    dash: isStale ? [5, 5] : undefined,  // Dashed line for stale
   }
 }
 
@@ -2072,12 +2079,13 @@ function getMeasurementLabelConfig(element: CanvasElement) {
   const data = element.data as MeasurementDistanceElement
   const inches = data.value ?? calculateDistance(data.start, data.end) / data.pixelsPerInch
   const label = formatDistanceMeasurement(inches, data.precision, data.unit)
+  const isStale = isMeasurementStale(element, pixelsPerInch.value)
   return {
-    text: label,
+    text: label + (isStale ? ' (!)' : ''),
     x: (data.start[0] + data.end[0]) / 2,
     y: (data.start[1] + data.end[1]) / 2 - 20,
     fontSize: 14,
-    fill: '#3B82F6',
+    fill: isStale ? '#F59E0B' : '#3B82F6',  // Amber for stale
     fontFamily: 'Arial, sans-serif',
   }
 }
@@ -2087,12 +2095,13 @@ function getAreaLabelConfig(element: CanvasElement) {
   const data = element.data as MeasurementAreaElement
   const value = data.value ?? 0
   const label = formatAreaMeasurement(value, data.precision, data.unit)
+  const isStale = isMeasurementStale(element, pixelsPerInch.value)
   return {
-    text: label,
+    text: label + (isStale ? ' (!)' : ''),
     x: 0,
     y: 0,
     fontSize: 12,
-    fill: '#3B82F6',
+    fill: isStale ? '#F59E0B' : '#3B82F6',  // Amber for stale
     fontFamily: 'Arial, sans-serif',
   }
 }
