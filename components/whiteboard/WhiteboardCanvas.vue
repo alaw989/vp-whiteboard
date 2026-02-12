@@ -169,6 +169,36 @@
               <v-rect :config="getStampRectConfig(element)" />
               <v-text :config="getStampTextConfig(element)" />
             </v-group>
+
+            <!-- Distance measurement elements (line + anchors + label in group) -->
+            <v-group
+              v-else-if="element.type === 'measurement-distance'"
+              :config="{
+                ...getMeasurementGroupConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
+            >
+              <v-line :config="getMeasurementLineConfig(element)" />
+              <v-circle :config="getMeasurementStartAnchor(element)" />
+              <v-circle :config="getMeasurementEndAnchor(element)" />
+              <v-text :config="getMeasurementLabelConfig(element)" />
+            </v-group>
+
+            <!-- Area measurement elements (label positioned above shape) -->
+            <v-group
+              v-else-if="element.type === 'measurement-area'"
+              :config="{
+                id: element.id,
+                x: getAreaLabelPosition(element).x,
+                y: getAreaLabelPosition(element).y
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragend="handleDragEnd"
+            >
+              <v-text :config="getAreaLabelConfig(element)" />
+            </v-group>
           </template>
 
           <!-- Current stroke being drawn -->
@@ -214,6 +244,58 @@
           <v-line
             v-if="currentLeaderLinePreview"
             :config="currentLeaderLinePreview"
+          />
+
+          <!-- Current measurement distance preview -->
+          <template v-if="isMeasuring && previewLine">
+            <v-line :config="previewLine" />
+            <v-circle
+              v-if="measurementStart"
+              :config="{
+                x: measurementStart[0],
+                y: measurementStart[1],
+                radius: 5,
+                fill: '#3B82F6',
+                stroke: '#FFFFFF',
+                strokeWidth: 2,
+              }"
+            />
+            <v-circle
+              v-if="currentMeasurementEnd"
+              :config="{
+                x: currentMeasurementEnd[0],
+                y: currentMeasurementEnd[1],
+                radius: 5,
+                fill: '#3B82F6',
+                stroke: '#FFFFFF',
+                strokeWidth: 2,
+              }"
+            />
+            <v-text
+              v-if="previewLine.label"
+              :config="{
+                text: previewLine.label,
+                x: (measurementStart![0] + currentMeasurementEnd![0]) / 2,
+                y: (measurementStart![1] + currentMeasurementEnd![1]) / 2 - 20,
+                fontSize: 14,
+                fill: '#3B82F6',
+                fontFamily: 'Arial, sans-serif',
+              }"
+            />
+          </template>
+
+          <!-- Snap indicator circle -->
+          <v-circle
+            v-if="currentSnapPoint"
+            :config="{
+              x: currentSnapPoint.x,
+              y: currentSnapPoint.y,
+              radius: 8,
+              fill: 'transparent',
+              stroke: '#F59E0B',
+              strokeWidth: 2,
+              dash: [3, 3],
+            }"
           />
         </v-group>
       </v-layer>
@@ -284,6 +366,43 @@
       </template>
     </ClientOnly>
 
+    <!-- Measurement edit input dialog -->
+    <div
+      v-if="showMeasurementEditDialog"
+      class="fixed inset-0 bg-black/20 flex items-center justify-center z-50"
+      @click.self="cancelMeasurementEdit"
+    >
+      <div class="bg-white rounded-lg shadow-xl p-4 w-80">
+        <h3 class="text-lg font-semibold mb-3">Edit Measurement</h3>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Measurement Value</label>
+          <input
+            v-model="pendingMeasurementValue"
+            type="number"
+            step="0.0001"
+            class="w-full border border-gray-300 rounded-md p-2 mb-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Enter measurement value..."
+            @keydown.enter.prevent="confirmMeasurementEdit"
+            @keydown.esc="cancelMeasurementEdit"
+          />
+        </div>
+        <div class="flex justify-end gap-2">
+          <button
+            @click="cancelMeasurementEdit"
+            class="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+          >
+            Cancel
+          </button>
+          <button
+            @click="confirmMeasurementEdit"
+            class="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+          >
+            Update
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- PDF Loading Indicator -->
     <PDFLoadingIndicator
       :loading="pdfLoadingState.loading"
@@ -298,13 +417,15 @@
 
 <script setup lang="ts">
 import { getStroke } from 'perfect-freehand'
-import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, StampElement, UserPresence, DocumentLayer } from '~/types'
+import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, StampElement, MeasurementDistanceElement, MeasurementAreaElement, UserPresence, DocumentLayer } from '~/types'
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
 import WhiteboardCursorPointer from '~/components/whiteboard/WhiteboardCursorPointer.vue'
 import type { PDFLoadingState } from '~/types'
 import { useSelection } from '~/composables/useSelection'
 import { useViewport } from '~/composables/useViewport'
 import { useCursors, type CursorState } from '~/composables/useCursors'
+import { useMeasurements } from '~/composables/useMeasurements'
+import { useSnapping } from '~/composables/useSnapping'
 
 // Stamp configurations with styling
 const STAMP_CONFIGS = {
@@ -392,6 +513,33 @@ const {
   updateLayer,
   removeLayer,
 } = useDocumentLayer()
+
+// Default scale: 96 pixels per inch (standard screen resolution)
+const pixelsPerInch = ref(96)
+
+// Measurement composable
+const {
+  isMeasuring,
+  measurementStart,
+  currentMeasurementEnd,
+  previewLine,
+  startDistanceMeasurement,
+  updateMeasurementPreview,
+  completeDistanceMeasurement,
+  cancelMeasurement,
+  getMeasurementLabel,
+} = useMeasurements({
+  yElements: { push: (elements: CanvasElement[]) => {
+    // Forward to emit for now - parent handles yElements
+    elements.forEach(el => emit('element-add', el))
+  }},
+  userId: props.userId,
+  userName: props.userName,
+  pixelsPerInch,
+})
+
+// Snapping composable
+const { findSnapPoint, clearSnapPoint } = useSnapping()
 
 // Selection composable
 const {
@@ -497,6 +645,9 @@ const currentLineEnd = ref<{x: number, y: number} | null>(null)
 const shapeStart = ref<{x: number, y: number} | null>(null)
 const currentShapeEnd = ref<{x: number, y: number} | null>(null)
 
+// Measurement tool state
+const currentSnapPoint = ref<{x: number, y: number} | null>(null)
+
 // PDF loading state
 const pdfLoadingState = ref<PDFLoadingState>({
   loading: false,
@@ -595,6 +746,8 @@ function handleKeyDown(event: KeyboardEvent) {
       const id = deleteSelected()
       if (id) {
         emit('element-delete', id)
+
+        // Also clean up any area measurements linked to this element
       }
     }
   }
@@ -713,6 +866,22 @@ function handleMouseDown(event: any) {
     return
   }
 
+  // Measure distance tool - click-click interaction
+  if (props.currentTool === 'measure-distance') {
+    if (!isMeasuring.value) {
+      // First click - start measurement
+      const snap = findSnapPoint(pos, props.elements)
+      const startPoint: [number, number] = snap ? [snap.x, snap.y] : [pos.x, pos.y]
+      startDistanceMeasurement(startPoint)
+    } else {
+      // Second click - complete measurement
+      const snap = findSnapPoint(pos, props.elements)
+      const endPoint: [number, number] = snap ? [snap.x, snap.y] : [pos.x, pos.y]
+      completeDistanceMeasurement(endPoint, props.currentColor)
+    }
+    return
+  }
+
   isDrawing.value = true
 
   // Arrow tool - start drawing arrow
@@ -726,6 +895,44 @@ function handleMouseDown(event: any) {
   if (props.currentTool === 'line') {
     lineStart.value = pos
     currentLineEnd.value = pos
+    return
+
+  // Measure area tool - select shape to measure
+  if (props.currentTool === 'measure-area') {
+    // Find the shape at clicked position
+    const stage = stageRef.value?.getNode()
+    if (stage) {
+      const shapes = stage.getAllIntersections({ x: pos.x, y: pos.y })
+      const canvasShapes = shapes.filter((shape: any) => {
+        const parent = shape.getParent()
+        const layer = parent?.getParent()
+        return layer?.name !== 'documentLayer'
+      })
+      
+      if (canvasShapes.length > 0) {
+        const shape = canvasShapes[0]
+        const elementId = shape.id() || shape.getParent()?.id()
+        
+        if (elementId) {
+          // Find element and create area measurement
+          const targetElement = props.elements.find(el => el.id === elementId)
+          if (targetElement && (targetElement.type === 'rectangle' || targetElement.type === 'circle' || targetElement.type === 'ellipse')) {
+          }
+        }
+      }
+    }
+    return
+  }
+
+  }
+
+  // Measure area tool - select shape then measure
+  if (props.currentTool === 'measure-area') {
+    // Measure area works on currently selected shape
+    if (selectedId.value) {
+      // Switch back to select tool after measuring
+      deselect()
+    }
     return
   }
 
@@ -760,6 +967,20 @@ function handleMouseMove(event: any) {
 
   // Also emit cursor update for parent (backward compatibility)
   emit('cursor-update', pos.x, pos.y)
+
+  // Handle measurement tool snapping (even when not drawing)
+  if (props.currentTool === 'measure-distance' && isMeasuring.value) {
+    const snap = findSnapPoint(pos, props.elements)
+    const updatePos: [number, number] = snap ? [snap.x, snap.y] : [pos.x, pos.y]
+    updateMeasurementPreview(updatePos)
+    currentSnapPoint.value = snap || null
+    return
+  }
+
+  // Clear snap point for non-measurement tools
+  if (props.currentTool !== 'measure-distance') {
+    currentSnapPoint.value = null
+  }
 
   if (!isDrawing.value) return
 
@@ -1090,6 +1311,17 @@ function handleDragEnd(event: any) {
       scaleY: newScale.y,
       rotation: newRotation,
     }
+  } else if (element.type === 'measurement-distance') {
+    // Measurements use x, y for group offset
+    const data = element.data as any
+    updates.data = {
+      ...data,
+      x: newPosition.x,
+      y: newPosition.y,
+      scaleX: newScale.x,
+      scaleY: newScale.y,
+      rotation: newRotation,
+    }
   }
 
   emit('element-update', selectedId.value, updates)
@@ -1341,6 +1573,61 @@ function getStampTextConfig(element: CanvasElement) {
   }
 }
 
+// Measurement distance config helpers
+function getMeasurementGroupConfig(element: CanvasElement) {
+  return { x: 0, y: 0 }
+}
+
+function getMeasurementLineConfig(element: CanvasElement) {
+  const data = element.data as MeasurementDistanceElement
+  return {
+    points: [data.start[0], data.start[1], data.end[0], data.end[1]],
+    stroke: '#3B82F6',
+    strokeWidth: 2,
+    lineCap: 'round',
+  }
+}
+
+function getMeasurementStartAnchor(element: CanvasElement) {
+  const data = element.data as MeasurementDistanceElement
+  return {
+    x: data.start[0],
+    y: data.start[1],
+    radius: 5,
+    fill: '#3B82F6',
+    stroke: '#FFFFFF',
+    strokeWidth: 2,
+  }
+}
+
+function getMeasurementEndAnchor(element: CanvasElement) {
+  const data = element.data as MeasurementDistanceElement
+  return {
+    x: data.end[0],
+    y: data.end[1],
+    radius: 5,
+    fill: '#3B82F6',
+    stroke: '#FFFFFF',
+    strokeWidth: 2,
+  }
+}
+
+function getMeasurementLabelConfig(element: CanvasElement) {
+  const data = element.data as MeasurementDistanceElement
+  const label = getMeasurementLabel(element)
+  const midX = (data.start[0] + data.end[0]) / 2
+  const midY = (data.start[1] + data.end[1]) / 2
+  return {
+    text: label,
+    x: midX,
+    y: midY - 15,
+    fontSize: 14,
+    fill: '#3B82F6',
+    fontFamily: 'Arial, sans-serif',
+    align: 'center',
+  }
+}
+
 // Element click handler for selection
 function handleElementClick(element: CanvasElement, evt: any) {
   if (props.currentTool === 'select') {
@@ -1348,6 +1635,10 @@ function handleElementClick(element: CanvasElement, evt: any) {
     // For groups (stamps, text-annotations), get the parent group
     const targetNode = node.getParent()?.className === 'Group' ? node.getParent() : node
     selectElement(element.id, targetNode)
+    evt.cancelBubble = true
+  } else if (props.currentTool === 'measure-distance' && evt.evt.detail === 2) {
+    // Double-click on measurement with measure tool active - open edit dialog
+    handleMeasurementDoubleClick(element)
     evt.cancelBubble = true
   }
 }
@@ -1659,3 +1950,83 @@ defineExpose({
   remoteCursors,
 })
 </script>
+
+/**
+ * Handle double-click on measurement to open edit dialog
+ */
+function handleMeasurementDoubleClick(element: CanvasElement) {
+  if (element.type === 'measurement-distance') {
+    editingMeasurementElement.value = element
+    const data = element.data as MeasurementDistanceElement
+    pendingMeasurementValue.value = String(data.value ?? 0)
+    showMeasurementEditDialog.value = true
+  }
+}
+
+/**
+ * Confirm measurement value edit
+ */
+function confirmMeasurementEdit() {
+  if (!editingMeasurementElement.value) return
+  
+  const newValue = parseFloat(pendingMeasurementValue.value)
+  if (isNaN(newValue)) return
+  
+  emit('element-update', editingMeasurementElement.value.id, {
+    data: editingMeasurementElement.value.data
+  })
+  
+  showMeasurementEditDialog.value = false
+  editingMeasurementElement.value = null
+  pendingMeasurementValue.value = ''
+}
+
+/**
+ * Cancel measurement edit
+ */
+function cancelMeasurementEdit() {
+  showMeasurementEditDialog.value = false
+  editingMeasurementElement.value = null
+  pendingMeasurementValue.value = ''
+}
+
+
+  const data = element.data as MeasurementAreaElement
+  const target = props.elements.find(el => el.id === data.targetElementId)
+  if (!target) return { x: 0, y: 0 }
+
+  // Get center position of target shape
+
+  // Offset label above the shape
+  return {
+    x: center.x,
+    y: center.y - 20  // 20px vertical offset
+  }
+}
+
+  switch (element.type) {
+    case 'rectangle': {
+      const data = element.data as RectangleElement
+      return {
+        x: data.x + data.width / 2,
+        y: data.y + data.height / 2
+      }
+    }
+    case 'circle': {
+      const data = element.data as CircleElement
+      return { x: data.cx, y: data.cy }
+    }
+    case 'ellipse': {
+      const data = element.data as EllipseElement
+      return { x: data.x, y: data.y }
+    }
+    default:
+      return { x: 0, y: 0 }
+  }
+}
+
+// Find all area measurements linked to a target element
+  return props.elements
+    .filter(el => (el.data as any).targetElementId === targetElementId)
+    .map(el => el.id)
+}

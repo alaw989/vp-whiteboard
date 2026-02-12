@@ -302,6 +302,88 @@ export function useMeasurements(options: UseMeasurementsOptions) {
   }
 
   /**
+   * Check if a measurement is stale (scale changed significantly)
+   * If scale differs by more than 1%, consider stale
+   */
+  function isMeasurementStale(element: CanvasElement, currentPixelsPerInch: number | null): boolean {
+    if (element.type !== 'measurement-distance' && element.type !== 'measurement-area') return false
+    if (!currentPixelsPerInch) return false
+
+    const data = element.data as MeasurementDistanceElement | MeasurementAreaElement
+    // If scale differs by more than 1%, consider stale
+    const ratio = data.pixelsPerInch / currentPixelsPerInch
+    return Math.abs(ratio - 1) > 0.01
+  }
+
+  /**
+   * Get all stale measurements for current scale
+   */
+  function getStaleMeasurements(currentPixelsPerInch: number | null): CanvasElement[] {
+    const allElements = elementsArray()
+    return allElements.filter(el => isMeasurementStale(el, currentPixelsPerInch))
+  }
+
+  /**
+   * Update measurement endpoint for distance measurements
+   * @param elementId - ID of measurement to update
+   * @param endpoint - 'start' or 'end' point to update
+   * @param newPoint - New coordinate for endpoint
+   * @param currentPixelsPerInch - Current scale for recalculation
+   */
+  function updateMeasurementEndpoint(
+    elementId: string,
+    endpoint: 'start' | 'end',
+    newPoint: [number, number],
+    currentPixelsPerInch: number
+  ): void {
+    const element = elementsArray().find(el => el.id === elementId)
+    if (!element || element.type !== 'measurement-distance') return
+
+    const data = element.data as MeasurementDistanceElement
+
+    if (endpoint === 'start') {
+      data.start = newPoint
+    } else {
+      data.end = newPoint
+    }
+
+    // Recalculate value with current scale
+    const pixelDist = calculateDistance(data.start, data.end)
+    data.value = pixelDist / currentPixelsPerInch
+
+    // Update in yElements
+    const index = yElements.toArray().findIndex((el: CanvasElement) => el.id === elementId)
+    if (index !== -1) {
+      yElements.delete(index, 1)
+      yElements.insert([element], index)
+    }
+  }
+
+  /**
+   * Update measurement value directly
+   * Used when user manually edits the measurement value
+   */
+  function updateMeasurementValue(elementId: string, newValue: number): void {
+    const element = elementsArray().find(el => el.id === elementId)
+    if (!element) return
+
+    if (element.type === 'measurement-distance') {
+      const data = element.data as MeasurementDistanceElement
+      data.value = newValue
+    } else if (element.type === 'measurement-area') {
+      const data = element.data as MeasurementAreaElement
+      data.value = newValue
+    }
+
+    // Update in yElements
+    const index = yElements.toArray().findIndex((el: CanvasElement) => el.id === elementId)
+    if (index !== -1) {
+      yElements.delete(index, 1)
+      yElements.insert([element], index)
+    }
+  }
+
+  /**
    * Get the label position for an area measurement
    * Positions the label above the center of the target shape
    */
@@ -344,5 +426,11 @@ export function useMeasurements(options: UseMeasurementsOptions) {
     getShapeCenter,
     getAreaLabel,
     getAreaLabelPosition,
+
+    // Editing and stale detection (Plan 07-04)
+    isMeasurementStale,
+    getStaleMeasurements,
+    updateMeasurementEndpoint,
+    updateMeasurementValue,
   }
 }

@@ -272,6 +272,8 @@ const tools = [
   { id: 'circle' as DrawingTool, name: 'Circle (C)', icon: 'mdi:circle-outline' },
   { id: 'ellipse' as DrawingTool, name: 'Ellipse (E)', icon: 'mdi:ellipse-outline' },
   { id: 'eraser' as DrawingTool, name: 'Eraser', icon: 'mdi:eraser' },
+  { id: 'measure-distance' as DrawingTool, name: 'Measure Distance (M)', icon: 'mdi:ruler' },
+  { id: 'measure-area' as DrawingTool, name: 'Measure Area', icon: 'mdi:chart-box-outline' },
 ] as const
 
 // Use centralized color and size constants from types
