@@ -6,16 +6,16 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Engineers and clients can collaboratively mark up and discuss engineering drawings in real-time, with everyone seeing each other's cursors and annotations instantly.
 
-**Current focus:** Phase 7: Measurement Tools
+**Current focus:** Phase 8: Performance & Mobile
 
 ## Current Position
 
-Phase: 7 of 8 (Measurement Tools)
-Plan: 4 of 4 in current phase
-Status: Phase complete - ready for Phase 8
-Last activity: 2025-02-11 — Completed Phase 7 Plan 4 (Measurement Tool Polish)
+Phase: 8 of 8 (Performance & Mobile)
+Plan: 06 of 6 (Mobile UI Responsive Toolbar)
+Status: In progress - executing Phase 8 plans
+Last activity: 2026-02-12 — Completed Phase 8 Plan 06 (Mobile UI Responsive Toolbar)
 
-Progress: [██████████] 100%
+Progress: [████░░░░░░] 17%
 
 ## Performance Metrics
 
@@ -70,6 +70,8 @@ Progress: [██████████] 100%
 | Phase 07-measurement-tools P02 | 15min | 4 tasks | 5 files |
 | Phase 07 P03 | 8 | 3 tasks | 2 files |
 | Phase 07-measurement-tools P04 | 1800 | 2 tasks | 2 files |
+| Phase 08-performance-mobile P06 | 3min | 2 tasks | 2 files |
+| Phase 08-performance-mobile P06 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -171,6 +173,10 @@ Recent decisions affecting current work:
 - [Phase 07-measurement-tools]: Click-click interaction pattern for precision measurement
 - [Phase 07-measurement-tools]: 4-decimal precision for engineering accuracy (e.g., 126.5000")
 - [Phase 07-measurement-tools]: Measurements stored as canvas elements for full collaboration support
+- [Phase 08]: Auto-collapse toolbar after tool selection on mobile for better UX
+- [Phase 08]: Primary tools in collapsed strip (select, pan, pen, highlighter, eraser)
+- [Phase 08]: Separate toolbar instances for desktop sidebar vs mobile bottom sheet
+- [Phase 08]: Safe-area-inset-bottom padding for notched phones (iPhone X+)
 
 ### Pending Todos
 
@@ -186,6 +192,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2025-02-11
-Stopped at: Completed Phase 07 Plan 04 (Measurement Tool Polish) - Phase 7 complete
+Last session: 2026-02-12
+Stopped at: Completed 08-06-PLAN.md (Mobile UI Responsive Toolbar)
 Resume file: None
