@@ -751,6 +751,8 @@ function handleKeyDown(event: KeyboardEvent) {
         emit('element-delete', id)
 
         // Also clean up any area measurements linked to this element
+        const areaMeasurementIds = findAreaMeasurementsFor(id)
+        areaMeasurementIds.forEach(areaId => emit('element-delete', areaId))
       }
     }
   }
