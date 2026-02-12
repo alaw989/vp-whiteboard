@@ -105,10 +105,8 @@
           />
           <template #fallback>
             <div class="flex items-center justify-center h-full">
-              <div class="text-center">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p class="text-neutral-600">Loading whiteboard...</p>
-              </div>
+              <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p class="text-neutral-600">Loading whiteboard...</p>
             </div>
           </template>
         </ClientOnly>
@@ -118,79 +116,31 @@
           <UserPresenceList
             v-if="currentUserFromCanvas && remoteCursors.size > 0"
             :users="remoteCursors"
-            :current-user="currentUserFromCanvas"
           />
         </ClientOnly>
       </main>
-    </div>
 
     <!-- Share Modal -->
-    <div v-if="showShareModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="showShareModal = false">
-      <div class="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-xl font-semibold">Share Whiteboard</h2>
-          <button @click="showShareModal = false" class="text-neutral-500 hover:text-neutral-700">
-            <Icon name="mdi:close" class="w-5 h-5" />
-          </button>
-        </div>
-
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-neutral-700 mb-2">
-              Share Link
-            </label>
-            <div class="flex gap-2">
-              <input
-                :value="shareUrl"
-                readonly
-                class="input flex-1"
-              />
-              <button
-                @click="copyShareLink"
-                class="btn-primary"
-              >
-                <Icon name="mdi:content-copy" class="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div class="p-3 bg-blue-50 text-blue-700 text-sm rounded-lg">
-            <Icon name="mdi:information" class="w-4 h-4 inline mr-1" />
-            Anyone with this link can view and edit the whiteboard.
-          </div>
-        </div>
-      </div>
-    </div>
+    <WhiteboardShareModal
+      v-if="showShareModal"
+      :share-url="shareUrl"
+      @close="showShareModal = false"
+    />
 
     <!-- Upload Modal -->
-    <div v-if="showUploadModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="showUploadModal = false">
-      <div class="bg-white rounded-xl shadow-xl p-6 max-w-lg w-full mx-4">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-xl font-semibold">Upload File</h2>
-          <button @click="showUploadModal = false" class="text-neutral-500 hover:text-neutral-700">
-            <Icon name="mdi:close" class="w-5 h-5" />
-          </button>
-        </div>
-
-        <WhiteboardUpload
-          :whiteboard-id="whiteboardId"
-          @upload-success="handleUploadSuccess"
-          @upload-error="handleUploadError"
-        />
-
-        <div class="mt-4 flex justify-end">
-          <button @click="showUploadModal = false" class="btn-secondary">
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+    <WhiteboardUpload
+      v-if="showUploadModal"
+      :whiteboard-id="whiteboardId"
+      @upload-success="handleUploadSuccess"
+      @upload-error="handleUploadError"
+      @close="showUploadModal = false"
+    />
 
     <!-- Export Dialog -->
     <ClientOnly>
       <ExportDialog
         :show="showExportDialog"
-        :stage="(canvasRef.value as any)?.stageRef?.getNode() || null"
+        :stage="canvasRef.value as any)?.stageRef?.getNode() || null"
         :filename="whiteboard.value?.name"
         :is-exporting="isExporting"
         :export-progress="exportProgress"
@@ -216,40 +166,8 @@ const currentUser = {
   name: 'Guest',
 }
 
-// Initialize collaborative canvas (only on client)
-let canvas: ReturnType<typeof useCollaborativeCanvas> | null = null
-
-// Style persistence - load saved styles or use defaults
-const STORAGE_KEY_STYLE = 'whiteboard:style'
-
-function loadSavedStyles() {
-  if (import.meta.client) {
-    const savedStyles = localStorage.getItem(STORAGE_KEY_STYLE)
-    if (savedStyles) {
-      try {
-        const parsed = JSON.parse(savedStyles)
-        return { color: parsed.color || '#000000', size: parsed.size || 4 }
-      } catch {
-        return { color: '#000000', size: 4 }
-      }
-    }
-  }
-  return { color: '#000000', size: 4 }
-}
-
-const savedStyles = loadSavedStyles()
-
-// Tool state
-const currentTool = ref<'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text-annotation' | 'stamp' | 'eraser'>('pen')
-const currentColor = ref(savedStyles.color)
-const currentSize = ref(savedStyles.size)
-const currentStampType = ref<StampType>('APPROVED')
-
-// UI state
-const showShareModal = ref(false)
-const showUploadModal = ref(false)
-const showExportDialog = ref(false)
-const canvasRef = ref<InstanceType<typeof WhiteboardCanvas> | null>(null)
+// Canvas state (initialized on mount, safely accessed via computed)
+const canvasInstance = ref<ReturnType<typeof useCollaborativeCanvas> | null>(null)
 
 // Fetch whiteboard data
 const { data: whiteboardData } = await useFetch<ApiResponse<Whiteboard>>(`/api/whiteboard/${whiteboardId}`)
@@ -262,7 +180,12 @@ const shareUrl = computed(() => {
   return `${baseUrl}/whiteboard/${whiteboardId}`
 })
 
-// Canvas state (initialized on client mount)
+// Modal states
+const showShareModal = ref(false)
+const showUploadModal = ref(false)
+const showExportDialog = ref(false)
+
+// Canvas state refs (will be set when canvasInstance is ready)
 const isConnected = ref(false)
 const connectionStatus = ref('disconnected')
 const connectedUsers = ref<Map<string, any>>(new Map())
@@ -270,91 +193,85 @@ const elements = ref<CanvasElement[]>([])
 const canUndo = ref(false)
 const canRedo = ref(false)
 const activeStrokes = ref<Record<string, [number, number, number][]>>({})
-const startActiveStroke = ref<((strokeId: string) => void) | null>(null)
-const broadcastStrokePoint = ref<((strokeId: string, point: [number, number, number]) => void) | null>(null)
-const endActiveStroke = ref<((strokeId: string, element: CanvasElement) => void) | null>(null)
+
+// Export functionality
+const { isExporting, progress: exportProgress, exportAsPNG, exportAsPDF } = useExport()
 
 // Cursor tracking state from WhiteboardCanvas's useCursors
 const currentUserFromCanvas = ref<{ id: string; name: string; color: string }>({
   id: currentUser.id,
   name: currentUser.name,
-  color: '',  // Will be updated by useCursors
+  color: '',
 })
 const remoteCursors = ref<Map<number, any>>(new Map())
 
-// Export functionality
-const { isExporting, progress: exportProgress, exportAsPNG, exportAsPDF } = useExport()
-
-// Canvas composable ref - initialized on mount, safely accessed via computed
-const canvas = ref<ReturnType<typeof useCollaborativeCanvas> | null>(null)
-
 // Initialize canvas on client side
 onMounted(() => {
-  canvas.value = useCollaborativeCanvas(
+  canvasInstance.value = useCollaborativeCanvas(
     whiteboardId,
     currentUser.id,
     currentUser.name
   )
 
   // Set up reactive bindings to composable (now canvas is guaranteed to be set)
-  isConnected.value = computed(() => canvas.value?.isConnected.value ?? false)
-  connectionStatus.value = computed(() => canvas.value?.connectionStatus.value ?? 'disconnected')
-  connectedUsers.value = computed(() => canvas.value?.connectedUsers.value ?? new Map())
-  elements.value = computed(() => canvas.value?.elements.value ?? [])
-  canUndo.value = computed(() => canvas.value?.canUndo.value ?? false)
-  canRedo.value = computed(() => canvas.value?.canRedo.value ?? false)
-  activeStrokes.value = computed(() => canvas.value?.activeStrokes.value ?? {})
-  startActiveStroke.value = computed(() => canvas.value?.startActiveStroke)
-  broadcastStrokePoint.value = computed(() => canvas.value?.broadcastStrokePoint)
-  endActiveStroke.value = computed(() => canvas.value?.endActiveStroke)
+  isConnected.value = computed(() => canvasInstance.value?.isConnected.value ?? false)
+  connectionStatus.value = computed(() => canvasInstance.value?.connectionStatus.value ?? 'disconnected')
+  connectedUsers.value = computed(() => canvasInstance.value?.connectedUsers.value ?? new Map())
+  elements.value = computed(() => canvasInstance.value?.elements.value ?? [])
+  canUndo.value = computed(() => canvasInstance.value?.canUndo.value ?? false)
+  canRedo.value = computed(() => canvasInstance.value?.canRedo.value ?? false)
+  activeStrokes.value = computed(() => canvasInstance.value?.activeStrokes.value ?? {})
+  startActiveStroke.value = computed(() => canvasInstance.value?.startActiveStroke)
+  broadcastStrokePoint.value = computed(() => canvasInstance.value?.broadcastStrokePoint)
+  endActiveStroke.value = computed(() => canvasInstance.value?.endActiveStroke)
+})
 
-  // Watch for updates
-  watch(() => canvas.isConnected.value, (v) => { isConnected.value = v })
-  watch(() => canvas.connectionStatus.value, (v) => { connectionStatus.value = v })
-  watch(() => canvas.connectedUsers.value, (v) => { connectedUsers.value = v })
-  watch(() => canvas.elements.value, (v) => { elements.value = v })
-  watch(() => canvas.canUndo.value, (v) => { canUndo.value = v })
-  watch(() => canvas.canRedo.value, (v) => { canRedo.value = v })
-  watch(() => canvas.activeStrokes, (v) => { activeStrokes.value = v.value || {} }, { deep: true })
+// Watch for updates
+watch(() => canvasInstance.value?.isConnected.value, (v) => { isConnected.value = v })
+watch(() => canvasInstance.value?.connectionStatus.value, (v) => { connectionStatus.value = v })
+watch(() => canvasInstance.value?.connectedUsers.value, (v) => { connectedUsers.value = v })
+watch(() => canvasInstance.value?.elements.value, (v) => { elements.value = v })
+watch(() => canvasInstance.value?.canUndo.value, (v) => { canUndo.value = v })
+watch(() => canvasInstance.value?.canRedo.value, (v) => { canRedo.value = v })
+watch(() => canvasInstance.value?.activeStrokes.value, (v) => { activeStrokes.value = v.value || {} }, { deep: true })
 
-  // Watch for cursor tracking updates from WhiteboardCanvas component
-  watchEffect(() => {
-    const canvasComponent = canvasRef.value
-    if (canvasComponent) {
-      // Access exposed values from WhiteboardCanvas
-      const exposed = canvasComponent as unknown as {
-        currentUser?: { id: string; name: string; color: string }
-        remoteCursors?: Map<number, any>
-      }
-      if (exposed.currentUser) {
-        currentUserFromCanvas.value = exposed.currentUser
-      }
-      if (exposed.remoteCursors) {
-        remoteCursors.value = exposed.remoteCursors
-      }
+// Watch for cursor tracking updates from WhiteboardCanvas component
+watchEffect(() => {
+  const canvasComponent = canvasRef.value
+  if (canvasComponent) {
+    // Access exposed values from WhiteboardCanvas
+    const exposed = canvasComponent as unknown as {
+      currentUser?: { id: string; name: string; color: string }
+      remoteCursors?: Map<number, any>
     }
-  })
-
-  // Load saved canvas state
-  if (whiteboard.value?.canvas_state && canvas.value) {
-    canvas.value.importState(whiteboard.value.canvas_state)
+    if (exposed.currentUser) {
+      currentUserFromCanvas.value = exposed.currentUser
+    }
+    if (exposed.remoteCursors) {
+      remoteCursors.value = exposed.remoteCursors
+    }
   }
+})
 
-  // Auto-save canvas state periodically
-  const saveInterval = setInterval(() => {
-    if (canvas.value && canvas.value.isConnected.value) {
-      const state = canvas.value.exportState()
-      $fetch(`/api/whiteboard/${whiteboardId}`, {
-        method: 'PATCH',
-        body: { canvas_state: state },
-      })
-    }
-  }, 30000)
+// Load saved canvas state
+if (whiteboard.value?.canvas_state && canvasInstance.value) {
+  canvasInstance.value.importState(whiteboard.value.canvas_state)
+}
 
-  onUnmounted(() => {
-    clearInterval(saveInterval)
-    if (canvas) canvas.cleanup()
-  })
+// Auto-save canvas state periodically
+const saveInterval = setInterval(() => {
+  if (canvasInstance.value && canvasInstance.value.isConnected.value) {
+    const state = canvasInstance.value.exportState()
+    $fetch(`/api/whiteboard/${whiteboardId}`, {
+      method: 'PATCH',
+      body: { canvas_state: state },
+    })
+  }
+}, 30000)
+
+onUnmounted(() => {
+  clearInterval(saveInterval)
+  if (canvasInstance.value) canvasInstance.value.cleanup()
 })
 
 // Tool handlers
@@ -370,48 +287,6 @@ function setSize(size: number) {
   currentSize.value = size
 }
 
-// Watch for style changes and persist to localStorage
-watch([currentColor, currentSize], () => {
-  if (import.meta.client) {
-    localStorage.setItem(STORAGE_KEY_STYLE, JSON.stringify({
-      color: currentColor.value,
-      size: currentSize.value,
-    }))
-  }
-})
-
-function handleStampTypeChange(stampType: StampType) {
-  currentStampType.value = stampType
-}
-
-// Canvas handlers
-function addElement(element: CanvasElement) {
-  if (canvas) canvas.addElement(element)
-}
-
-function updateCursor(x: number, y: number) {
-  if (canvas) canvas.updateCursor(x, y, currentTool.value)
-}
-
-function handleDeleteElement(elementId: string) {
-  if (canvas) canvas.deleteElement(elementId)
-}
-
-function undo() {
-  if (canvas) canvas.undo()
-}
-
-function redo() {
-  if (canvas) canvas.redo()
-}
-
-function clearCanvas() {
-  if (confirm('Are you sure you want to clear the canvas? This cannot be undone.')) {
-    canvas.value?.clearCanvas()
-  }
-}
-
-// Export dialog functions
 function openExportDialog() {
   showExportDialog.value = true
 }
@@ -421,9 +296,9 @@ function closeExportDialog() {
 }
 
 async function confirmExport(format: 'png' | 'pdf') {
-  if (!canvasRef.value) return
+  if (!canvasInstance.value) return
 
-  const stage = (canvasRef.value as any).stageRef?.value?.getNode()
+  const stage = (canvasRef.value as any)?.stageRef?.getNode() || null
   const filename = whiteboard.value?.name || 'whiteboard'
 
   if (format === 'png') {
@@ -436,95 +311,74 @@ async function confirmExport(format: 'png' | 'pdf') {
   closeExportDialog()
 }
 
-function exportCanvas(format: 'png' | 'pdf') {
-  // Open dialog first - actual export happens after confirmation
-  openExportDialog()
-}
+function handleUploadSuccess(result: UploadResult) {
+  const fileType = result.fileRecord?.file_type || ''
 
-function copyShareLink() {
-  navigator.clipboard.writeText(shareUrl.value)
-}
+  if (fileType === 'application/pdf') {
+    // For PDFs, fetch as ArrayBuffer and use addPDFLayer
+    const response = await fetch(result.url)
+    const arrayBuffer = await response.arrayBuffer()
 
-async function handleUploadSuccess(result: UploadResult) {
-  if (!canvasRef.value) return
+    const element = await canvasInstance.value.addPDFLayer({
+      id: result.fileId,
+      url: result.url,
+      name: result.fileName,
+    }, arrayBuffer)
 
-  try {
-    const fileType = result.fileRecord?.file_type || ''
+    if (element && canvasInstance.value) canvasInstance.value.addElement(element)
+  } else {
+    // For images, use addImageLayer directly
+    const element = await canvasInstance.value.addImageLayer({
+      id: result.fileId,
+      url: result.url,
+      name: result.fileName,
+    })
 
-    if (fileType === 'application/pdf') {
-      // For PDFs, fetch as ArrayBuffer and use addPDFLayer
-      const response = await fetch(result.url)
-      const arrayBuffer = await response.arrayBuffer()
-
-      const element = await canvasRef.value.addPDFLayer({
-        id: result.fileId,
-        url: result.url,
-        name: result.fileName,
-      }, arrayBuffer)
-
-      if (element && canvas) canvas.addElement(element)
-    } else {
-      // For images, use addImageLayer directly
-      const element = await canvasRef.value.addImageLayer({
-        id: result.fileId,
-        url: result.url,
-        name: result.fileName,
-      })
-
-      if (element && canvas) canvas.addElement(element)
-    }
-
-    // Close the upload modal on success
-    showUploadModal.value = false
-  } catch (error) {
-    console.error('Failed to render document:', error)
-    // Optionally show error notification to user
+    if (element && canvasInstance.value) canvasInstance.value.addElement(element)
   }
+
+  // Close upload modal on success
+  showUploadModal.value = false
 }
 
-function handleUploadError(error: string) {
+function handleUploadError(error: any) {
   console.error('Upload error:', error)
-  // Optionally show error notification to user
 }
 
-// Keyboard shortcuts using composable
-useKeyboardShortcuts({
-  canUndo,
-  canRedo,
-  onUndo: undo,
-  onRedo: redo,
-  onEscape: () => setTool('select'),
-  toolShortcuts: {
-    'v': 'select',
-    'h': 'pan',
-    'p': 'pen',
-    'l': 'line',
-    'a': 'arrow',
-    't': 'text-annotation',
-    'r': 'rectangle',
-    'c': 'circle',
-    'e': 'ellipse',
-    's': 'stamp',
-    'x': 'eraser',
-  },
-})
+function handleStampTypeChange(stampType: StampType) {
+  // Automatically switch to stamp tool when stamp type changes
+  setTool('stamp')
+}
 
-// Listen for tool shortcut events from composable
-onMounted(() => {
-  const handleToolShortcut = (e: Event) => {
-    const event = e as CustomEvent<{ tool: string }>
-    if (event.detail?.tool) {
-      setTool(event.detail.tool as typeof currentTool.value)
-    }
+function undo() {
+  canvasInstance.value?.undo()
+}
+
+function redo() {
+  canvasInstance.value?.redo()
+}
+
+function clearCanvas() {
+  if (confirm('Are you sure you want to clear the canvas? This cannot be undone.')) {
+    canvasInstance.value?.clearCanvas()
   }
-  window.addEventListener('tool-shortcut', handleToolShortcut)
-  onUnmounted(() => {
-    window.removeEventListener('tool-shortcut', handleToolShortcut)
-  })
-})
+}
 
-// SEO
-useHead({
-  title: computed(() => whiteboard.value?.name || 'Whiteboard'),
+function handleDeleteElement(elementId: string) {
+  canvasInstance.value?.deleteElement(elementId)
+}
+
+function updateCursor(x: number, y: number) {
+  canvasInstance.value?.updateCursor(x, y)
+}
+
+// Watch for style changes and persist to localStorage
+watch([currentColor, currentSize], () => {
+  if (import.meta.client) {
+    localStorage.setItem(STORAGE_KEY_STYLE, JSON.stringify({
+      color: currentColor.value,
+      size: currentSize.value,
+    }))
+  }
 })
 </script>
