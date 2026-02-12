@@ -1,5 +1,5 @@
 import { ref, computed, type Ref } from 'vue'
-import type { CanvasElement, MeasurementDistanceElement } from '~/types'
+import type { CanvasElement, MeasurementDistanceElement, MeasurementAreaElement, RectangleElement, CircleElement, EllipseElement } from '~/types'
 
 export interface UseMeasurementsOptions {
   yElements: any
@@ -10,6 +10,11 @@ export interface UseMeasurementsOptions {
 
 export function useMeasurements(options: UseMeasurementsOptions) {
   const { yElements, userId, userName, pixelsPerInch } = options
+
+  // Helper to get current elements array from yElements
+  function elementsArray(): CanvasElement[] {
+    return yElements.toArray() as CanvasElement[]
+  }
 
   // Measurement state
   const isMeasuring = ref(false)
@@ -145,6 +150,176 @@ export function useMeasurements(options: UseMeasurementsOptions) {
     }
   })
 
+  /**
+   * Calculate the area of a rectangle in square inches
+   */
+  function calculateRectangleArea(element: CanvasElement, pixelsPerInch: number): number {
+    const data = element.data as RectangleElement
+    const widthInches = data.width / pixelsPerInch
+    const heightInches = data.height / pixelsPerInch
+    return widthInches * heightInches  // Square inches
+  }
+
+  /**
+   * Calculate the area of a circle in square inches
+   */
+  function calculateCircleArea(element: CanvasElement, pixelsPerInch: number): number {
+    const data = element.data as CircleElement
+    const radiusInches = data.radius / pixelsPerInch
+    return Math.PI * radiusInches * radiusInches  // Square inches (pi * r^2)
+  }
+
+  /**
+   * Calculate the area of an ellipse in square inches
+   */
+  function calculateEllipseArea(element: CanvasElement, pixelsPerInch: number): number {
+    const data = element.data as EllipseElement
+    const radiusXInches = data.radiusX / pixelsPerInch
+    const radiusYInches = data.radiusY / pixelsPerInch
+    return Math.PI * radiusXInches * radiusYInches  // Square inches (pi * a * b)
+  }
+
+  /**
+   * Calculate area for any supported shape element
+   * Returns null for unsupported element types
+   */
+  function calculateArea(element: CanvasElement, pixelsPerInch: number): number | null {
+    switch (element.type) {
+      case 'rectangle':
+        return calculateRectangleArea(element, pixelsPerInch)
+      case 'circle':
+        return calculateCircleArea(element, pixelsPerInch)
+      case 'ellipse':
+        return calculateEllipseArea(element, pixelsPerInch)
+      default:
+        return null  // Unsupported type
+    }
+  }
+
+  /**
+   * Format area measurement as a string with appropriate unit
+   * @param sqInches - Area value in square inches
+   * @param precision - Decimal places (default 4)
+   * @param unit - 'sq-inches' or 'sq-feet'
+   */
+  function formatAreaMeasurement(
+    sqInches: number,
+    precision: number = 4,
+    unit: 'sq-inches' | 'sq-feet' = 'sq-inches'
+  ): string {
+    if (unit === 'sq-feet') {
+      const sqFeet = sqInches / 144  // 12^2 = 144 sq inches per sq foot
+      return `${sqFeet.toFixed(precision)} sq ft`
+    }
+    return `${sqInches.toFixed(precision)} sq in`
+  }
+
+  /**
+   * Create an area measurement element for a target shape
+   * @param targetElementId - ID of the shape to measure
+   * @param color - Color for the label text
+   */
+  function measureArea(
+    targetElementId: string,
+    color: string
+  ): CanvasElement | null {
+    const element = elementsArray().find(el => el.id === targetElementId)
+    if (!element) return null
+
+    const areaInches = calculateArea(element, pixelsPerInch.value)
+    if (areaInches === null) {
+      console.warn(`Cannot measure area for element type: ${element.type}`)
+      return null
+    }
+
+    // Create measurement-area element
+    const measurementElement: CanvasElement = {
+      id: `${userId}-area-${Date.now()}`,
+      type: 'measurement-area',
+      userId,
+      userName,
+      timestamp: Date.now(),
+      data: {
+        targetElementId,
+        pixelsPerInch: pixelsPerInch.value,
+        unit: 'sq-inches',
+        precision: 4,
+        value: areaInches
+      } as MeasurementAreaElement
+    }
+
+    // Add to yElements
+    yElements.push([measurementElement])
+
+    return measurementElement
+  }
+
+  /**
+   * Find all area measurements linked to a target element
+   * Used when a shape is deleted to clean up associated measurements
+   */
+  function findAreaMeasurementsFor(targetElementId: string): string[] {
+    const allElements = elementsArray()
+    return allElements
+      .filter(el => el.type === 'measurement-area')
+      .filter(el => (el.data as MeasurementAreaElement).targetElementId === targetElementId)
+      .map(el => el.id)
+  }
+
+  /**
+   * Get the center point of a shape element
+   */
+  function getShapeCenter(element: CanvasElement): { x: number; y: number } {
+    switch (element.type) {
+      case 'rectangle': {
+        const data = element.data as RectangleElement
+        return {
+          x: data.x + data.width / 2,
+          y: data.y + data.height / 2
+        }
+      }
+      case 'circle': {
+        const data = element.data as CircleElement
+        return { x: data.cx, y: data.cy }
+      }
+      case 'ellipse': {
+        const data = element.data as EllipseElement
+        return { x: data.x, y: data.y }
+      }
+      default:
+        return { x: 0, y: 0 }
+    }
+  }
+
+  /**
+   * Get formatted area label text for a measurement element
+   */
+  function getAreaLabel(element: CanvasElement): string {
+    if (element.type !== 'measurement-area') return ''
+    const data = element.data as MeasurementAreaElement
+    const value = data.value ?? 0
+    return formatAreaMeasurement(value, data.precision, data.unit)
+  }
+
+  /**
+   * Get the label position for an area measurement
+   * Positions the label above the center of the target shape
+   */
+  function getAreaLabelPosition(measurementElement: CanvasElement): { x: number; y: number } {
+    const data = measurementElement.data as MeasurementAreaElement
+    const target = elementsArray().find(el => el.id === data.targetElementId)
+    if (!target) return { x: 0, y: 0 }
+
+    // Get center position of target shape
+    const center = getShapeCenter(target)
+
+    // Offset label above the shape (20px vertical offset)
+    return {
+      x: center.x,
+      y: center.y - 20
+    }
+  }
+
   return {
     // State
     isMeasuring,
@@ -160,5 +335,14 @@ export function useMeasurements(options: UseMeasurementsOptions) {
     calculateDistance,
     formatDistanceMeasurement,
     getMeasurementLabel,
+
+    // Area measurement functions
+    measureArea,
+    calculateArea,
+    formatAreaMeasurement,
+    findAreaMeasurementsFor,
+    getShapeCenter,
+    getAreaLabel,
+    getAreaLabelPosition,
   }
 }
