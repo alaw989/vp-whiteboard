@@ -539,7 +539,7 @@ const {
 })
 
 // Snapping composable
-const { findSnapPoint, clearSnapPoint } = useSnapping()
+const { findSnapPoint, clearSnapPoint } = useSnapping({ threshold: 10 })
 
 // Selection composable
 const {
@@ -902,21 +902,22 @@ function handleMouseDown(event: any) {
     // Find the shape at clicked position
     const stage = stageRef.value?.getNode()
     if (stage) {
-      const shapes = stage.getAllIntersections({ x: pos.x, y: pos.y })
-      const canvasShapes = shapes.filter((shape: any) => {
+      const allShapes = stage.getAllIntersections({ x: pos.x, y: pos.y })
+      const canvasShapes = allShapes.filter((shape: any) => {
         const parent = shape.getParent()
         const layer = parent?.getParent()
         return layer?.name !== 'documentLayer'
       })
-      
+
       if (canvasShapes.length > 0) {
         const shape = canvasShapes[0]
         const elementId = shape.id() || shape.getParent()?.id()
-        
+
         if (elementId) {
           // Find element and create area measurement
           const targetElement = props.elements.find(el => el.id === elementId)
           if (targetElement && (targetElement.type === 'rectangle' || targetElement.type === 'circle' || targetElement.type === 'ellipse')) {
+            measureArea(elementId, props.currentColor)
           }
         }
       }
@@ -930,6 +931,7 @@ function handleMouseDown(event: any) {
   if (props.currentTool === 'measure-area') {
     // Measure area works on currently selected shape
     if (selectedId.value) {
+      measureArea(selectedId.value, props.currentColor)
       // Switch back to select tool after measuring
       deselect()
     }
@@ -1937,20 +1939,6 @@ function getUserColor(userId: string): string {
   return colors[Math.abs(hash) % colors.length]
 }
 
-defineExpose({
-  exportAsImage,
-  loadPDF,
-  addImageLayer,
-  addPDFLayer,
-  updateLayer,
-  removeLayer,
-  visibleLayers,
-  // Cursor tracking for UserPresenceList
-  currentUser,
-  remoteCursors,
-})
-</script>
-
 /**
  * Handle double-click on measurement to open edit dialog
  */
@@ -1968,14 +1956,14 @@ function handleMeasurementDoubleClick(element: CanvasElement) {
  */
 function confirmMeasurementEdit() {
   if (!editingMeasurementElement.value) return
-  
+
   const newValue = parseFloat(pendingMeasurementValue.value)
   if (isNaN(newValue)) return
-  
+
   emit('element-update', editingMeasurementElement.value.id, {
     data: editingMeasurementElement.value.data
   })
-  
+
   showMeasurementEditDialog.value = false
   editingMeasurementElement.value = null
   pendingMeasurementValue.value = ''
@@ -1990,43 +1978,16 @@ function cancelMeasurementEdit() {
   pendingMeasurementValue.value = ''
 }
 
-
-  const data = element.data as MeasurementAreaElement
-  const target = props.elements.find(el => el.id === data.targetElementId)
-  if (!target) return { x: 0, y: 0 }
-
-  // Get center position of target shape
-
-  // Offset label above the shape
-  return {
-    x: center.x,
-    y: center.y - 20  // 20px vertical offset
-  }
-}
-
-  switch (element.type) {
-    case 'rectangle': {
-      const data = element.data as RectangleElement
-      return {
-        x: data.x + data.width / 2,
-        y: data.y + data.height / 2
-      }
-    }
-    case 'circle': {
-      const data = element.data as CircleElement
-      return { x: data.cx, y: data.cy }
-    }
-    case 'ellipse': {
-      const data = element.data as EllipseElement
-      return { x: data.x, y: data.y }
-    }
-    default:
-      return { x: 0, y: 0 }
-  }
-}
-
-// Find all area measurements linked to a target element
-  return props.elements
-    .filter(el => (el.data as any).targetElementId === targetElementId)
-    .map(el => el.id)
-}
+defineExpose({
+  exportAsImage,
+  loadPDF,
+  addImageLayer,
+  addPDFLayer,
+  updateLayer,
+  removeLayer,
+  visibleLayers,
+  // Cursor tracking for UserPresenceList
+  currentUser,
+  remoteCursors,
+})
+</script>
