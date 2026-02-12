@@ -56,8 +56,8 @@
 
     <!-- Main Content -->
     <div class="flex-1 flex overflow-hidden">
-      <!-- Left Sidebar - Tools -->
-      <aside class="w-16 bg-white border-r border-neutral-200 flex flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen">
+      <!-- Left Sidebar - Tools (Desktop only) -->
+      <aside class="hidden md:flex w-16 bg-white border-r border-neutral-200 flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen">
         <WhiteboardToolbar
           :current-tool="currentTool"
           :current-color="currentColor"
@@ -77,8 +77,27 @@
         />
       </aside>
 
+      <!-- Mobile Toolbar (shown at bottom on mobile) -->
+      <WhiteboardToolbar
+        :current-tool="currentTool"
+        :current-color="currentColor"
+        :current-size="currentSize"
+        :can-undo="canUndo"
+        :can-redo="canRedo"
+        :is-exporting="isExporting"
+        :export-progress="exportProgress"
+        @select-tool="setTool"
+        @select-color="setColor"
+        @select-size="setSize"
+        @stamp-type-change="handleStampTypeChange"
+        @undo="undo"
+        @redo="redo"
+        @clear="clearCanvas"
+        @open-export="openExportDialog"
+      />
+
       <!-- Canvas Area -->
-      <main class="flex-1 relative overflow-hidden">
+      <main class="flex-1 relative overflow-hidden pb-16 md:pb-0">
         <ClientOnly>
           <WhiteboardCanvas
             ref="canvasRef"
@@ -173,7 +192,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Whiteboard, CanvasElement, UploadResult } from '~/types'
+import type { Whiteboard, CanvasElement, UploadResult, DrawingTool } from '~/types'
 import type { StampType } from '~/components/whiteboard/WhiteboardCanvas.vue'
 import ExportDialog from '~/components/whiteboard/ExportDialog.vue'
 import UserPresenceList from '~/components/whiteboard/UserPresenceList.vue'
@@ -191,6 +210,7 @@ const currentUser = {
 
 // Canvas state (initialized on mount, safely accessed via computed)
 const canvasInstance = ref<ReturnType<typeof useCollaborativeCanvas> | null>(null)
+const canvasRef = ref<{ stageRef?: { getNode: () => any } } | null>(null)
 
 // Fetch whiteboard data
 const { data: whiteboardData } = await useFetch<ApiResponse<Whiteboard>>(`/api/whiteboard/${whiteboardId}`)
@@ -222,6 +242,32 @@ const elements = ref<CanvasElement[]>([])
 const canUndo = ref(false)
 const canRedo = ref(false)
 const activeStrokes = ref<Record<string, [number, number, number][]>>({})
+
+// Tool state
+const currentTool = ref<DrawingTool>('select')
+const currentColor = ref('#000000')
+const currentSize = ref(4)
+const currentStampType = ref<StampType>('APPROVED')
+
+// Load saved tool state from localStorage
+const STORAGE_KEY_STYLE = 'whiteboard-style'
+if (import.meta.client) {
+  try {
+    const savedStyle = localStorage.getItem(STORAGE_KEY_STYLE)
+    if (savedStyle) {
+      const { color, size } = JSON.parse(savedStyle)
+      if (color) currentColor.value = color
+      if (size) currentSize.value = size
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+// Computed refs for canvas binding (functions from composable)
+const startActiveStroke = ref<ReturnType<typeof useCollaborativeCanvas>['startActiveStroke']>()
+const broadcastStrokePoint = ref<ReturnType<typeof useCollaborativeCanvas>['broadcastStrokePoint']>()
+const endActiveStroke = ref<ReturnType<typeof useCollaborativeCanvas>['endActiveStroke']>()
 
 // Export functionality
 const { isExporting, progress: exportProgress, exportAsPNG, exportAsPDF } = useExport()
