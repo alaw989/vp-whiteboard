@@ -27,11 +27,15 @@
         <!-- Stamp type dropdown menu -->
         <div
           v-if="showStampMenu"
+          role="menu"
+          aria-label="Select stamp type"
           class="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50 min-w-[140px]"
         >
           <button
             v-for="stampType in stampTypes"
             :key="stampType"
+            role="menuitem"
+            :aria-label="`Select ${stampType} stamp${currentStampType === stampType ? ', currently selected' : ''}`"
             class="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
             :class="{ 'bg-blue-50': currentStampType === stampType }"
             @click="selectStampType(stampType)"
@@ -39,6 +43,7 @@
             <span
               class="w-3 h-3 rounded-full flex-shrink-0"
               :style="{ backgroundColor: getStampColor(stampType) }"
+              :aria-hidden="true"
             />
             <span class="text-sm font-medium">{{ stampType }}</span>
           </button>
@@ -318,11 +323,15 @@
             <!-- Stamp type dropdown menu -->
             <div
               v-if="showStampMenu"
+              role="menu"
+              aria-label="Select stamp type"
               class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50 min-w-[140px]"
             >
               <button
                 v-for="stampType in stampTypes"
                 :key="stampType"
+                role="menuitem"
+                :aria-label="`Select ${stampType} stamp${currentStampType === stampType ? ', currently selected' : ''}`"
                 class="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
                 :class="{ 'bg-blue-50': currentStampType === stampType }"
                 @click="selectStampType(stampType)"
@@ -330,6 +339,7 @@
                 <span
                   class="w-3 h-3 rounded-full flex-shrink-0"
                   :style="{ backgroundColor: getStampColor(stampType) }"
+                  :aria-hidden="true"
                 />
                 <span class="text-sm font-medium">{{ stampType }}</span>
               </button>

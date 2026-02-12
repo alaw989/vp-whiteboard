@@ -1,17 +1,28 @@
 # VP Whiteboard - Continuous Work Notes
 
-## Session Date: 2026-02-12 (Session #34)
+## Session Date: 2026-02-12 (Session #35)
 
-## Project Status: ALL PHASES COMPLETE - Code Complete
+## Project Status: ALL PHASES COMPLETE - Uncommitted Accessibility Enhancements
 
-**All 8 phases complete (37/37 plans, 100%).** Typecheck passes. Build succeeds. Working tree clean.
+**All 8 phases complete (37/37 plans, 100%).** Typecheck passes. Build succeeds. Dev server running.
 
-### Latest Commit (Session #34)
+### Latest Commit
 ```
 6121132 feat(a11y): add ARIA labels, download icon, and polish UI
 ```
 
-### All Changes Committed
+### Uncommitted Changes (Session #35)
+Enhanced accessibility attributes for screen reader support:
+- **WhiteboardToolbar.vue**:
+  - Added `aria-label` and `aria-pressed` to tool buttons
+  - Added `aria-label`, `aria-pressed` to color palette buttons
+  - Added `aria-label` to custom color picker
+  - Added `role="group"` and `aria-label` to color and size picker groups
+  - Added `role="menu"` and `role="menuitem"` to stamp dropdown
+  - Added `aria-expanded`, `aria-haspopup` to stamp button
+  - Added `aria-hidden` to decorative color indicators
+
+### Implementation Complete
 - ✅ Phase 1-7: Foundation, Document Rendering, Drawing Tools, Navigation, Collaboration, Export, Measurement
 - ✅ Phase 8: Performance & Mobile (all 6 plans complete)
   - Viewport clipping at 500+ elements
@@ -20,7 +31,7 @@
   - Two-finger pan gesture tracking
   - Mobile bottom sheet toolbar
   - Pointer Events API for unified input
-- ✅ Accessibility: ARIA labels, keyboard navigation, screen reader support
+- ✅ Accessibility: Enhanced ARIA labels, keyboard navigation, screen reader support
 
 ## Manual UAT Checklist (Requires Hardware/Browser)
 
@@ -37,10 +48,16 @@
 - [ ] Two-Finger Pan - Verify gesture pans viewport without drawing
 - [ ] Mobile Toolbar - Bottom sheet layout on mobile viewport
 
+**Accessibility Tests (requires screen reader):**
+- [ ] Keyboard navigation - Tab through toolbar, verify focus indicators
+- [ ] Screen reader - NVDA/VoiceOver announcements for tool selection
+- [ ] Color announcements - Verify color names are announced
+
 ## Next Steps
 
-1. **Manual UAT** - Requires actual hardware/browser testing
-2. **After UAT passes** - Push to main branch
+1. **Commit accessibility enhancements** - Enhanced ARIA labels for screen readers
+2. **Manual UAT** - Requires actual hardware/browser testing
+3. **After UAT passes** - Push to main branch
 
 ## Quick Commands
 
@@ -51,11 +68,14 @@ npm run typecheck
 # Build
 npm run build
 
-# Dev server (background)
+# Dev server status
+pgrep -f "nuxi"  # Should show PID if running
+
+# Start dev server (if not running)
 npm run dev &
 
-# Check server
-curl http://localhost:3000
+# Uncommitted changes
+git diff
 ```
 
 ## Expected Behavior
@@ -74,4 +94,4 @@ curl http://localhost:3000
 - Keyboard shortcuts: V (select), H (pan), P (pen), L (line), etc.
 - Export to PNG/PDF
 - Scale tool for measurement
-- ARIA labels for screen reader accessibility
+- Enhanced ARIA labels for screen reader accessibility
