@@ -1,5 +1,6 @@
 <template>
-  <div class="toolbar flex flex-col gap-2 p-2 bg-white rounded-lg shadow-sm border border-neutral-200 overflow-y-auto">
+  <!-- Desktop Sidebar Toolbar -->
+  <div class="toolbar hidden md:flex flex-col gap-2 p-2 bg-white rounded-lg shadow-sm border border-neutral-200 overflow-y-auto">
     <!-- Drawing Tools -->
     <div class="flex flex-col gap-1">
       <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Tools</h4>
@@ -178,6 +179,270 @@
       </button>
     </div>
   </div>
+
+  <!-- Mobile Bottom Sheet Toolbar -->
+  <div
+    class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-20 transition-all duration-300"
+    :style="{ paddingBottom: 'env(safe-area-inset-bottom, 16px)' }"
+  >
+    <!-- Collapsed State - Primary Tools Strip -->
+    <div
+      v-if="!toolbarExpanded"
+      class="flex items-center justify-around px-2 py-2"
+    >
+      <!-- Primary tool buttons -->
+      <button
+        v-for="tool in primaryTools"
+        :key="tool.id"
+        :title="tool.name"
+        :class="[
+          'w-11 h-11 rounded-lg transition-colors flex items-center justify-center',
+          currentTool === tool.id
+            ? 'bg-blue-100 text-blue-600'
+            : 'hover:bg-neutral-100 text-neutral-600'
+        ]"
+        @click="handleMobileToolSelect(tool.id)"
+      >
+        <Icon :name="tool.icon" class="w-6 h-6" />
+      </button>
+
+      <!-- Color picker quick access (shows current color) -->
+      <button
+        :class="[
+          'w-11 h-11 rounded-lg transition-colors flex items-center justify-center border-2',
+          currentColor === '#000000' ? 'border-neutral-300' : ''
+        ]"
+        :style="{ borderColor: currentColor === '#000000' ? '#d1d5db' : currentColor }"
+        @click="handleColorQuickSelect"
+      >
+        <div
+          class="w-7 h-7 rounded-md"
+          :style="{ backgroundColor: currentColor }"
+        />
+      </button>
+
+      <!-- Undo/Redo combined -->
+      <div class="flex gap-1">
+        <button
+          :disabled="!canUndo"
+          :class="[
+            'w-11 h-11 rounded-lg transition-colors flex items-center justify-center',
+            canUndo
+              ? 'hover:bg-neutral-100 text-neutral-600'
+              : 'opacity-40 cursor-not-allowed text-neutral-400'
+          ]"
+          title="Undo"
+          @click="$emit('undo')"
+        >
+          <Icon name="mdi:undo" class="w-5 h-5" />
+        </button>
+        <button
+          :disabled="!canRedo"
+          :class="[
+            'w-11 h-11 rounded-lg transition-colors flex items-center justify-center',
+            canRedo
+              ? 'hover:bg-neutral-100 text-neutral-600'
+              : 'opacity-40 cursor-not-allowed text-neutral-400'
+          ]"
+          title="Redo"
+          @click="$emit('redo')"
+        >
+          <Icon name="mdi:redo" class="w-5 h-5" />
+        </button>
+      </div>
+
+      <!-- Expand button -->
+      <button
+        class="w-11 h-11 rounded-lg hover:bg-neutral-100 text-neutral-600 transition-colors flex items-center justify-center"
+        @click="toolbarExpanded = true"
+      >
+        <Icon name="mdi:chevron-up" class="w-6 h-6" />
+      </button>
+    </div>
+
+    <!-- Expanded State - Full Tool Palette -->
+    <div
+      v-else
+      class="max-h-80 overflow-y-auto"
+    >
+      <!-- Header with collapse button -->
+      <div class="flex items-center justify-between px-4 py-3 border-b border-neutral-200">
+        <h3 class="text-sm font-semibold text-neutral-700">Tools</h3>
+        <button
+          class="w-10 h-10 rounded-lg hover:bg-neutral-100 text-neutral-600 transition-colors flex items-center justify-center"
+          @click="toolbarExpanded = false"
+        >
+          <Icon name="mdi:chevron-down" class="w-6 h-6" />
+        </button>
+      </div>
+
+      <!-- Tools Section -->
+      <div class="p-4 border-b border-neutral-200">
+        <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Drawing Tools</h4>
+        <div class="grid grid-cols-5 gap-2">
+          <!-- Stamp tool with dropdown -->
+          <div class="relative">
+            <button
+              :class="[
+                'tool-btn w-11 h-11 rounded-lg transition-colors flex items-center justify-center mx-auto',
+                currentTool === 'stamp'
+                  ? 'bg-blue-100 text-blue-600'
+                  : 'hover:bg-neutral-100 text-neutral-600'
+              ]"
+              @click="handleStampClick"
+              title="Stamp"
+            >
+              <Icon name="mdi:stamp" class="w-6 h-6" />
+            </button>
+
+            <!-- Stamp type dropdown menu -->
+            <div
+              v-if="showStampMenu"
+              class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50 min-w-[140px]"
+            >
+              <button
+                v-for="stampType in stampTypes"
+                :key="stampType"
+                class="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                :class="{ 'bg-blue-50': currentStampType === stampType }"
+                @click="selectStampType(stampType)"
+              >
+                <span
+                  class="w-3 h-3 rounded-full flex-shrink-0"
+                  :style="{ backgroundColor: getStampColor(stampType) }"
+                />
+                <span class="text-sm font-medium">{{ stampType }}</span>
+              </button>
+            </div>
+          </div>
+
+          <button
+            v-for="tool in tools"
+            :key="tool.id"
+            :title="tool.name"
+            :class="[
+              'w-11 h-11 rounded-lg transition-colors flex items-center justify-center mx-auto',
+              currentTool === tool.id
+                ? 'bg-blue-100 text-blue-600'
+                : 'hover:bg-neutral-100 text-neutral-600'
+            ]"
+            @click="handleMobileToolSelect(tool.id)"
+          >
+            <Icon :name="tool.icon" class="w-6 h-6" />
+          </button>
+        </div>
+      </div>
+
+      <!-- Color Section -->
+      <div class="p-4 border-b border-neutral-200">
+        <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Color</h4>
+        <div class="flex gap-2 overflow-x-auto pb-2">
+          <button
+            v-for="color in colors"
+            :key="color"
+            :title="color"
+            :class="[
+              'w-11 h-11 rounded-md transition-transform hover:scale-110 flex-shrink-0',
+              currentColor === color ? 'ring-2 ring-offset-1 ring-blue-500' : ''
+            ]"
+            :style="{ backgroundColor: color }"
+            @click="handleMobileColorSelect(color)"
+          />
+          <input
+            type="color"
+            :value="currentColor"
+            class="w-11 h-11 rounded cursor-pointer flex-shrink-0"
+            @input="handleMobileColorSelect(($event.target as HTMLInputElement).value)"
+          />
+        </div>
+      </div>
+
+      <!-- Size Section -->
+      <div class="p-4 border-b border-neutral-200">
+        <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Stroke Size</h4>
+        <div class="flex gap-2 overflow-x-auto pb-2">
+          <button
+            v-for="size in sizes"
+            :key="size"
+            :class="[
+              'w-14 h-11 rounded-lg transition-colors flex-shrink-0 flex items-center justify-center gap-2',
+              currentSize === size
+                ? 'bg-blue-100 text-blue-600'
+                : 'hover:bg-neutral-100 text-neutral-600'
+            ]"
+            @click="handleMobileSizeSelect(size)"
+          >
+            <div
+              class="rounded-full bg-neutral-800"
+              :style="{ width: `${Math.min(size, 24)}px`, height: `${Math.min(size, 24)}px` }"
+            />
+            <span class="text-xs">{{ size }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Actions Section -->
+      <div class="p-4">
+        <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Actions</h4>
+        <div class="grid grid-cols-4 gap-2">
+          <button
+            :disabled="!canUndo"
+            :class="[
+              'w-11 h-11 rounded-lg transition-colors flex items-center justify-center mx-auto',
+              canUndo
+                ? 'hover:bg-neutral-100 text-neutral-600'
+                : 'opacity-40 cursor-not-allowed text-neutral-400'
+            ]"
+            title="Undo"
+            @click="$emit('undo')"
+          >
+            <Icon name="mdi:undo" class="w-6 h-6" />
+          </button>
+
+          <button
+            :disabled="!canRedo"
+            :class="[
+              'w-11 h-11 rounded-lg transition-colors flex items-center justify-center mx-auto',
+              canRedo
+                ? 'hover:bg-neutral-100 text-neutral-600'
+                : 'opacity-40 cursor-not-allowed text-neutral-400'
+            ]"
+            title="Redo"
+            @click="$emit('redo')"
+          >
+            <Icon name="mdi:redo" class="w-6 h-6" />
+          </button>
+
+          <button
+            class="w-11 h-11 rounded-lg hover:bg-neutral-100 text-neutral-600 transition-colors flex items-center justify-center mx-auto"
+            title="Clear Canvas"
+            @click="$emit('clear')"
+          >
+            <Icon name="mdi:delete-sweep" class="w-6 h-6" />
+          </button>
+
+          <button
+            :disabled="isExporting"
+            :class="[
+              'w-11 h-11 rounded-lg transition-colors flex items-center justify-center mx-auto',
+              isExporting ? 'animate-pulse bg-blue-100 text-blue-600' : 'hover:bg-neutral-100 text-neutral-600'
+            ]"
+            :title="isExporting ? `Exporting ${exportProgress}%` : 'Export canvas'"
+            @click="$emit('open-export')"
+          >
+            <Icon :name="isExporting ? 'mdi:loading' : 'mdi:download'" class="w-6 h-6" />
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Backdrop overlay when expanded -->
+    <div
+      v-if="toolbarExpanded"
+      class="fixed inset-0 bg-black/20 z-[-1]"
+      @click="toolbarExpanded = false"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -205,6 +470,44 @@ const emit = defineEmits<{
   'open-export': []
   'stamp-type-change': [stampType: StampType]
 }>()
+
+// Mobile state
+const toolbarExpanded = ref(false)
+
+// Primary tools shown in collapsed mobile toolbar
+const primaryTools = [
+  { id: 'select' as DrawingTool, name: 'Select', icon: 'mdi:cursor-default' },
+  { id: 'pan' as DrawingTool, name: 'Pan', icon: 'mdi:pan' },
+  { id: 'pen' as DrawingTool, name: 'Pen', icon: 'mdi:pencil' },
+  { id: 'highlighter' as DrawingTool, name: 'Highlighter', icon: 'mdi:marker' },
+  { id: 'eraser' as DrawingTool, name: 'Eraser', icon: 'mdi:eraser' },
+] as const
+
+// Mobile tool selection handler - auto-collapse after selection
+function handleMobileToolSelect(tool: DrawingTool) {
+  emit('select-tool', tool)
+  // Auto-collapse toolbar after tool selection for better UX
+  nextTick(() => {
+    toolbarExpanded.value = false
+  })
+}
+
+// Mobile color selection handler - auto-collapse after selection
+function handleMobileColorSelect(color: string) {
+  emit('select-color', color)
+  // Keep expanded for color changes (user may want to try multiple)
+}
+
+// Quick color access from collapsed state
+function handleColorQuickSelect() {
+  toolbarExpanded.value = true
+}
+
+// Mobile size selection handler
+function handleMobileSizeSelect(size: number) {
+  emit('select-size', size)
+  // Keep expanded for size changes
+}
 
 // Stamp tool state
 const stampTypes = ['APPROVED', 'REVISED', 'NOTE', 'FOR REVIEW'] as const
