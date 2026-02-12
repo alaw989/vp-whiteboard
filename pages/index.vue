@@ -57,7 +57,7 @@
           v-for="whiteboard in whiteboards"
           :key="whiteboard.id"
           :to="`/whiteboard/${whiteboard.id}`"
-          class="card hover:shadow-md transition-shadow group"
+          class="card card-hover-lift group"
         >
           <div class="p-6">
             <div class="flex items-start justify-between mb-4">
@@ -69,7 +69,7 @@
                   Created {{ formatDate(whiteboard.created_at) }}
                 </p>
               </div>
-              <div class="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+              <div class="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
                 <Icon name="mdi:clipboard-text" class="w-5 h-5 text-blue-600" />
               </div>
             </div>

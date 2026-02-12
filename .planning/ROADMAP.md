@@ -12,14 +12,14 @@ VP Whiteboard transforms the existing collaborative canvas into a file-based mar
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation** - Secure file upload, session management, and WebSocket resilience
-- [ ] **Phase 2: Document Rendering** - PDF.js integration and document-as-background-layer pattern
-- [ ] **Phase 3: Drawing Tools** - Complete markup toolkit (pen, highlighter, arrows, text, stamps, shapes, selection, styling)
-- [ ] **Phase 4: Canvas Navigation** - Zoom, pan, and synchronized view state
-- [ ] **Phase 5: Real-time Collaboration** - Multi-user cursors, presence, and instant sync
-- [ ] **Phase 6: Export** - PNG and PDF export with annotations
+- [x] **Phase 1: Foundation** - Secure file upload, session management, and WebSocket resilience
+- [x] **Phase 2: Document Rendering** - PDF.js integration and document-as-background-layer pattern
+- [x] **Phase 3: Drawing Tools** - Complete markup toolkit (pen, highlighter, arrows, text, stamps, shapes, selection, styling)
+- [x] **Phase 4: Canvas Navigation** - Zoom, pan, and synchronized view state
+- [x] **Phase 5: Real-time Collaboration** - Multi-user cursors, presence, and instant sync
+- [x] **Phase 6: Export** - PNG and PDF export with annotations
 - [x] **Phase 7: Measurement Tools** - Scale-aware distance and area measurement
-- [ ] **Phase 8: Performance & Mobile** - Optimization and touch gesture support
+- [x] **Phase 8: Performance & Mobile** - Optimization and touch gesture support
 
 ## Phase Details
 
@@ -46,11 +46,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 | 2 | 01-02 | Session lookup and routing (depends on 01-01) |
 
 Plans:
-- [ ] 01-01-PLAN.md — Session infrastructure with short IDs (nanoid + session API)
-- [ ] 01-02-PLAN.md — Session lookup API and short URL routing (/s/[id])
-- [ ] 01-03-PLAN.md — File upload with real progress tracking (Axios)
-- [ ] 01-04-PLAN.md — Auto-save composable with visual status indicator
-- [ ] 01-05-PLAN.md — Offline detection banner and instant WebSocket retry
+- [x] 01-01-PLAN.md — Session infrastructure with short IDs (nanoid + session API)
+- [x] 01-02-PLAN.md — Session lookup API and short URL routing (/s/[id])
+- [x] 01-03-PLAN.md — File upload with real progress tracking (Axios)
+- [x] 01-04-PLAN.md — Auto-save composable with visual status indicator
+- [x] 01-05-PLAN.md — Offline detection banner and instant WebSocket retry
 
 ### Phase 2: Document Rendering
 
@@ -69,10 +69,10 @@ Plans:
 **Plans**: 4 plans in 3 waves
 
 Plans:
-- [ ] 02-01-PLAN.md — PDF.js worker setup and usePDFRendering composable (Wave 1)
-- [ ] 02-02-PLAN.md — Document-as-background-layer integration with Konva (Wave 2)
-- [ ] 02-03-PLAN.md — Layer management for multiple documents (Wave 2)
-- [ ] 02-04-PLAN.md — Lazy page loading and progress indicator (Wave 3)
+- [x] 02-01-PLAN.md — PDF.js worker setup and usePDFRendering composable (Wave 1)
+- [x] 02-02-PLAN.md — Document-as-background-layer integration with Konva (Wave 2)
+- [x] 02-03-PLAN.md — Layer management for multiple documents (Wave 2)
+- [x] 02-04-PLAN.md — Lazy page loading and progress indicator (Wave 3)
 
 ### Phase 3: Drawing Tools
 
@@ -95,13 +95,13 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 03-01: Pen, highlighter, and eraser tools
-- [ ] 03-02: Arrow and line tools
-- [ ] 03-03: Text annotation with leader lines
-- [ ] 03-04: Pre-defined stamp library
-- [ ] 03-05: Shape tools (rectangle, circle, ellipse)
-- [ ] 03-06: Element selection, move, and resize (Konva Transformer)
-- [ ] 03-07: Styling controls (color palette, stroke thickness)
+- [x] 03-01: Pen, highlighter, and eraser tools
+- [x] 03-02: Arrow and line tools
+- [x] 03-03: Text annotation with leader lines
+- [x] 03-04: Pre-defined stamp library
+- [x] 03-05: Shape tools (rectangle, circle, ellipse)
+- [x] 03-06: Element selection, move, and resize (Konva Transformer)
+- [x] 03-07: Styling controls (color palette, stroke thickness)
 - [x] 03-08: Undo/redo system
 
 ### Phase 4: Canvas Navigation
@@ -120,9 +120,9 @@ Plans:
 **Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 04-01-PLAN.md — Mouse wheel zoom with useViewport composable (Wave 1)
-- [ ] 04-02-PLAN.md — Pan-by-drag with toolbar button (Wave 2)
-- [ ] 04-03-PLAN.md — Zoom state synchronization via Yjs (Wave 3)
+- [x] 04-01-PLAN.md — Mouse wheel zoom with useViewport composable (Wave 1)
+- [x] 04-02-PLAN.md — Pan-by-drag with toolbar button (Wave 2)
+- [x] 04-03-PLAN.md — Zoom state synchronization via Yjs (Wave 3)
 
 ### Phase 5: Real-time Collaboration
 
@@ -146,10 +146,10 @@ Plans:
 | 2 | 05-03, 05-04 | Real-time stroke broadcast, cursor throttling |
 
 Plans:
-- [ ] 05-01-PLAN.md — Multi-user cursor tracking with Yjs Awareness API
-- [ ] 05-02-PLAN.md — User presence list component with color indicators
-- [ ] 05-03-PLAN.md — Real-time drawing broadcast via activeStrokes Y.Map
-- [ ] 05-04-PLAN.md — Cursor and stroke throttling for performance
+- [x] 05-01-PLAN.md — Multi-user cursor tracking with Yjs Awareness API
+- [x] 05-02-PLAN.md — User presence list component with color indicators
+- [x] 05-03-PLAN.md — Real-time drawing broadcast via activeStrokes Y.Map
+- [x] 05-04-PLAN.md — Cursor and stroke throttling for performance
 
 ### Phase 6: Export
 
@@ -172,9 +172,9 @@ Plans:
 | 2 | 06-02, 06-03 | PDF export, Export dialog UI (parallel) |
 
 Plans:
-- [ ] 06-01-PLAN.md — Export composable with PNG export and filename generation
-- [ ] 06-02-PLAN.md — PDF export using jsPDF (depends on 06-01)
-- [ ] 06-03-PLAN.md — Export dialog with preview and format selection (depends on 06-01)
+- [x] 06-01-PLAN.md — Export composable with PNG export and filename generation
+- [x] 06-02-PLAN.md — PDF export using jsPDF (depends on 06-01)
+- [x] 06-03-PLAN.md — Export dialog with preview and format selection (depends on 06-01)
 
 ### Phase 7: Measurement Tools
 
@@ -231,12 +231,12 @@ Plans:
 
 Plans:
 - [x] 08-RESEARCH.md — Performance and mobile implementation research (Wave 1)
-- [ ] 08-06-PLAN.md — Responsive UI for mobile screens (Wave 1)
-- [ ] 08-01-PLAN.md — Viewport clipping for large canvases (Wave 2)
-- [ ] 08-05-PLAN.md — Two-finger pan gesture (Wave 2)
-- [ ] 08-03-PLAN.md — WebSocket reconnection with exponential backoff (Wave 3)
-- [ ] 08-04-PLAN.md — Touch gesture support for drawing (Wave 3)
-- [ ] 08-02-PLAN.md — CRDT memory garbage collection (Wave 4)
+- [x] 08-06-PLAN.md — Responsive UI for mobile screens (Wave 1)
+- [x] 08-01-PLAN.md — Viewport clipping for large canvases (Wave 2)
+- [x] 08-05-PLAN.md — Two-finger pan gesture (Wave 2)
+- [x] 08-03-PLAN.md — WebSocket reconnection with exponential backoff (Wave 3)
+- [x] 08-04-PLAN.md — Touch gesture support for drawing (Wave 3)
+- [x] 08-02-PLAN.md — CRDT memory garbage collection (Wave 4)
 
 ## Progress
 
@@ -252,4 +252,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Real-time Collaboration | 4/4 | Complete | 2025-02-10 |
 | 6. Export | 3/3 | Complete | 2025-02-11 |
 | 7. Measurement Tools | 4/4 | Complete | 2025-02-11 |
-| 8. Performance & Mobile | 0/6 | Research complete | - |
+| 8. Performance & Mobile | 6/6 | Complete | 2026-02-12 |

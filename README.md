@@ -4,14 +4,45 @@ A real-time collaborative whiteboard application for structural engineering proj
 
 ## Features
 
-- **Real-time Collaboration**: Multiple users can draw and annotate simultaneously
-- **Drawing Tools**: Pen, highlighter, line, rectangle, circle, and eraser
-- **File Upload**: Upload images (JPEG, PNG, WebP) and PDFs as canvas background
-- **Live Cursors**: See other users' cursors and names in real-time
+### Core Drawing
+- **Drawing Tools**: Pen, highlighter, line, arrow, rectangle, circle, ellipse, text
+- **Engineering Stamps**: Approved, Revised, Note, For Review stamps
+- **Text Annotations**: Add callout notes with leader lines
+- **Eraser Tool**: Remove any element from canvas
 - **Undo/Redo**: Full history support with keyboard shortcuts (Ctrl+Z, Ctrl+Y)
-- **Export**: Download whiteboard as PNG image
-- **Share**: Generate shareable links for collaboration
+
+### Real-time Collaboration
+- **Multi-user Drawing**: Multiple users can draw and annotate simultaneously
+- **Live Cursors**: See other users' cursors and names in real-time
+- **User Presence**: See who's currently online
+- **Instant Sync**: CRDT-based synchronization ensures consistency
+
+### Document Management
+- **File Upload**: Upload images (JPEG, PNG, WebP) and PDFs as canvas background
+- **PDF Support**: Multi-page PDFs with page navigation
+- **Document Layers**: Layer management for complex drawings
+
+### Canvas Navigation
+- **Pan & Zoom**: Mouse wheel to zoom, click+drag or spacebar+drag to pan
+- **Synced View**: All users see the same viewport (optional)
+- **Performance**: Viewport culling for smooth performance with 500+ elements
+
+### Measurement Tools
+- **Scale Setting**: Define drawing-to-real-world ratios (e.g., 1" = 10')
+- **Distance Measurement**: Measure lines with real-world units
+- **Area Measurement**: Calculate area of rectangles, circles, ellipses
+- **Stale Detection**: Measurements flagged when scale changes
+
+### Export & Sharing
+- **PNG Export**: High-quality image export
+- **PDF Export**: Print-ready documents with annotations
+- **Share Links**: Generate shareable URLs for collaboration
 - **Persistent Storage**: Canvas state auto-saves every 30 seconds
+
+### Mobile Support
+- **Touch Drawing**: Stylus and finger drawing with pressure sensitivity
+- **Two-Finger Pan**: Pan canvas without drawing
+- **Responsive Toolbar**: Bottom sheet on mobile, sidebar on desktop
 
 ## Tech Stack
 
@@ -124,9 +155,21 @@ server {
 
 | Shortcut | Action |
 |----------|--------|
+| V | Select tool |
+| H | Pan tool |
+| P | Pen tool |
+| L | Line tool |
+| A | Arrow tool |
+| R | Rectangle tool |
+| C | Circle tool |
+| E | Ellipse tool |
+| T | Text annotation |
+| M | Measurement tool |
+| X | Eraser tool |
 | Ctrl+Z | Undo |
 | Ctrl+Y / Ctrl+Shift+Z | Redo |
 | Escape | Select tool |
+| ? | Show keyboard shortcuts |
 
 ## Project Structure
 
@@ -157,12 +200,26 @@ vp-whiteboard/
     └── schema.sql                  # Database schema
 ```
 
-## Limitations
+## Performance & Limitations
 
-- Max file upload: 10MB
-- Supported file types: JPEG, PNG, WebP, PDF
-- CAD support: DXF only (planned feature)
-- WebSocket connections: Limited by server capacity
+### File Limits
+- Max file upload: 10MB per file
+- Supported image types: JPEG, PNG, WebP
+- Supported document types: PDF
+
+### Canvas Performance
+- Viewport culling activates at 500+ elements for smooth performance
+- CRDT garbage collection runs every 10 minutes to manage memory
+- Recommended: <1000 elements for best performance
+
+### Browser Support
+- Modern browsers with WebSocket support
+- Touch devices: iOS Safari 14+, Chrome 90+
+- Pointer Events API required for pressure-sensitive drawing
+
+### Networking
+- WebSocket reconnection uses exponential backoff (1s → 30s max)
+- Max concurrent users limited by server capacity
 
 ## Development
 

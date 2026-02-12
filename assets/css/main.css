@@ -126,3 +126,30 @@ button:focus-visible, a:focus-visible {
 kbd {
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Droid Sans Mono', 'Source Code Pro', monospace;
 }
+
+/* Card hover lift effect */
+.card-hover-lift {
+  @apply transition-transform duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md;
+}
+
+/* Grid pattern background (for future use) */
+.bg-grid-pattern {
+  background-image: radial-gradient(circle, theme('colors.neutral.300') 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Fade in animation */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out forwards;
+}
