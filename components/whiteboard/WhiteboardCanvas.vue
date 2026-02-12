@@ -2085,6 +2085,8 @@ defineExpose({
   // Cursor tracking for UserPresenceList
   currentUser,
   remoteCursors,
+  // Measurement helpers
+  getStaleMeasurements,
 })
 </script>
 

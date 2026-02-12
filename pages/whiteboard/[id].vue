@@ -431,6 +431,28 @@ function handleSetScale(
   realWorldUnits: number,
   realWorldUnit: 'feet' | 'inches'
 ) {
+  // Calculate the new pixelsPerInch value
+  const standardDPI = 96
+  let realWorldInches = realWorldUnits
+  if (realWorldUnit === 'feet') {
+    realWorldInches = realWorldUnits * 12
+  }
+  const newPixelsPerInch = (standardDPI * drawingUnits) / realWorldInches
+
+  // Check for stale measurements before applying new scale
+  const staleMeasurements = canvasInstance.value?.getStaleMeasurements?.(newPixelsPerInch)
+  if (staleMeasurements && staleMeasurements.length > 0) {
+    const confirmed = confirm(
+      `Warning: Changing the scale will make ${staleMeasurements.length} existing measurement(s) stale. ` +
+      `Stale measurements will be marked with amber color and "(!)" indicator. ` +
+      `You can update them individually by double-clicking with the measure tool.\n\n` +
+      `Continue with scale change?`
+    )
+    if (!confirmed) {
+      return // User cancelled, don't change scale
+    }
+  }
+
   scaleInstance.value?.setScale(drawingUnits, drawingUnit, realWorldUnits, realWorldUnit)
 
   // Update display values
