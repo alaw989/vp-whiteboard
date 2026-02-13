@@ -1,7 +1,7 @@
 <template>
   <!-- Desktop Sidebar Toolbar (with wrapper for proper positioning) -->
-  <div class="hidden md:flex w-16 bg-white border-r border-neutral-200 flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen flex-shrink-0" role="toolbar" aria-label="Whiteboard tools">
-    <div class="toolbar flex flex-col gap-2 p-2 bg-white rounded-lg shadow-sm border border-neutral-200 overflow-y-auto w-full scrollbar-thin" role="group" aria-label="Drawing tools and actions">
+  <div class="hidden md:flex flex flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen flex-shrink-0 bg-white border-r border-neutral-200" style="width: 7rem;" role="toolbar" aria-label="Whiteboard tools">
+    <div class="toolbar flex flex-col gap-2 p-2 rounded-lg shadow-sm border border-neutral-200 overflow-y-auto w-full scrollbar-thin" role="group" aria-label="Drawing tools and actions">
     <!-- Drawing Tools -->
     <div class="flex flex-col gap-1">
       <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Tools</h4>

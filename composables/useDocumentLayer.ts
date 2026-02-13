@@ -115,6 +115,8 @@ export function useDocumentLayer() {
       state.value.layers = [...state.value.layers, layer]
       state.value.activeLayerId = layer.id
 
+      console.log('PDF layer added to state, total layers:', state.value.layers.length)
+
       // Cleanup PDF resources
       cleanupPDFDocument(pdfDocument)
 

@@ -496,6 +496,10 @@ async function handleUploadSuccess(result: UploadResult) {
   const fileType = result.fileRecord?.file_type || ''
   const canvas = canvasRef.value as any
 
+  console.log('Upload success:', result)
+  console.log('Canvas ref:', canvas)
+  console.log('File type:', fileType)
+
   if (!canvas) {
     console.error('Canvas not available')
     showUploadModal.value = false
@@ -504,20 +508,24 @@ async function handleUploadSuccess(result: UploadResult) {
 
   try {
     if (fileType === 'application/pdf') {
+      console.log('Adding PDF layer...')
       // For PDFs, fetch the file and render it
       const response = await fetch(result.url)
       const arrayBuffer = await response.arrayBuffer()
-      await canvas.addPDFLayer(
+      const layer = await canvas.addPDFLayer(
         { id: result.fileId, url: result.url, name: result.fileName },
         arrayBuffer
       )
+      console.log('PDF layer added:', layer)
     } else if (fileType.startsWith('image/')) {
+      console.log('Adding image layer...')
       // For images, add as image layer
-      await canvas.addImageLayer({
+      const layer = await canvas.addImageLayer({
         id: result.fileId,
         url: result.url,
         name: result.fileName,
       })
+      console.log('Image layer added:', layer)
     }
   } catch (error) {
     console.error('Failed to add file to canvas:', error)

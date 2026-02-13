@@ -52,7 +52,9 @@
         />
 
         <!-- Grid -->
-        <v-group :config="{ x: viewport.x, y: viewport.y }">
+        <!-- Note: viewport transform is applied at stage level via stageConfig,
+             so elements are rendered in their natural canvas coordinates -->
+        <v-group :config="{ x: 0, y: 0 }">
           <!-- Render visible elements (viewport clipped for performance) -->
           <template v-for="element in visibleElements" :key="element.id">
             <!-- Stroke elements (freehand drawing) - rendered as filled polygon -->
@@ -1079,19 +1081,22 @@ function handleKeyDown(event: KeyboardEvent) {
 }
 
 // Get stage position from mouse/touch/pointer event
+// Returns canvas coordinates accounting for viewport (pan/zoom)
 function getPointerPos(event: any) {
   const stage = stageRef.value?.getNode()
   if (!stage) return { x: 0, y: 0 }
 
-  const transform = stage.getAbsoluteTransform().copy()
-  transform.invert()
-
   const pos = stage.getPointerPosition()
   if (!pos) return { x: 0, y: 0 }
 
+  // The stage is transformed by viewport (x, y, zoom) via stageConfig
+  // getPointerPosition() returns coordinates in the stage's coordinate system
+  // We need to convert back to canvas coordinates by:
+  // 1. Dividing by zoom to account for scale
+  // 2. The stage.x/y shift is already factored out by getPointerPosition()
   return {
-    x: (pos.x - viewport.value.x) / viewport.value.zoom,
-    y: (pos.y - viewport.value.y) / viewport.value.zoom,
+    x: pos.x / viewport.value.zoom,
+    y: pos.y / viewport.value.zoom,
   }
 }
 
@@ -1841,6 +1846,7 @@ function getLineConfig(element: CanvasElement) {
     stroke: data.color,
     strokeWidth: data.size,
     lineCap: 'round',
+    draggable: true,
   }
 }
 
@@ -1858,6 +1864,7 @@ function getArrowConfig(element: CanvasElement) {
     fill: data.fill,
     lineCap: 'round',
     lineJoin: 'round',
+    draggable: true,
   }
 }
 
@@ -1871,6 +1878,7 @@ function getRectConfig(element: CanvasElement) {
     stroke: data.stroke,
     strokeWidth: data.strokeWidth,
     fill: data.fill || 'transparent',
+    draggable: true,
   }
 }
 
@@ -1883,6 +1891,7 @@ function getCircleConfig(element: CanvasElement) {
     stroke: data.stroke,
     strokeWidth: data.strokeWidth,
     fill: data.fill || 'transparent',
+    draggable: true,
   }
 }
 
@@ -1897,6 +1906,7 @@ function getEllipseConfig(element: CanvasElement) {
     stroke: data.stroke,
     strokeWidth: data.strokeWidth,
     fill: data.fill || 'transparent',
+    draggable: true,
   }
 }
 
@@ -1910,6 +1920,7 @@ function getImageConfig(element: CanvasElement) {
     image,
     width: data.width,
     height: data.height,
+    draggable: true,
   }
 }
 
@@ -1922,6 +1933,7 @@ function getTextConfig(element: CanvasElement) {
     fontSize: data.fontSize,
     fill: data.color,
     fontFamily: data.fontFamily,
+    draggable: true,
   }
 }
 
@@ -1931,6 +1943,7 @@ function getTextAnnotationConfig(element: CanvasElement) {
   return {
     x: data.x,
     y: data.y,
+    draggable: true,
   }
 }
 
@@ -1972,6 +1985,7 @@ function getStampGroupConfig(element: CanvasElement) {
   return {
     x: data.x,
     y: data.y,
+    draggable: true,
   }
 }
 
@@ -2009,7 +2023,7 @@ function getStampTextConfig(element: CanvasElement) {
 
 // Measurement distance config helpers
 function getMeasurementGroupConfig(element: CanvasElement) {
-  return { x: 0, y: 0 }
+  return { x: 0, y: 0, draggable: true }
 }
 
 function getMeasurementLineConfig(element: CanvasElement) {
