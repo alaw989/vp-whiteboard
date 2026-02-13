@@ -66,6 +66,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             />
 
@@ -77,6 +79,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             />
 
@@ -88,6 +92,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             />
 
@@ -99,6 +105,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             />
 
@@ -110,6 +118,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             />
 
@@ -121,6 +131,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             />
 
@@ -132,6 +144,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             />
 
@@ -143,6 +157,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             />
 
@@ -154,6 +170,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             >
               <v-line :config="getTextAnnotationLineConfig(element)" />
@@ -168,6 +186,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             >
               <v-rect :config="getStampRectConfig(element)" />
@@ -182,6 +202,8 @@
                 id: element.id,
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             >
               <v-line :config="getMeasurementLineConfig(element)" />
@@ -199,6 +221,8 @@
                 y: getAreaLabelPosition(element).y
               }"
               @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             >
               <v-text :config="getAreaLabelConfig(element)" />
@@ -1581,6 +1605,40 @@ function handleMouseUp(event: any) {
   currentStrokeId.value = null
 }
 
+// Track drag start position for delta calculation
+const dragStartPosition = ref<{ x: number; y: number } | null>(null)
+
+/**
+ * Handle drag start - record initial position for delta calculation
+ */
+function handleDragStart(event: any) {
+  if (props.currentTool !== 'select' || !selectedId.value) return
+  const node = event.target
+  dragStartPosition.value = node.position()
+}
+
+/**
+ * Handle drag move - for stroke/line elements that need point transformation
+ */
+function handleDragMove(event: any) {
+  if (props.currentTool !== 'select' || !selectedId.value) return
+  const element = props.elements.find(el => el.id === selectedId.value)
+  if (!element || !dragStartPosition.value) return
+
+  // Only stroke/line/arrow need special handling during drag
+  if (element.type !== 'stroke' && element.type !== 'line' && element.type !== 'arrow') {
+    return
+  }
+
+  const node = event.target
+  const currentPosition = node.position()
+  const deltaX = currentPosition.x - dragStartPosition.value.x
+  const deltaY = currentPosition.y - dragStartPosition.value.y
+
+  // Update visual position would happen automatically by Konva
+  // We just track for end event
+}
+
 /**
  * Handle drag end for selected elements
  * Updates element position in Yjs after drag completes
@@ -1635,13 +1693,50 @@ function handleDragEnd(event: any) {
       rotation: newRotation,
     }
   } else if (element.type === 'stroke' || element.type === 'line' || element.type === 'arrow') {
-    // Lines and arrows need point transformation
+    // Lines and arrows need point transformation - translate all points by drag delta
     const data = element.data as any
-    updates.data = {
-      ...data,
-      scaleX: newScale.x,
-      scaleY: newScale.y,
-      rotation: newRotation,
+    const startPos = dragStartPosition.value
+    if (startPos) {
+      const deltaX = newPosition.x - startPos.x
+      const deltaY = newPosition.y - startPos.y
+
+      if (element.type === 'stroke') {
+        // Translate all stroke points
+        updates.data = {
+          ...data,
+          points: data.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]),
+          scaleX: newScale.x,
+          scaleY: newScale.y,
+          rotation: newRotation,
+        }
+      } else if (element.type === 'line') {
+        // Translate line start/end
+        updates.data = {
+          ...data,
+          start: [data.start[0] + deltaX, data.start[1] + deltaY],
+          end: [data.end[0] + deltaX, data.end[1] + deltaY],
+          scaleX: newScale.x,
+          scaleY: newScale.y,
+          rotation: newRotation,
+        }
+      } else if (element.type === 'arrow') {
+        // Translate all arrow points
+        updates.data = {
+          ...data,
+          points: data.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]),
+          scaleX: newScale.x,
+          scaleY: newScale.y,
+          rotation: newRotation,
+        }
+      }
+    } else {
+      // Fallback if no drag start recorded
+      updates.data = {
+        ...data,
+        scaleX: newScale.x,
+        scaleY: newScale.y,
+        rotation: newRotation,
+      }
     }
   } else if (element.type === 'measurement-distance') {
     // Measurements use x, y for group offset
@@ -1657,6 +1752,9 @@ function handleDragEnd(event: any) {
   }
 
   emit('element-update', selectedId.value, updates)
+
+  // Reset drag start position
+  dragStartPosition.value = null
 }
 
 // Pointer event handlers - unified API for mouse, touch, and pen
@@ -1805,6 +1903,7 @@ function getStrokeConfig(element: CanvasElement) {
     lineCap: 'round',
     lineJoin: 'round',
     closed: true,
+    draggable: true,
   }
 }
 
