@@ -165,6 +165,9 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   // Local reactive ref for observing remote active strokes (filtered to exclude own strokes)
   const activeStrokes = ref<Record<string, [number, number, number][]>>({})
 
+  // Local reactive ref for elements - updated by Yjs observer
+  const elements = ref<CanvasElement[]>([])
+
   // Track last broadcast time for throttling stroke points
   // STROKE_THROTTLE_MS = 16ms (~60fps max) provides consistent real-time feel
   // while preventing excessive network traffic during rapid drawing
@@ -299,6 +302,15 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     // Note: connection-close handler for reconnection is registered earlier
     // Cursor cleanup is handled there as well to avoid duplicate handlers
   }
+
+  // Watch for elements changes - update reactive ref when Yjs array changes
+  // This ensures Vue reactivity works with Yjs CRDT
+  yElements.observe(() => {
+    elements.value = yElements.toArray()
+  })
+
+  // Initialize elements ref with current state
+  elements.value = yElements.toArray()
 
   // Load from localStorage for persistence
   let stopGarbageCollection: (() => void) | null = null
@@ -518,7 +530,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     connectionStatus,
     currentUser,
     connectedUsers,
-    elements: computed(() => getElements()),
+    elements,
     canUndo: computed(() => undoManager.canUndo()),
     canRedo: computed(() => undoManager.canRedo()),
     activeStrokes,
