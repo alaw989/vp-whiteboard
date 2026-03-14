@@ -6,6 +6,8 @@
   "private": true,
   "scripts": {
     "dev": "nuxt dev",
+    "dev:ws": "node server/ws-server.js",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:ws\"",
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
@@ -16,6 +18,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.13.5",
+    "concurrently": "^8.2.2",
     "jspdf": "^4.1.0",
     "konva": "^9.3.15",
     "nanoid": "^5.1.6",
@@ -24,6 +27,7 @@
     "perfect-freehand": "^1.2.3",
     "vue": "^3.5.0",
     "vue-konva": "^3.3.0",
+    "ws": "^8.19.0",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.29"
   },
@@ -33,6 +37,7 @@
     "@pinia/nuxt": "^0.5.5",
     "@types/nanoid": "^2.1.0",
     "@types/node": "^25.2.1",
+    "@types/ws": "^8.18.1",
     "@vueuse/nuxt": "^12.0.1",
     "typescript": "^5.9.3",
     "vue-tsc": "^2.2.0"
