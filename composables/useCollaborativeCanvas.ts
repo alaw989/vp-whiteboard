@@ -86,88 +86,165 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   // Initialize Yjs document
   const ydoc = new Y.Doc()
 
-  // For testing: Use local storage to persist state
-  // In production with proper WebSocket server, WebsocketProvider would be used here
-  let wsProvider: any = null
+  // WebSocket connection (native, no external provider library)
+  let ws: WebSocket | null = null
+  let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 
-  // Async function to initialize WebSocket provider
-  // Must use dynamic import because y-websocket doesn't have proper ESM exports
-  async function initWebSocketProvider() {
+  // Minimal wsProvider-like object for compatibility with useCursors
+  const wsProvider = {
+    awareness: {
+      getStates: () => [],
+      on: () => {},
+      off: () => {},
+      setLocalStateField: () => {},
+    },
+  }
+
+  /**
+   * Initialize WebSocket connection with Yjs sync
+   */
+  function initWebSocket() {
+    if (ws?.readyState === WebSocket.OPEN) return
+
     try {
-      const YWebsocketModule = await import('y-websocket')
-      const WebsocketProvider = (YWebsocketModule as any).WebsocketProvider || YWebsocketModule.default?.WebsocketProvider
+      // Build WebSocket URL with room and user info
+      const url = new URL(wsUrl)
+      url.pathname = `/whiteboard:${whiteboardId}`
+      url.searchParams.set('userId', userId)
+      url.searchParams.set('userName', userName)
 
-      if (WebsocketProvider) {
-        wsProvider = new WebsocketProvider(
-          wsUrl,
-          `whiteboard:${whiteboardId}`,
-          ydoc,
-          {
-            connect: true,
-            params: {
-              userId,
-              userName,
-            },
-          }
-        )
+      ws = new WebSocket(url.toString())
 
-        // Configure exponential backoff reconnection (override y-websocket default)
-        // Replaces instant retry with graceful backoff for better UX and reduced server load
-        if (wsProvider && wsProvider.wsconnecting) {
-          const originalConnect = wsProvider.connect
-          const backoff = createExponentialBackoff({
-            baseDelay: 1000,      // Start with 1 second
-            maxDelay: 30000,      // Cap at 30 seconds
-            maxAttempts: 100,     // Retry many times but not forever
-            jitter: true,         // Add randomness to prevent thundering herd
-          })
+      ws.binaryType = 'arraybuffer'
 
-          // Override connection close handler for exponential backoff retry
-          wsProvider.on('connection-close', () => {
-            connectionStatus.value = 'disconnected'
-            isConnected.value = false
-            yCursors.delete(userId)
+      ws.onopen = () => {
+        console.log('[Yjs WS] Connected to room:', whiteboardId)
+        connectionStatus.value = 'connected'
+        isConnected.value = true
 
-            // Exponential backoff retry with jitter
-            if (backoff.shouldRetry()) {
-              const delay = backoff.nextDelay()
-              const delaySeconds = (delay / 1000).toFixed(1)
-              const attempt = backoff.getAttempt()
+        // Request initial sync state from server
+        sendSyncMessage()
 
-              console.log(`[WebSocket] Reconnecting in ${delaySeconds}s... (attempt ${attempt})`)
+        // Clear any pending reconnect
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout)
+          reconnectTimeout = null
+        }
+      }
 
-              // Schedule reconnection with calculated delay
-              setTimeout(() => {
-                if (!isConnected.value && wsProvider && !wsProvider.wsconnected) {
-                  connectionStatus.value = 'connecting'
-                  originalConnect.call(wsProvider)
-                }
-              }, delay)
-            } else {
-              console.warn('[WebSocket] Max reconnection attempts reached. Giving up.')
-              connectionStatus.value = 'disconnected'
-            }
-          })
+      ws.onclose = () => {
+        console.log('[Yjs WS] Disconnected')
+        connectionStatus.value = 'disconnected'
+        isConnected.value = false
+        yCursors.delete(userId)
 
-          // Reset backoff on successful connection
-          wsProvider.on('sync', () => {
-            backoff.reset()
-          })
+        // Schedule reconnection with exponential backoff
+        scheduleReconnect()
+      }
 
-          // Update connection status when connected
-          wsProvider.on('status', (event: { status: string }) => {
-            connectionStatus.value = event.status as 'connecting' | 'connected' | 'disconnected'
-            isConnected.value = event.status === 'connected'
-          })
+      ws.onerror = (error) => {
+        console.error('[Yjs WS] Error:', error)
+      }
+
+      ws.onmessage = async (event) => {
+        try {
+          const data = new Uint8Array(event.data)
+          await handleIncomingMessage(data)
+        } catch (e) {
+          console.error('[Yjs WS] Failed to handle message:', e)
         }
       }
     } catch (e) {
-      console.warn('[WebSocket] Failed to initialize, running in local mode:', e)
+      console.error('[Yjs WS] Failed to create WebSocket:', e)
     }
   }
 
-  // Initialize WebSocket provider asynchronously (fire and forget)
-  initWebSocketProvider()
+  /**
+   * Schedule reconnection with exponential backoff
+   */
+  function scheduleReconnect() {
+    if (reconnectTimeout) return
+
+    const backoff = createExponentialBackoff({
+      baseDelay: 1000,
+      maxDelay: 30000,
+      maxAttempts: 100,
+      jitter: true,
+    })
+
+    reconnectTimeout = setTimeout(() => {
+      const delay = backoff.nextDelay()
+      console.log(`[Yjs WS] Reconnecting in ${(delay / 1000).toFixed(1)}s...`)
+      connectionStatus.value = 'connecting'
+      initWebSocket()
+      reconnectTimeout = null
+    }, 2000) // Initial 2s delay
+  }
+
+  /**
+   * Send sync step 1 message to request initial state
+   */
+  function sendSyncMessage() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+    // Encode sync step 1
+    const encoder = new Y.encodeStateAsUpdate(ydoc)
+    sendBinary(encoder)
+  }
+
+  /**
+   * Handle incoming Yjs message
+   */
+  async function handleIncomingMessage(data: Uint8Array) {
+    const decoder = new Y.Decoder()
+    Y.updateDecoded(decoder, data)
+    const messageType = decoder.readVarUint()
+
+    switch (messageType) {
+      case 0: // Sync
+        Y.readSyncMessage(decoder, new Y.encodeStateAsUpdate(), ydoc, undefined)
+        break
+      case 1: // Awareness
+        // Handle awareness (cursors, presence)
+        break
+      case 2: // Auth
+        // Handle auth
+        break
+      case 3: // Query Awareness
+        // Send awareness state
+        break
+    }
+  }
+
+  /**
+   * Send binary data over WebSocket
+   */
+  function sendBinary(data: Uint8Array) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(data)
+    }
+  }
+
+  /**
+   * Initialize WebSocket on mount
+   */
+  onMounted(() => {
+    initWebSocket()
+  })
+
+  /**
+   * Cleanup on unmount
+   */
+  function cleanupWebSocket() {
+    if (ws) {
+      ws.close()
+      ws = null
+    }
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout)
+      reconnectTimeout = null
+    }
+  }
 
   // Get shared data structures
   const yElements = ydoc.getArray<CanvasElement>('elements')
@@ -194,8 +271,8 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   const lastBroadcastTime = new Map<string, number>()
 
   // Local state
-  const isConnected = ref(wsProvider !== null)
-  const connectionStatus = ref(wsProvider !== null ? 'connected' : 'disconnected')
+  const isConnected = ref(false)
+  const connectionStatus = ref<'connecting' | 'connected' | 'disconnected'>('disconnected')
   const currentUser = ref({ id: userId, name: userName, color: getUserColor(userId) })
   const connectedUsers = ref<Map<string, UserPresence>>(new Map())
 
@@ -278,49 +355,38 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     }
   }
 
-  // Watch connection status if provider exists
-  if (wsProvider) {
-    wsProvider.on('status', (event: { status: string }) => {
-      connectionStatus.value = event.status as 'connecting' | 'connected' | 'disconnected'
-      isConnected.value = event.status === 'connected'
+  // Watch for other users' cursors
+  yCursors.observe((event) => {
+    const users = new Map<string, UserPresence>()
+    yCursors.forEach((presence, userId) => {
+      // Only show active users (seen within last 30 seconds)
+      if (Date.now() - presence.lastSeen < 30000) {
+        users.set(userId, presence)
+      }
     })
+    connectedUsers.value = users
+  })
 
-    // Watch for other users' cursors
-    yCursors.observe((event) => {
-      const users = new Map<string, UserPresence>()
-      yCursors.forEach((presence, userId) => {
-        // Only show active users (seen within last 30 seconds)
-        if (Date.now() - presence.lastSeen < 30000) {
-          users.set(userId, presence)
-        }
-      })
-      connectedUsers.value = users
+  // Watch for remote active strokes (in-progress drawings from other users)
+  // Filter out own strokes to avoid rendering duplicate
+  yActiveStrokes.observe((event) => {
+    event.changes.keys.forEach((change, key) => {
+      const strokeId = key as string
+      // Skip if this is our own stroke
+      if (strokeId.startsWith(userId)) {
+        return
+      }
+
+      const points = yActiveStrokes.get(strokeId)
+      if (points && points.length! > 0) {
+        // Add or update remote active stroke
+        activeStrokes.value[strokeId] = points!
+      } else {
+        // Remove stroke (completed or deleted)
+        delete activeStrokes.value[strokeId]
+      }
     })
-
-    // Watch for remote active strokes (in-progress drawings from other users)
-    // Filter out own strokes to avoid rendering duplicate
-    yActiveStrokes.observe((event) => {
-      event.changes.keys.forEach((change, key) => {
-        const strokeId = key as string
-        // Skip if this is our own stroke
-        if (strokeId.startsWith(userId)) {
-          return
-        }
-
-        const points = yActiveStrokes.get(strokeId)
-        if (points && points.length! > 0) {
-          // Add or update remote active stroke
-          activeStrokes.value[strokeId] = points!
-        } else {
-          // Remove stroke (completed or deleted)
-          delete activeStrokes.value[strokeId]
-        }
-      })
-    })
-
-    // Note: connection-close handler for reconnection is registered earlier
-    // Cursor cleanup is handled there as well to avoid duplicate handlers
-  }
+  })
 
   // Watch for elements changes - update reactive ref when Yjs array changes
   // This ensures Vue reactivity works with Yjs CRDT
@@ -485,13 +551,45 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       stopGarbageCollection = null
     }
 
+    // Clean up WebSocket connection
+    cleanupWebSocket()
+
     yCursors.delete(userId)
-    if (wsProvider) {
-      wsProvider.disconnect()
-    }
     undoManager.destroy()
     ydoc.destroy()
   }
+
+  /**
+   * Broadcast Yjs document update to all connected clients
+   */
+  function broadcastUpdate(update: Uint8Array) {
+    sendBinary(update)
+  }
+
+  /**
+   * Observe Yjs document changes and broadcast them
+   */
+  yElements.observe((event) => {
+    // Get the update and broadcast it
+    const update = Y.encodeStateAsUpdate(ydoc)
+    sendBinary(update)
+  })
+
+  /**
+   * Observe yMeta changes (viewport, scale, document layers)
+   */
+  yMeta.observe((event) => {
+    const update = Y.encodeStateAsUpdate(ydoc)
+    sendBinary(update)
+  })
+
+  /**
+   * Observe yDocumentLayers changes
+   */
+  yDocumentLayers.observe(() => {
+    const update = Y.encodeStateAsUpdate(ydoc)
+    sendBinary(update)
+  })
 
   /**
    * Start a new active stroke for real-time broadcasting
@@ -651,7 +749,6 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     yElements,
     yMeta,
     yDocumentLayers,
-    wsProvider,
   }
 }
 

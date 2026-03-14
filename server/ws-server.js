@@ -32,6 +32,9 @@ const wss = new WebSocketServer({ server, noServer: false })
 // Store connections per room
 const rooms = new Map()
 
+// Track total connections
+let totalConnections = 0
+
 /**
  * Get or create room connections
  */
@@ -46,6 +49,8 @@ function getRoom(roomId) {
  * Handle WebSocket connection
  */
 wss.on('connection', (ws, req) => {
+  totalConnections++
+
   // Extract room ID from URL path
   // Expected format: /whiteboard:{id} or /{id}
   const url = new URL(req.url || '', `http://${req.headers.host}`)
@@ -59,7 +64,8 @@ wss.on('connection', (ws, req) => {
   const userId = url.searchParams.get('userId') || 'anonymous'
   const userName = url.searchParams.get('userName') || 'Anonymous'
 
-  console.log(`[Yjs WS] Connection: room=${roomId}, user=${userName} (${userId})`)
+  console.log(`[Yjs WS] ✅ Connection: room=${roomId}, user=${userName} (${userId})`)
+  console.log(`[Yjs WS] Total connections: ${totalConnections}, room has ${getRoom(roomId).size + 1} clients`)
 
   // Add to room
   const room = getRoom(roomId)
@@ -70,26 +76,34 @@ wss.on('connection', (ws, req) => {
   ws.userId = userId
   ws.userName = userName
 
-  // Handle incoming messages (relay to all other clients in room)
+  // Log when we receive messages
   ws.on('message', (data) => {
+    const msgSize = data.byteLength || data.length || 0
+    console.log(`[Yjs WS] 📨 Message: room=${roomId}, size=${msgSize} bytes`)
+
     // Relay binary message to all other clients in the room
+    let relayed = 0
     room.forEach((client) => {
       if (client !== ws && client.readyState === ws.OPEN) {
         client.send(data)
+        relayed++
       }
     })
+    console.log(`[Yjs WS] 📤 Relayed to ${relayed} other clients`)
   })
 
   // Log connection state
   ws.on('close', () => {
-    console.log(`[Yjs WS] Disconnection: room=${roomId}, user=${userName} (${userId})`)
+    totalConnections--
+    const roomSize = room.size - 1
+    console.log(`[Yjs WS] ❌ Disconnection: room=${roomId}, user=${userName} (${userId}), room now has ${roomSize} clients`)
     room.delete(ws)
 
     // Clean up empty rooms after delay
     if (room.size === 0) {
       setTimeout(() => {
         if (rooms.has(roomId) && rooms.get(roomId).size === 0) {
-          console.log(`[Yjs WS] Cleaning up empty room: ${roomId}`)
+          console.log(`[Yjs WS] 🧹 Cleaning up empty room: ${roomId}`)
           rooms.delete(roomId)
         }
       }, 60000)
@@ -97,7 +111,7 @@ wss.on('connection', (ws, req) => {
   })
 
   ws.on('error', (error) => {
-    console.error(`[Yjs WS] Error: room=${roomId}, user=${userName}:`, error.message)
+    console.error(`[Yjs WS] ⚠️ Error: room=${roomId}, user=${userName}:`, error.message)
     room.delete(ws)
   })
 })
@@ -113,7 +127,7 @@ server.listen(PORT, HOST, () => {
 ║  Rooms: ${rooms.size}                                            ║
 ╚══════════════════════════════════════════════════════════╝
 
-Ready for Yjs connections...
+Waiting for Yjs connections...
   `)
 })
 
