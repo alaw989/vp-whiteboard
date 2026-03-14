@@ -518,6 +518,11 @@ const props = defineProps<{
   getViewport?: () => import('~/types').SharedViewportState
   syncViewport?: (viewport: import('~/types').ViewportState) => void
   observeViewport?: (callback: (viewport: import('~/types').SharedViewportState) => void) => () => void
+  // Document layer sync props (for Yjs shared document layers)
+  yDocumentLayers?: any  // Yjs Map containing shared document layers
+  addDocumentLayer?: ((layer: any) => void) | null
+  updateDocumentLayer?: ((id: string, updates: any) => void) | null
+  removeDocumentLayer?: ((id: string) => void) | null
 }>()
 
 const emit = defineEmits<{
@@ -534,14 +539,19 @@ const layerRef = ref<any>(null)
 const documentLayerRef = ref<any>(null)
 const transformerLayerRef = ref<any>(null)
 
-// Document layer composable
+// Document layer composable with Yjs sync
 const {
   visibleLayers,
   addImageLayer,
   addPDFLayer,
   updateLayer,
   removeLayer,
-} = useDocumentLayer()
+} = useDocumentLayer({
+  yDocumentLayers: props.yDocumentLayers,
+  onAddLayer: props.addDocumentLayer || undefined,
+  onUpdateLayer: props.updateDocumentLayer || undefined,
+  onRemoveLayer: props.removeDocumentLayer || undefined,
+})
 
 // Default scale: 96 pixels per inch (standard screen resolution)
 const pixelsPerInch = ref(96)

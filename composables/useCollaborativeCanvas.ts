@@ -158,6 +158,9 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   const yCursors = ydoc.getMap<UserPresence>('cursors')
   const yMeta = ydoc.getMap<any>('meta')
 
+  // Document layers - shared so all users see same PDFs/images
+  const yDocumentLayers = ydoc.getMap<any>('documentLayers')
+
   // Active strokes map for real-time stroke broadcasting
   // Strokes are stored here while being drawn, moved to yElements on completion
   const yActiveStrokes = ydoc.getMap<[number, number, number][]>('activeStrokes')
@@ -524,6 +527,65 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     lastBroadcastTime.delete(strokeId)
   }
 
+  // ============================================
+  // Document Layer Methods (for shared PDFs/images)
+  // ============================================
+
+  /**
+   * Add a document layer (PDF or image) to shared state
+   * All users will see this layer appear
+   */
+  function addDocumentLayer(layer: any) {
+    ydoc.transact(() => {
+      yDocumentLayers.set(layer.id, layer)
+    }, userId)
+  }
+
+  /**
+   * Update a document layer's properties (position, scale, etc.)
+   */
+  function updateDocumentLayer(layerId: string, updates: Partial<any>) {
+    const existing = yDocumentLayers.get(layerId)
+    if (existing) {
+      ydoc.transact(() => {
+        yDocumentLayers.set(layerId, { ...existing, ...updates })
+      }, userId)
+    }
+  }
+
+  /**
+   * Remove a document layer from shared state
+   */
+  function removeDocumentLayer(layerId: string) {
+    ydoc.transact(() => {
+      yDocumentLayers.delete(layerId)
+    }, userId)
+  }
+
+  /**
+   * Get all document layers as an array
+   */
+  function getDocumentLayers(): any[] {
+    return Array.from(yDocumentLayers.values())
+  }
+
+  /**
+   * Observe changes to document layers from other users
+   * Returns cleanup function to stop observing
+   */
+  function observeDocumentLayers(callback: (layers: any[]) => void): () => void {
+    const handler = () => {
+      callback(Array.from(yDocumentLayers.values()))
+    }
+    yDocumentLayers.observe(handler)
+    // Call immediately with current state
+    handler()
+    // Return cleanup function
+    return () => {
+      yDocumentLayers.unobserve(handler)
+    }
+  }
+
   return {
     // State
     isConnected,
@@ -557,6 +619,13 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     syncViewport,
     observeViewport,
 
+    // Document layer methods (shared PDFs/images)
+    addDocumentLayer,
+    updateDocumentLayer,
+    removeDocumentLayer,
+    getDocumentLayers,
+    observeDocumentLayers,
+
     // CRDT garbage collection methods
     compactDocument,
     startGarbageCollection,
@@ -565,6 +634,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     ydoc,
     yElements,
     yMeta,
+    yDocumentLayers,
     wsProvider,
   }
 }

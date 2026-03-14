@@ -1,17 +1,70 @@
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import type { DocumentLayer, DocumentLayerState } from '~/types'
+import type { Map as YMap } from 'yjs'
 import { usePDFRendering } from './usePDFRendering'
 
-export function useDocumentLayer() {
+/**
+ * Options for initializing useDocumentLayer with shared state
+ */
+interface UseDocumentLayerOptions {
+  /** Yjs Map containing shared document layers */
+  yDocumentLayers?: YMap<any>
+  /** Callback when a layer is added (syncs to Yjs) */
+  onAddLayer?: (layer: DocumentLayer) => void
+  /** Callback when a layer is updated (syncs to Yjs) */
+  onUpdateLayer?: (id: string, updates: Partial<DocumentLayer>) => void
+  /** Callback when a layer is removed (syncs to Yjs) */
+  onRemoveLayer?: (id: string) => void
+}
+
+export function useDocumentLayer(options?: UseDocumentLayerOptions) {
   const { renderPageToImage, loadPDFDocument, cleanupPDFDocument } = usePDFRendering()
 
-  // State
+  // Local state (will be kept in sync with Yjs if provided)
   const state = ref<DocumentLayerState>({
     layers: [],
     activeLayerId: null,
     loading: false,
     error: null,
   })
+
+  // Store cleanup function for Yjs observer
+  let stopObservingLayers: (() => void) | null = null
+
+  // If Yjs map is provided, observe it and sync local state
+  if (options?.yDocumentLayers) {
+    stopObservingLayers = observeYjsLayers(options.yDocumentLayers)
+  }
+
+  /**
+   * Observe Yjs document layers and sync to local state
+   */
+  function observeYjsLayers(yLayers: YMap<any>): () => void {
+    const handler = () => {
+      // Sync layers from Yjs to local state
+      const remoteLayers = Array.from(yLayers.values())
+      state.value.layers = remoteLayers
+
+      // Preserve active layer if it still exists
+      if (state.value.activeLayerId) {
+        const activeExists = remoteLayers.some(l => l.id === state.value.activeLayerId)
+        if (!activeExists) {
+          state.value.activeLayerId = remoteLayers[0]?.id || null
+        }
+      }
+    }
+
+    // Initial sync
+    handler()
+
+    // Observe changes
+    yLayers.observe(handler)
+
+    // Return cleanup function
+    return () => {
+      yLayers.unobserve(handler)
+    }
+  }
 
   // Computed
   const activeLayer = computed(() =>
@@ -53,10 +106,14 @@ export function useDocumentLayer() {
         layer.width = img.width
         layer.height = img.height
 
-        // Create new array reference to avoid recursive updates
+        // Update local state
         state.value.layers = [...state.value.layers, layer]
         state.value.activeLayerId = layer.id
         state.value.error = null
+
+        // Sync to Yjs if callback provided
+        options?.onAddLayer?.(layer)
+
         resolve(layer)
       }
 
@@ -111,7 +168,7 @@ export function useDocumentLayer() {
         totalPages: pdfDocument.numPages,
       }
 
-      // Create new array reference to avoid recursive updates
+      // Update local state
       state.value.layers = [...state.value.layers, layer]
       state.value.activeLayerId = layer.id
 
@@ -119,6 +176,9 @@ export function useDocumentLayer() {
 
       // Cleanup PDF resources
       cleanupPDFDocument(pdfDocument)
+
+      // Sync to Yjs if callback provided
+      options?.onAddLayer?.(layer)
 
       return layer
     } catch (error) {
@@ -137,7 +197,11 @@ export function useDocumentLayer() {
     const index = state.value.layers.findIndex(l => l.id === id)
     if (index !== -1) {
       const current = state.value.layers[index]
-      state.value.layers[index] = { ...current, ...updates } as DocumentLayer
+      const updated = { ...current, ...updates } as DocumentLayer
+      state.value.layers[index] = updated
+
+      // Sync to Yjs if callback provided
+      options?.onUpdateLayer?.(id, updates)
     }
   }
 
@@ -149,6 +213,9 @@ export function useDocumentLayer() {
     if (state.value.activeLayerId === id) {
       state.value.activeLayerId = state.value.layers[0]?.id || null
     }
+
+    // Sync to Yjs if callback provided
+    options?.onRemoveLayer?.(id)
   }
 
   /**
@@ -166,6 +233,14 @@ export function useDocumentLayer() {
     state.value.activeLayerId = null
     state.value.error = null
   }
+
+  // Cleanup observer on unmount
+  onUnmounted(() => {
+    if (stopObservingLayers) {
+      stopObservingLayers()
+      stopObservingLayers = null
+    }
+  })
 
   return {
     // State
