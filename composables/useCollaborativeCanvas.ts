@@ -90,68 +90,84 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   // In production with proper WebSocket server, WebsocketProvider would be used here
   let wsProvider: any = null
 
-  // Try to connect to WebSocket server (will fail gracefully if not available)
-  try {
-    const { WebsocketProvider } = require('y-websocket')
-    wsProvider = new WebsocketProvider(
-      wsUrl,
-      `whiteboard:${whiteboardId}`,
-      ydoc,
-      {
-        connect: true,
-        params: {
-          userId,
-          userName,
-        },
-      }
-    )
+  // Async function to initialize WebSocket provider
+  // Must use dynamic import because y-websocket doesn't have proper ESM exports
+  async function initWebSocketProvider() {
+    try {
+      const YWebsocketModule = await import('y-websocket')
+      const WebsocketProvider = (YWebsocketModule as any).WebsocketProvider || YWebsocketModule.default?.WebsocketProvider
 
-    // Configure exponential backoff reconnection (override y-websocket default)
-    // Replaces instant retry with graceful backoff for better UX and reduced server load
-    if (wsProvider.wsconnecting) {
-      const originalConnect = wsProvider.connect
-      const backoff = createExponentialBackoff({
-        baseDelay: 1000,      // Start with 1 second
-        maxDelay: 30000,      // Cap at 30 seconds
-        maxAttempts: 100,     // Retry many times but not forever
-        jitter: true,         // Add randomness to prevent thundering herd
-      })
+      if (WebsocketProvider) {
+        wsProvider = new WebsocketProvider(
+          wsUrl,
+          `whiteboard:${whiteboardId}`,
+          ydoc,
+          {
+            connect: true,
+            params: {
+              userId,
+              userName,
+            },
+          }
+        )
 
-      // Override connection close handler for exponential backoff retry
-      wsProvider.on('connection-close', () => {
-        connectionStatus.value = 'disconnected'
-        isConnected.value = false
-        yCursors.delete(userId)
+        // Configure exponential backoff reconnection (override y-websocket default)
+        // Replaces instant retry with graceful backoff for better UX and reduced server load
+        if (wsProvider && wsProvider.wsconnecting) {
+          const originalConnect = wsProvider.connect
+          const backoff = createExponentialBackoff({
+            baseDelay: 1000,      // Start with 1 second
+            maxDelay: 30000,      // Cap at 30 seconds
+            maxAttempts: 100,     // Retry many times but not forever
+            jitter: true,         // Add randomness to prevent thundering herd
+          })
 
-        // Exponential backoff retry with jitter
-        if (backoff.shouldRetry()) {
-          const delay = backoff.nextDelay()
-          const delaySeconds = (delay / 1000).toFixed(1)
-          const attempt = backoff.getAttempt()
+          // Override connection close handler for exponential backoff retry
+          wsProvider.on('connection-close', () => {
+            connectionStatus.value = 'disconnected'
+            isConnected.value = false
+            yCursors.delete(userId)
 
-          console.log(`[WebSocket] Reconnecting in ${delaySeconds}s... (attempt ${attempt})`)
+            // Exponential backoff retry with jitter
+            if (backoff.shouldRetry()) {
+              const delay = backoff.nextDelay()
+              const delaySeconds = (delay / 1000).toFixed(1)
+              const attempt = backoff.getAttempt()
 
-          // Schedule reconnection with calculated delay
-          setTimeout(() => {
-            if (!isConnected.value && wsProvider && !wsProvider.wsconnected) {
-              connectionStatus.value = 'connecting'
-              originalConnect.call(wsProvider)
+              console.log(`[WebSocket] Reconnecting in ${delaySeconds}s... (attempt ${attempt})`)
+
+              // Schedule reconnection with calculated delay
+              setTimeout(() => {
+                if (!isConnected.value && wsProvider && !wsProvider.wsconnected) {
+                  connectionStatus.value = 'connecting'
+                  originalConnect.call(wsProvider)
+                }
+              }, delay)
+            } else {
+              console.warn('[WebSocket] Max reconnection attempts reached. Giving up.')
+              connectionStatus.value = 'disconnected'
             }
-          }, delay)
-        } else {
-          console.warn('[WebSocket] Max reconnection attempts reached. Giving up.')
-          connectionStatus.value = 'disconnected'
-        }
-      })
+          })
 
-      // Reset backoff on successful connection
-      wsProvider.on('sync', () => {
-        backoff.reset()
-      })
+          // Reset backoff on successful connection
+          wsProvider.on('sync', () => {
+            backoff.reset()
+          })
+
+          // Update connection status when connected
+          wsProvider.on('status', (event: { status: string }) => {
+            connectionStatus.value = event.status as 'connecting' | 'connected' | 'disconnected'
+            isConnected.value = event.status === 'connected'
+          })
+        }
+      }
+    } catch (e) {
+      console.warn('[WebSocket] Failed to initialize, running in local mode:', e)
     }
-  } catch (e) {
-    console.warn('WebSocket provider not available, running in local mode')
   }
+
+  // Initialize WebSocket provider asynchronously (fire and forget)
+  initWebSocketProvider()
 
   // Get shared data structures
   const yElements = ydoc.getArray<CanvasElement>('elements')
