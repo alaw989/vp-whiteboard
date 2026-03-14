@@ -118,7 +118,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       ws.binaryType = 'arraybuffer'
 
       ws.onopen = () => {
-        console.log('[Yjs WS] Connected to room:', whiteboardId)
+        console.log('[Yjs WS] ✅ Connected to room:', whiteboardId)
         connectionStatus.value = 'connected'
         isConnected.value = true
 
@@ -133,7 +133,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       }
 
       ws.onclose = () => {
-        console.log('[Yjs WS] Disconnected')
+        console.log('[Yjs WS] ❌ Disconnected')
         connectionStatus.value = 'disconnected'
         isConnected.value = false
         yCursors.delete(userId)
@@ -143,7 +143,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       }
 
       ws.onerror = (error) => {
-        console.error('[Yjs WS] Error:', error)
+        console.error('[Yjs WS] ⚠️ Error:', error)
       }
 
       ws.onmessage = async (event) => {
@@ -187,17 +187,20 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   function sendSyncMessage() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return
 
-    // Encode sync step 1
-    const encoder = new Y.encodeStateAsUpdate(ydoc)
-    sendBinary(encoder)
+    // Create and send sync step 1 message
+    const encoder = Y.createEncoder()
+    encoder.writeVarUint(0) // Message type: Sync step 1
+    Y.encodeStateAsUpdate(ydoc, encoder)
+    sendBinary(new Uint8Array(encoder.toByteArray()))
   }
 
   /**
    * Handle incoming Yjs message
    */
   async function handleIncomingMessage(data: Uint8Array) {
-    const decoder = new Y.Decoder()
-    Y.updateDecoded(decoder, data)
+    const decoder = Y.createDecoder()
+    decoder.read(data)
+
     const messageType = decoder.readVarUint()
 
     switch (messageType) {
@@ -226,14 +229,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   }
 
   /**
-   * Initialize WebSocket on mount
-   */
-  onMounted(() => {
-    initWebSocket()
-  })
-
-  /**
-   * Cleanup on unmount
+   * Cleanup WebSocket on unmount
    */
   function cleanupWebSocket() {
     if (ws) {
@@ -245,6 +241,9 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       reconnectTimeout = null
     }
   }
+
+  // Initialize WebSocket immediately when composable is called
+  initWebSocket()
 
   // Get shared data structures
   const yElements = ydoc.getArray<CanvasElement>('elements')
@@ -545,14 +544,14 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
 
   // Cleanup on unmount
   function cleanup() {
+    // Clean up WebSocket connection
+    cleanupWebSocket()
+
     // Stop garbage collection interval
     if (stopGarbageCollection) {
       stopGarbageCollection()
       stopGarbageCollection = null
     }
-
-    // Clean up WebSocket connection
-    cleanupWebSocket()
 
     yCursors.delete(userId)
     undoManager.destroy()
