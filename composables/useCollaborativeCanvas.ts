@@ -187,35 +187,37 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   function sendSyncMessage() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return
 
-    // Create and send sync step 1 message
-    const encoder = Y.createEncoder()
-    encoder.writeVarUint(0) // Message type: Sync step 1
-    Y.encodeStateAsUpdate(ydoc, encoder)
-    sendBinary(new Uint8Array(encoder.toByteArray()))
+    // Send simple state request
+    ws.send(JSON.stringify({ type: 'sync-request' }))
   }
 
   /**
    * Handle incoming Yjs message
    */
   async function handleIncomingMessage(data: Uint8Array) {
-    const decoder = Y.createDecoder()
-    decoder.read(data)
+    try {
+      // Try to parse as JSON first (simple protocol for state sync)
+      const text = new TextDecoder().decode(data)
+      const message = JSON.parse(text)
 
-    const messageType = decoder.readVarUint()
+      if (message.type === 'sync-request') {
+        // Send current state
+        const state = exportState()
+        ws.send(JSON.stringify({ type: 'sync-state', state }))
+      } else if (message.type === 'sync-state' && message.state) {
+        // Apply received state
+        importState(message.state)
+      }
+      return
+    } catch (e) {
+      // Not JSON - treat as binary Yjs update
+    }
 
-    switch (messageType) {
-      case 0: // Sync
-        Y.readSyncMessage(decoder, new Y.encodeStateAsUpdate(), ydoc, undefined)
-        break
-      case 1: // Awareness
-        // Handle awareness (cursors, presence)
-        break
-      case 2: // Auth
-        // Handle auth
-        break
-      case 3: // Query Awareness
-        // Send awareness state
-        break
+    // Apply binary Yjs update (CRDT sync)
+    try {
+      Y.applyUpdate(ydoc, data)
+    } catch (e) {
+      console.error('[Yjs WS] Failed to apply Yjs update:', e)
     }
   }
 
