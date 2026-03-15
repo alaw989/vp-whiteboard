@@ -1437,7 +1437,10 @@ function handleMouseUp(event: any) {
     return
   }
 
-  if (!isDrawing.value) return
+  if (!isDrawing.value) {
+    console.log('[MouseUp] isDrawing was already false, currentTool:', props.currentTool)
+    return
+  }
 
   // Complete arrow drawing
   if (props.currentTool === 'arrow' && arrowStart.value && currentArrowEnd.value) {
