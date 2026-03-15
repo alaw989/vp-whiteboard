@@ -1423,6 +1423,10 @@ function handleMouseMove(event: any) {
 
   if (props.currentTool === 'pen' || props.currentTool === 'highlighter') {
     currentStrokePoints.value.push([pos.x, pos.y, currentPressure.value])
+    // Log every 10th point to avoid spam
+    if (currentStrokePoints.value.length % 10 === 0) {
+      console.log('[MouseMove] Adding point, total:', currentStrokePoints.value.length)
+    }
   } else if (props.currentTool === 'eraser') {
     eraseElementAt(pos.x, pos.y)
   }
@@ -1938,19 +1942,29 @@ function handlePointerLeave(event: any) {
   const evt = event.evt || event
   const pointerId = evt.pointerId
 
-  console.log('[PointerLeave] isDrawing:', isDrawing.value, 'currentTool:', props.currentTool)
+  console.log('[PointerLeave] isDrawing:', isDrawing.value, 'currentTool:', props.currentTool, 'buttons:', evt.buttons)
 
   // Remove pointer from active tracking when leaving canvas
   activePointers.value.delete(pointerId)
 
-  // Treat pointer leaving the canvas as pointer up
-  handlePointerUp(event)
+  // Only treat pointer leaving as pointer up if mouse button is NOT still pressed
+  // evt.buttons is a bitfield: 1 = left button, 2 = right button, 4 = middle button
+  // If the user is still holding the button down, don't end the drawing
+  if (!isDrawing.value || (evt.buttons & 1) === 0) {
+    handlePointerUp(event)
+  }
+  // If still drawing and button pressed, the stroke will continue when pointer re-enters
 }
 
 // Track pointer cancellation (e.g., palm rejection, system gesture)
 function handlePointerCancel(event: any) {
-  console.log('[PointerCancel] isDrawing:', isDrawing.value, 'currentTool:', props.currentTool)
-  handlePointerUp(event)
+  const evt = event.evt || event
+  console.log('[PointerCancel] isDrawing:', isDrawing.value, 'currentTool:', props.currentTool, 'buttons:', evt.buttons)
+
+  // Only end drawing if mouse button is not still pressed
+  if (!isDrawing.value || (evt.buttons & 1) === 0) {
+    handlePointerUp(event)
+  }
 }
 
 // Element config helpers
