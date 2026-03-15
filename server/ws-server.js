@@ -65,25 +65,29 @@ wss.on('connection', (ws, req) => {
   const userName = url.searchParams.get('userName') || 'Anonymous'
 
   console.log(`[Yjs WS] ✅ Connection: room=${roomId}, user=${userName} (${userId})`)
-  console.log(`[Yjs WS] Total connections: ${totalConnections}, room has ${getRoom(roomId).size + 1} clients`)
+  console.log(`[Yjs WS] Total connections: ${totalConnections}`)
 
   // Add to room
   const room = getRoom(roomId)
   room.add(ws)
 
-  // Track room ID on websocket for cleanup
+  console.log(`[Yjs WS] Room ${roomId} now has ${room.size} clients`)
+
+  // Track room ID on websocket for cleanup and message routing
   ws.roomId = roomId
   ws.userId = userId
   ws.userName = userName
 
   // Log when we receive messages
   ws.on('message', (data) => {
+    // Get fresh room reference to ensure we relay to ALL current clients
+    const currentRoom = getRoom(ws.roomId || roomId)
     const msgSize = data.byteLength || data.length || 0
-    console.log(`[Yjs WS] 📨 Message: room=${roomId}, size=${msgSize} bytes`)
+    console.log(`[Yjs WS] 📨 Message: room=${ws.roomId || roomId}, size=${msgSize} bytes, room clients=${currentRoom.size}`)
 
     // Relay binary message to all other clients in the room
     let relayed = 0
-    room.forEach((client) => {
+    currentRoom.forEach((client) => {
       if (client !== ws && client.readyState === ws.OPEN) {
         client.send(data)
         relayed++
@@ -95,24 +99,26 @@ wss.on('connection', (ws, req) => {
   // Log connection state
   ws.on('close', () => {
     totalConnections--
-    const roomSize = room.size - 1
-    console.log(`[Yjs WS] ❌ Disconnection: room=${roomId}, user=${userName} (${userId}), room now has ${roomSize} clients`)
-    room.delete(ws)
+    const currentRoom = getRoom(ws.roomId || roomId)
+    currentRoom.delete(ws)
+    console.log(`[Yjs WS] ❌ Disconnection: room=${ws.roomId || roomId}, user=${userName} (${userId}), room now has ${currentRoom.size} clients`)
 
     // Clean up empty rooms after delay
-    if (room.size === 0) {
+    if (currentRoom.size === 0) {
       setTimeout(() => {
-        if (rooms.has(roomId) && rooms.get(roomId).size === 0) {
-          console.log(`[Yjs WS] 🧹 Cleaning up empty room: ${roomId}`)
-          rooms.delete(roomId)
+        const checkRoom = getRoom(ws.roomId || roomId)
+        if (checkRoom.size === 0) {
+          rooms.delete(ws.roomId || roomId)
+          console.log(`[Yjs WS] 🧹 Cleaning up empty room: ${ws.roomId || roomId}`)
         }
       }, 60000)
     }
   })
 
   ws.on('error', (error) => {
-    console.error(`[Yjs WS] ⚠️ Error: room=${roomId}, user=${userName}:`, error.message)
-    room.delete(ws)
+    console.error(`[Yjs WS] ⚠️ Error: room=${ws.roomId || roomId}, user=${userName}:`, error.message)
+    const currentRoom = getRoom(ws.roomId || roomId)
+    currentRoom.delete(ws)
   })
 })
 
