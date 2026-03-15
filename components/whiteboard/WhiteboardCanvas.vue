@@ -1873,11 +1873,13 @@ function handlePointerUp(event: any) {
   // Remove pointer from active tracking
   activePointers.value.delete(pointerId)
 
-  // Exit pan mode if less than 2 pointers
+  // Exit pan mode if less than 2 pointers (for two-finger gesture panning only)
+  // Don't disable if pan tool is intentionally selected
   if (activePointers.value.size < 2) {
     if (gestureState.value.isPanning) {
       gestureState.value.isPanning = false
-      if (isPanning.value) {
+      // Only disable pan if it's from two-finger gesture, not from pan tool selection
+      if (isPanning.value && props.currentTool !== 'pan') {
         disablePan()
       }
     }

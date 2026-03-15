@@ -46,7 +46,8 @@ export function useViewport(options: ViewportOptions) {
     scaleY: viewport.value.zoom,
     x: viewport.value.x,
     y: viewport.value.y,
-    draggable: isPanning.value,
+    // Note: draggable is NOT included here - it's set imperatively via enablePan/disablePan
+    // to avoid vue-konva constantly re-applying it during drag operations
   }))
 
   // Zoom level as percentage for UI display
