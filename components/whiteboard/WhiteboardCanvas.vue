@@ -1123,11 +1123,15 @@ function getPointerPos(event: any) {
   const pos = stage.getPointerPosition()
   if (!pos) return { x: 0, y: 0 }
 
-  // Konva's getPointerPosition() already accounts for stage position
-  // Just need to divide by zoom for canvas coordinates
+  // Konva's getPointerPosition() returns coordinates relative to the stage's top-left corner.
+  // But the stage CONTENT is offset by viewport.x/y (pan position).
+  // To get canvas coordinates (where elements should be placed), we need to:
+  // 1. Start with pointer position in stage space
+  // 2. Subtract the viewport pan offset
+  // 3. Divide by zoom
   const result = {
-    x: pos.x / viewport.value.zoom,
-    y: pos.y / viewport.value.zoom,
+    x: (pos.x - viewport.value.x) / viewport.value.zoom,
+    y: (pos.y - viewport.value.y) / viewport.value.zoom,
   }
 
   // DEBUG: Log when viewport is transformed - only on first stroke point to avoid spam
