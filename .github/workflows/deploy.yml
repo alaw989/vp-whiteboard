@@ -19,35 +19,33 @@ jobs:
           port: ${{ secrets.DO_PORT || 22 }}
           script_stop: true
           envs: SITE_URL,WS_URL
+          script: |
+            cd /var/www/vp-whiteboard
+
+            # Pull latest code
+            git fetch origin
+            git reset --hard origin/master
+
+            # Create .env file with production values
+            cat > .env << EOF
+            NUXT_PUBLIC_SITE_URL=$SITE_URL
+            NUXT_PUBLIC_WS_URL=$WS_URL
+            EOF
+
+            # Install dependencies
+            npm install
+
+            # Build the application (with increased heap for small servers)
+            NODE_OPTIONS="--max-old-space-size=2048" npm run build
+
+            # Restart PM2 processes
+            pm2 restart vp-whiteboard
+            pm2 restart vp-ws-server
+
+            # Save PM2 config
+            pm2 save
+
+            echo "Deployment successful!"
         env:
           SITE_URL: ${{ secrets.SITE_URL }}
           WS_URL: ${{ secrets.WS_URL }}
-        script: |
-          cd /var/www/vp-whiteboard
-
-          # Pull latest code
-          git fetch origin
-          git reset --hard origin/master
-
-          # Create .env file with production values
-          cat > .env << EOF
-          NUXT_PUBLIC_SITE_URL=$SITE_URL
-          NUXT_PUBLIC_WS_URL=$WS_URL
-          EOF
-
-          # Install dependencies
-          npm install
-
-          # Build the application (with increased heap for small servers)
-          NODE_OPTIONS="--max-old-space-size=2048" npm run build
-
-          # Restart PM2 processes
-          pm2 restart vp-whiteboard
-          pm2 restart vp-ws-server
-
-          # Save PM2 config
-          pm2 save
-
-          echo "Deployment successful!"
-
-          # End of deployment script
