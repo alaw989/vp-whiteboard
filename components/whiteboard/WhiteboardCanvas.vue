@@ -1284,6 +1284,7 @@ function handleMouseDown(event: any) {
   }
 
   isDrawing.value = true
+  console.log('[MouseDown] Set isDrawing=true, currentTool:', props.currentTool)
 
   // Arrow tool - start drawing arrow
   if (props.currentTool === 'arrow') {
@@ -1338,6 +1339,7 @@ function handleMouseDown(event: any) {
     // Start stroke with captured pressure from pointer event
     currentStrokePoints.value = [[pos.x, pos.y, currentPressure.value]]
     isDrawing.value = true
+    console.log('[MouseDown] Pen/highlighter started, isDrawing:', isDrawing.value, 'points:', currentStrokePoints.value.length)
   } else if (props.currentTool === 'eraser') {
     // Eraser starts immediately - check for elements to delete
     eraseElementAt(pos.x, pos.y)
@@ -1390,7 +1392,10 @@ function handleMouseMove(event: any) {
     return
   }
 
-  if (!isDrawing.value) return
+  if (!isDrawing.value) {
+    console.log('[MouseMove] isDrawing=false, currentTool:', props.currentTool)
+    return
+  }
 
   // Update arrow preview
   if (props.currentTool === 'arrow' && arrowStart.value) {
@@ -1425,6 +1430,8 @@ function handleMouseMove(event: any) {
 }
 
 function handleMouseUp(event: any) {
+  console.log('[MouseUp] isDrawing:', isDrawing.value, 'currentTool:', props.currentTool, 'strokePoints:', currentStrokePoints.value.length)
+
   // Clean up pan state
   if (props.currentTool === 'pan') {
     delete (window as any).__panStart
@@ -1434,6 +1441,7 @@ function handleMouseUp(event: any) {
 
   // Only disable pan if we're not in pan tool mode (two-finger gesture)
   if (isPanning.value && props.currentTool !== 'pan') {
+    console.log('[MouseUp] Early return: isPanning && not pan tool')
     disablePan()
     return
   }
@@ -1930,6 +1938,8 @@ function handlePointerLeave(event: any) {
   const evt = event.evt || event
   const pointerId = evt.pointerId
 
+  console.log('[PointerLeave] isDrawing:', isDrawing.value, 'currentTool:', props.currentTool)
+
   // Remove pointer from active tracking when leaving canvas
   activePointers.value.delete(pointerId)
 
@@ -1939,6 +1949,7 @@ function handlePointerLeave(event: any) {
 
 // Track pointer cancellation (e.g., palm rejection, system gesture)
 function handlePointerCancel(event: any) {
+  console.log('[PointerCancel] isDrawing:', isDrawing.value, 'currentTool:', props.currentTool)
   handlePointerUp(event)
 }
 
