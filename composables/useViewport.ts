@@ -135,12 +135,10 @@ export function useViewport(options: ViewportOptions) {
    */
   function enablePan() {
     const stage = stageRef.value?.getNode()
-    console.log('[Pan enablePan] stage:', !!stage, 'isPanning before:', isPanning.value)
     if (stage) {
       isPanning.value = true
       stage.draggable(true)
       stage.container()?.style.setProperty('cursor', 'grab')
-      console.log('[Pan enablePan] Set isPanning to true, stage.draggable:', stage.draggable())
     }
   }
 
