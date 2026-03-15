@@ -1120,14 +1120,29 @@ function getPointerPos(event: any) {
   const stage = stageRef.value?.getNode()
   if (!stage) return { x: 0, y: 0 }
 
+  // Try to get position from the event first (more reliable for pointer events)
+  const evt = event.evt || event
+  if (evt.clientX !== undefined && evt.clientY !== undefined) {
+    // Get the stage's bounding box in the page
+    const containerRect = stage.container().getBoundingClientRect()
+
+    // Calculate position relative to the stage container
+    const relativeX = evt.clientX - containerRect.left
+    const relativeY = evt.clientY - containerRect.top
+
+    // Convert to canvas coordinates:
+    // 1. Subtract viewport offset (pan position)
+    // 2. Divide by zoom
+    return {
+      x: (relativeX - viewport.value.x) / viewport.value.zoom,
+      y: (relativeY - viewport.value.y) / viewport.value.zoom,
+    }
+  }
+
+  // Fallback to Konva's getPointerPosition()
   const pos = stage.getPointerPosition()
   if (!pos) return { x: 0, y: 0 }
 
-  // The stage is transformed by viewport (x, y, zoom) via stageConfig
-  // getPointerPosition() returns coordinates in the stage's coordinate system
-  // We need to convert back to canvas coordinates by:
-  // 1. Dividing by zoom to account for scale
-  // 2. The stage.x/y shift is already factored out by getPointerPosition()
   return {
     x: pos.x / viewport.value.zoom,
     y: pos.y / viewport.value.zoom,
