@@ -39,3 +39,5 @@ jobs:
             pm2 save
 
             echo "Deployment successful!"
+
+            # End of deployment script
