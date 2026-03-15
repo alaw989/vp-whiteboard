@@ -1241,11 +1241,8 @@ function placeStamp(x: number, y: number, stampType: StampType) {
 
 // Mouse handlers
 function handleMouseDown(event: any) {
-  if (props.currentTool === 'pan') {
-    console.log('[Pan] Pan tool clicked, enabling pan...')
-    enablePan()
-    return
-  }
+  // Note: Pan tool is handled via watch on currentTool, not here
+  // This allows Konva's native drag mechanism to work without interference
 
   // Select tool - handle element selection
   if (props.currentTool === 'select') {
@@ -1404,7 +1401,8 @@ function handleMouseMove(event: any) {
 }
 
 function handleMouseUp(event: any) {
-  if (isPanning.value) {
+  // Only disable pan if we're not in pan tool mode (pan tool stays enabled)
+  if (isPanning.value && props.currentTool !== 'pan') {
     disablePan()
     return
   }
@@ -2646,6 +2644,17 @@ function getAreaLabelPosition(element: CanvasElement): { x: number; y: number } 
 function getShapeCenterForElement(element: CanvasElement): { x: number; y: number } {
   return getShapeCenter(element)
 }
+
+// Watch for tool changes to enable/disable pan mode
+watch(() => props.currentTool, (newTool, oldTool) => {
+  if (newTool === 'pan' && oldTool !== 'pan') {
+    // Pan tool selected - enable pan mode
+    enablePan()
+  } else if (newTool !== 'pan' && oldTool === 'pan') {
+    // Pan tool deselected - disable pan mode
+    disablePan()
+  }
+})
 
 defineExpose({
   exportAsImage,
