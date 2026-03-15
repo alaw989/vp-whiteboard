@@ -18,6 +18,7 @@ jobs:
           key: ${{ secrets.DO_SSH_KEY }}
           port: ${{ secrets.DO_PORT || 22 }}
           script_stop: true
+          envs: SITE_URL,WS_URL
         env:
           SITE_URL: ${{ secrets.SITE_URL }}
           WS_URL: ${{ secrets.WS_URL }}
