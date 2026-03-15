@@ -66,7 +66,7 @@ git push -u origin main
 5. Railway will auto-detect Nuxt and configure everything
 6. Click **Deploy**
 
-## Step 5: Deploy to VPS with Nginx (Alternative)
+## Step 5: Deploy to VPS with Nginx (Recommended)
 
 For a VPS (Digital Ocean Droplet, Linode, etc.):
 
@@ -100,14 +100,36 @@ npm install
 # Create .env file
 cp .env.example .env
 nano .env  # Add your environment variables
+```
 
+**Important - Add these to your .env:**
+```bash
+# WebSocket URL (update with your domain)
+NUXT_PUBLIC_WS_URL=ws://localhost:3001
+
+# Or for production with HTTPS:
+# NUXT_PUBLIC_WS_URL=wss://whiteboard.vp-associates.com
+
+# Supabase (if using)
+NUXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NUXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+```bash
 # Build
 npm run build
 
-# Start with PM2
+# Start BOTH servers with PM2
 pm2 start .output/server/index.mjs --name vp-whiteboard
+pm2 start server/ws-server.js --name vp-ws-server
 pm2 save
 pm2 startup  # Follow the instructions
+```
+
+**Verify both processes are running:**
+```bash
+pm2 status
+# You should see both vp-whiteboard and vp-ws-server online
 ```
 
 ### 3. Configure Nginx
@@ -116,13 +138,14 @@ pm2 startup  # Follow the instructions
 sudo nano /etc/nginx/sites-available/vp-whiteboard
 ```
 
-Add this configuration:
+Add this configuration (includes WebSocket proxy):
 
 ```nginx
 server {
     listen 80;
     server_name whiteboard.vp-associates.com;
 
+    # Main app
     location / {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
@@ -132,6 +155,17 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # WebSocket server (for Yjs collaboration)
+    location /whiteboard: {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_cache_bypass $http_upgrade;
     }
 }

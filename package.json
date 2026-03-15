@@ -12,6 +12,8 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "start": "node .output/server/index.mjs",
+    "start:ws": "node server/ws-server.js",
+    "start:all": "concurrently \"npm run start\" \"npm run start:ws\"",
     "postinstall": "nuxt prepare",
     "typecheck": "vue-tsc --noEmit"
   },
