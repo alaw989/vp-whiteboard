@@ -1129,27 +1129,10 @@ function getPointerPos(event: any) {
   // 1. Start with pointer position in stage space
   // 2. Subtract the viewport pan offset
   // 3. Divide by zoom
-  const result = {
+  return {
     x: (pos.x - viewport.value.x) / viewport.value.zoom,
     y: (pos.y - viewport.value.y) / viewport.value.zoom,
   }
-
-  // DEBUG: Log when viewport is transformed - only on first stroke point to avoid spam
-  if (currentStrokePoints.value.length === 1 && (viewport.value.x !== 0 || viewport.value.y !== 0 || viewport.value.zoom !== 1)) {
-    console.log('[getPointerPos] First point - viewport:', {
-      x: viewport.value.x.toFixed(1),
-      y: viewport.value.y.toFixed(1),
-      zoom: viewport.value.zoom.toFixed(2)
-    }, 'pointerPos:', {
-      x: pos.x.toFixed(1),
-      y: pos.y.toFixed(1)
-    }, 'canvasPos:', {
-      x: result.x.toFixed(1),
-      y: result.y.toFixed(1)
-    })
-  }
-
-  return result
 }
 
 // Extract pressure and pointer type from pointer event
