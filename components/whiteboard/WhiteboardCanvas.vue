@@ -1242,6 +1242,7 @@ function placeStamp(x: number, y: number, stampType: StampType) {
 // Mouse handlers
 function handleMouseDown(event: any) {
   if (props.currentTool === 'pan') {
+    console.log('[Pan] Pan tool clicked, enabling pan...')
     enablePan()
     return
   }
