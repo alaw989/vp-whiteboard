@@ -26,10 +26,10 @@ jobs:
             git reset --hard origin/master
 
             # Install dependencies
-            npm ci
+            npm install
 
-            # Build the application
-            npm run build
+            # Build the application (with increased heap for small servers)
+            NODE_OPTIONS="--max-old-space-size=2048" npm run build
 
             # Restart PM2 processes
             pm2 restart vp-whiteboard
