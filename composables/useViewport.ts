@@ -46,7 +46,7 @@ export function useViewport(options: ViewportOptions) {
     scaleY: viewport.value.zoom,
     x: viewport.value.x,
     y: viewport.value.y,
-    draggable: false,
+    draggable: isPanning.value,
   }))
 
   // Zoom level as percentage for UI display
