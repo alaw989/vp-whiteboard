@@ -635,11 +635,24 @@ const {
 } = useCursors(props.wsProvider, props.userId, props.userName)
 
 // Stage configuration (merges viewport config with width/height)
-const stageConfig = computed(() => ({
-  width: stageWidth.value,
-  height: stageHeight.value,
-  ...viewportStageConfig.value,
-}))
+const stageConfig = computed(() => {
+  const config: any = {
+    width: stageWidth.value,
+    height: stageHeight.value,
+    scaleX: viewportStageConfig.value.scaleX,
+    scaleY: viewportStageConfig.value.scaleY,
+    x: viewportStageConfig.value.x,
+    y: viewportStageConfig.value.y,
+    // Fix for Konva hit detection bug when panned/zoomed
+    // Disable pixel-perfect hit detection to avoid getImageData errors
+    // when viewport is panned/zoomed to extreme positions
+    hitGraphEnabled: true,
+    listening: true,
+    pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+  }
+
+  return config
+})
 
 // Stage width/height (separate from viewport config)
 const stageWidth = ref(2000)
@@ -972,6 +985,12 @@ const gestureState = ref({
   isPanning: false,
   lastViewport: { x: 0, y: 0, zoom: 1 },
 })
+
+// Manual pan tool state (for pan tool without Konva draggable)
+const panStartPointer = ref<{x: number, y: number} | null>(null)
+const panStartViewport = ref<{x: number, y: number} | null>(null)
+// Local ref to track if pan tool is active (separate from composable's isPanning)
+const isPanToolActive = ref(false)
 const currentStrokePoints = ref<[number, number, number][]>([])
 const currentStrokeId = ref<string | null>(null)
 
@@ -1242,12 +1261,9 @@ function placeStamp(x: number, y: number, stampType: StampType) {
 
 // Mouse handlers
 function handleMouseDown(event: any) {
-  // Pan tool - start manual panning
+  // Pan tool - track drag state but let Konva's draggable handle the movement
   if (props.currentTool === 'pan') {
-    const pos = getPointerPos(event)
     isDrawing.value = true
-    // Store start position for manual pan calculation
-    ;(window as any).__panStart = { x: pos.x, y: pos.y, viewportX: viewport.value.x, viewportY: viewport.value.y }
     return
   }
 
@@ -1374,19 +1390,9 @@ function handleMouseMove(event: any) {
     currentSnapPoint.value = null
   }
 
-  // Handle manual panning
-  if (props.currentTool === 'pan' && isDrawing.value) {
-    const panStart = (window as any).__panStart
-    if (panStart) {
-      const dx = pos.x - panStart.x
-      const dy = pos.y - panStart.y
-      // Update viewport position
-      setViewportDirect({
-        x: panStart.viewportX + dx,
-        y: panStart.viewportY + dy,
-        zoom: viewport.value.zoom
-      })
-    }
+  // Pan tool is handled by Konva's draggable (dragmove watcher updates viewport)
+  // Skip manual pan handling for pan tool
+  if (props.currentTool === 'pan') {
     return
   }
 
@@ -1430,10 +1436,10 @@ function handleMouseMove(event: any) {
 }
 
 function handleMouseUp(event: any) {
-  // Clean up pan state
+  // Pan tool - Konva's draggable handles movement, dragmove watcher updates viewport
   if (props.currentTool === 'pan') {
-    delete (window as any).__panStart
     isDrawing.value = false
+    // Don't disable draggable - the watcher will handle cleanup when tool changes
     return
   }
 
@@ -1841,6 +1847,14 @@ function handlePointerDown(event: any) {
     return
   }
 
+  // Handle pan tool - manual panning without Konva draggable
+  if (props.currentTool === 'pan') {
+    panStartPointer.value = { x: evt.clientX, y: evt.clientY }
+    panStartViewport.value = { x: viewport.value.x, y: viewport.value.y }
+    evt.preventDefault()
+    return
+  }
+
   // Single pointer - update pressure and pointer type
   updatePointerState(event)
 
@@ -1860,6 +1874,28 @@ function handlePointerMove(event: any) {
   // Update pointer position for gesture tracking
   if (activePointers.value.has(pointerId)) {
     activePointers.value.set(pointerId, { x: evt.clientX, y: evt.clientY })
+  }
+
+  // Handle pan tool dragging
+  if (props.currentTool === 'pan' && panStartPointer.value && panStartViewport.value) {
+    const deltaX = evt.clientX - panStartPointer.value.x
+    const deltaY = evt.clientY - panStartPointer.value.y
+
+    // Update cursor to grabbing when actively dragging
+    const stage = stageRef.value?.getNode()
+    const container = stage?.container()
+    if (container) {
+      container.style.setProperty('cursor', 'grabbing')
+    }
+
+    // Update viewport using setViewportDirect (Konva stage will re-render via stageConfig)
+    setViewportDirect({
+      x: panStartViewport.value.x + deltaX,
+      y: panStartViewport.value.y + deltaY,
+    })
+
+    evt.preventDefault()
+    return
   }
 
   // Handle two-finger pan gesture
@@ -1906,6 +1942,18 @@ function handlePointerUp(event: any) {
 
   // Remove pointer from active tracking
   activePointers.value.delete(pointerId)
+
+  // Clear pan tool state and restore cursor
+  if (props.currentTool === 'pan') {
+    panStartPointer.value = null
+    panStartViewport.value = null
+    // Restore grab cursor after releasing drag
+    const stage = stageRef.value?.getNode()
+    const container = stage?.container()
+    if (container) {
+      container.style.setProperty('cursor', 'grab')
+    }
+  }
 
   // Exit pan mode if less than 2 pointers (for two-finger gesture panning only)
   // Don't disable if pan tool is intentionally selected
@@ -1982,6 +2030,9 @@ function getStrokeConfig(element: CanvasElement) {
     lineJoin: 'round',
     closed: true,
     draggable: true,
+    // Disable pixel-perfect hit detection to avoid getImageData errors
+    // when viewport is panned/zoomed to extreme positions
+    hitStrokeWidth: 0,
   }
 }
 
@@ -2009,10 +2060,12 @@ function getActiveStrokeConfig(strokeId: string, points: [number, number, number
     stroke: userColor,
     strokeWidth: 1,
     fill: userColor,
-    globalAlpha: 0.6,  // Lower opacity for preview state
+    globalAlpha: 0.7,  // Slightly transparent to show in-progress state
     lineCap: 'round',
     lineJoin: 'round',
     closed: true,
+    listening: false,  // Active strokes shouldn't capture clicks
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2024,6 +2077,7 @@ function getLineConfig(element: CanvasElement) {
     strokeWidth: data.size,
     lineCap: 'round',
     draggable: true,
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2042,6 +2096,7 @@ function getArrowConfig(element: CanvasElement) {
     lineCap: 'round',
     lineJoin: 'round',
     draggable: true,
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2056,6 +2111,7 @@ function getRectConfig(element: CanvasElement) {
     strokeWidth: data.strokeWidth,
     fill: data.fill || 'transparent',
     draggable: true,
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2069,6 +2125,7 @@ function getCircleConfig(element: CanvasElement) {
     strokeWidth: data.strokeWidth,
     fill: data.fill || 'transparent',
     draggable: true,
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2084,6 +2141,7 @@ function getEllipseConfig(element: CanvasElement) {
     strokeWidth: data.strokeWidth,
     fill: data.fill || 'transparent',
     draggable: true,
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2098,6 +2156,7 @@ function getImageConfig(element: CanvasElement) {
     width: data.width,
     height: data.height,
     draggable: true,
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2111,6 +2170,7 @@ function getTextConfig(element: CanvasElement) {
     fill: data.color,
     fontFamily: data.fontFamily,
     draggable: true,
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2153,6 +2213,7 @@ function getTextAnnotationLineConfig(element: CanvasElement) {
     stroke: data.color,
     strokeWidth: 2,
     lineCap: 'round',
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2163,6 +2224,7 @@ function getStampGroupConfig(element: CanvasElement) {
     x: data.x,
     y: data.y,
     draggable: true,
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2212,6 +2274,7 @@ function getMeasurementLineConfig(element: CanvasElement) {
     strokeWidth: 2,
     lineCap: 'round',
     dash: isStale ? [5, 5] : undefined,  // Dashed line for stale
+    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
   }
 }
 
@@ -2692,14 +2755,26 @@ function getShapeCenterForElement(element: CanvasElement): { x: number; y: numbe
   return getShapeCenter(element)
 }
 
-// Watch for tool changes to enable/disable pan mode
+// Watch for tool changes to enable/disable pan mode and update cursor
 watch(() => props.currentTool, (newTool, oldTool) => {
+  const stage = stageRef.value?.getNode()
+  const container = stage?.container()
+
   if (newTool === 'pan' && oldTool !== 'pan') {
-    // Pan tool selected - enable pan mode
-    enablePan()
+    // Pan tool selected - update cursor
+    isPanToolActive.value = true
+    if (container) {
+      container.style.setProperty('cursor', 'grab')
+    }
   } else if (newTool !== 'pan' && oldTool === 'pan') {
-    // Pan tool deselected - disable pan mode
-    disablePan()
+    // Pan tool deselected - clear cursor and state
+    isPanToolActive.value = false
+    if (container) {
+      container.style.removeProperty('cursor')
+    }
+    // Clear any pending pan state
+    panStartPointer.value = null
+    panStartViewport.value = null
   }
 })
 

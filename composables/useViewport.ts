@@ -136,9 +136,15 @@ export function useViewport(options: ViewportOptions) {
   function enablePan() {
     const stage = stageRef.value?.getNode()
     if (stage) {
+      // First set isPanning to trigger stageConfig update (removes x/y binding)
       isPanning.value = true
-      stage.draggable(true)
-      stage.container()?.style.setProperty('cursor', 'grab')
+
+      // Wait for Vue to process the stageConfig update before enabling draggable
+      // This prevents Vue's reactive x/y from interfering with Konva's draggable
+      nextTick(() => {
+        stage.draggable(true)
+        stage.container()?.style.setProperty('cursor', 'grab')
+      })
     }
   }
 
