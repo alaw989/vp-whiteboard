@@ -1170,11 +1170,10 @@ function eraseElementAt(x: number, y: number) {
     return layer?.name !== 'documentLayer'
   })
 
-  // Delete the first non-stroke element (shapes, images, text)
-  // For strokes, we need more precise hit detection
+  // Delete the first element found (any user's element can be erased)
   for (const shape of canvasShapes) {
     const elementId = shape.id()
-    if (elementId && elementId.startsWith(props.userId)) {
+    if (elementId) {
       emit('element-delete', elementId)
       break
     }
