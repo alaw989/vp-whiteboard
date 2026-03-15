@@ -1241,8 +1241,14 @@ function placeStamp(x: number, y: number, stampType: StampType) {
 
 // Mouse handlers
 function handleMouseDown(event: any) {
-  // Note: Pan tool is handled via watch on currentTool, not here
-  // This allows Konva's native drag mechanism to work without interference
+  // Pan tool - start manual panning
+  if (props.currentTool === 'pan') {
+    const pos = getPointerPos(event)
+    isDrawing.value = true
+    // Store start position for manual pan calculation
+    ;(window as any).__panStart = { x: pos.x, y: pos.y, viewportX: viewport.value.x, viewportY: viewport.value.y }
+    return
+  }
 
   // Select tool - handle element selection
   if (props.currentTool === 'select') {
@@ -1366,6 +1372,22 @@ function handleMouseMove(event: any) {
     currentSnapPoint.value = null
   }
 
+  // Handle manual panning
+  if (props.currentTool === 'pan' && isDrawing.value) {
+    const panStart = (window as any).__panStart
+    if (panStart) {
+      const dx = pos.x - panStart.x
+      const dy = pos.y - panStart.y
+      // Update viewport position
+      setViewportDirect({
+        x: panStart.viewportX + dx,
+        y: panStart.viewportY + dy,
+        zoom: viewport.value.zoom
+      })
+    }
+    return
+  }
+
   if (!isDrawing.value) return
 
   // Update arrow preview
@@ -1401,7 +1423,14 @@ function handleMouseMove(event: any) {
 }
 
 function handleMouseUp(event: any) {
-  // Only disable pan if we're not in pan tool mode (pan tool stays enabled)
+  // Clean up pan state
+  if (props.currentTool === 'pan') {
+    delete (window as any).__panStart
+    isDrawing.value = false
+    return
+  }
+
+  // Only disable pan if we're not in pan tool mode (two-finger gesture)
   if (isPanning.value && props.currentTool !== 'pan') {
     disablePan()
     return
