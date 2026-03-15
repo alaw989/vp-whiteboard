@@ -1130,12 +1130,18 @@ function getPointerPos(event: any) {
     y: pos.y / viewport.value.zoom,
   }
 
-  // DEBUG: Log when viewport is transformed
-  if (viewport.value.x !== 0 || viewport.value.y !== 0 || viewport.value.zoom !== 1) {
-    console.log('[getPointerPos] viewport transformed:', {
-      viewport: viewport.value,
-      pointerPos: pos,
-      canvasPos: result
+  // DEBUG: Log when viewport is transformed - only on first stroke point to avoid spam
+  if (currentStrokePoints.value.length === 1 && (viewport.value.x !== 0 || viewport.value.y !== 0 || viewport.value.zoom !== 1)) {
+    console.log('[getPointerPos] First point - viewport:', {
+      x: viewport.value.x.toFixed(1),
+      y: viewport.value.y.toFixed(1),
+      zoom: viewport.value.zoom.toFixed(2)
+    }, 'pointerPos:', {
+      x: pos.x.toFixed(1),
+      y: pos.y.toFixed(1)
+    }, 'canvasPos:', {
+      x: result.x.toFixed(1),
+      y: result.y.toFixed(1)
     })
   }
 

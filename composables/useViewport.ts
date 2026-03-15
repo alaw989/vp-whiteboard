@@ -139,6 +139,11 @@ export function useViewport(options: ViewportOptions) {
       isPanning.value = true
       stage.draggable(true)
       stage.container()?.style.setProperty('cursor', 'grab')
+      console.log('[Pan enablePan] Current viewport:', {
+        x: viewport.value.x,
+        y: viewport.value.y,
+        zoom: viewport.value.zoom
+      })
     }
   }
 
