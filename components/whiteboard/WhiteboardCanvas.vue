@@ -1166,12 +1166,8 @@ function eraseElementAt(x: number, y: number) {
   const stageX = x * viewport.value.zoom
   const stageY = y * viewport.value.zoom
 
-  console.log('[Eraser] Canvas position:', { x, y }, 'Stage position:', { stageX, stageY }, 'Zoom:', viewport.value.zoom)
-
   // Get all shapes at the clicked position using stage coordinates
   const shapes = stage.getAllIntersections({ x: stageX, y: stageY })
-
-  console.log('[Eraser] Shapes found:', shapes.length)
 
   // Filter out document layer and background
   const canvasShapes = shapes.filter((shape: any) => {
@@ -1180,14 +1176,25 @@ function eraseElementAt(x: number, y: number) {
     return layer?.name !== 'documentLayer'
   })
 
-  console.log('[Eraser] Canvas shapes:', canvasShapes.length, canvasShapes.map((s: any) => ({ id: s.id(), name: s.name(), className: s.className })))
-
-  // Delete the first element found (any user's element can be erased)
+  // Delete the first element found
+  // Try multiple ways to get the element ID since vue-konva might not set it properly
   for (const shape of canvasShapes) {
-    const elementId = shape.id()
-    console.log('[Eraser] Checking shape:', { elementId, parentId: shape.getParent()?.id() })
+    let elementId = shape.id()
+
+    // If no ID on shape, check parent (groups have the ID)
+    if (!elementId) {
+      const parent = shape.getParent()
+      if (parent && parent !== stage) {
+        elementId = parent.id()
+      }
+    }
+
+    // Also check attrs as fallback
+    if (!elementId && shape.attrs?.id) {
+      elementId = shape.attrs.id
+    }
+
     if (elementId) {
-      console.log('[Eraser] Emitting element-delete:', elementId)
       emit('element-delete', elementId)
       break
     }
