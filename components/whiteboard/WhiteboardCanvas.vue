@@ -1125,10 +1125,21 @@ function getPointerPos(event: any) {
 
   // Konva's getPointerPosition() already accounts for stage position
   // Just need to divide by zoom for canvas coordinates
-  return {
+  const result = {
     x: pos.x / viewport.value.zoom,
     y: pos.y / viewport.value.zoom,
   }
+
+  // DEBUG: Log when viewport is transformed
+  if (viewport.value.x !== 0 || viewport.value.y !== 0 || viewport.value.zoom !== 1) {
+    console.log('[getPointerPos] viewport transformed:', {
+      viewport: viewport.value,
+      pointerPos: pos,
+      canvasPos: result
+    })
+  }
+
+  return result
 }
 
 // Extract pressure and pointer type from pointer event
