@@ -1,0 +1,41 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to DigitalOcean via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT || 22 }}
+          script_stop: true
+          script: |
+            cd /var/www/vp-whiteboard
+
+            # Pull latest code
+            git fetch origin
+            git reset --hard origin/master
+
+            # Install dependencies
+            npm ci
+
+            # Build the application
+            npm run build
+
+            # Restart PM2 processes
+            pm2 restart vp-whiteboard
+            pm2 restart vp-ws-server
+
+            # Save PM2 config
+            pm2 save
+
+            echo "Deployment successful!"
