@@ -1337,6 +1337,7 @@ function handleMouseDown(event: any) {
   if (props.currentTool === 'pen' || props.currentTool === 'highlighter') {
     // Start stroke with captured pressure from pointer event
     currentStrokePoints.value = [[pos.x, pos.y, currentPressure.value]]
+    isDrawing.value = true
   } else if (props.currentTool === 'eraser') {
     // Eraser starts immediately - check for elements to delete
     eraseElementAt(pos.x, pos.y)
@@ -1437,10 +1438,7 @@ function handleMouseUp(event: any) {
     return
   }
 
-  if (!isDrawing.value) {
-    console.log('[MouseUp] isDrawing was already false, currentTool:', props.currentTool)
-    return
-  }
+  if (!isDrawing.value) return
 
   // Complete arrow drawing
   if (props.currentTool === 'arrow' && arrowStart.value && currentArrowEnd.value) {
