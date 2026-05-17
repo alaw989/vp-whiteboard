@@ -150,10 +150,7 @@ function handleFileSelect(event: Event) {
 
 function handleDrop(event: DragEvent) {
   isDragging.value = false
-  event.preventDefault()
-  event.stopPropagation()
   const droppedFile = event.dataTransfer?.files?.[0]
-  console.log('[Upload] Drop event:', { type: droppedFile?.type, size: droppedFile?.size, name: droppedFile?.name })
   if (droppedFile) {
     setFile(droppedFile)
   }
@@ -189,8 +186,6 @@ async function startUpload() {
         uploadProgress.value = progress
       },
     })
-
-    console.log('[Upload] Result:', result)
 
     if (result.success && result.data) {
       uploadProgress.value = { loaded: result.data.fileRecord?.file_size || 0, total: result.data.fileRecord?.file_size || 0, percent: 100 }
