@@ -16,8 +16,21 @@
       @pointercancel="handlePointerCancel"
       @click="handleStageClick"
     >
-      <!-- Document Background Layer (non-interactive, rendered first) -->
-      <v-layer ref="documentLayerRef" :config="{ listening: false }">
+      <!-- Main Layer (background, document layers, drawings, annotations) -->
+      <v-layer ref="layerRef">
+        <!-- Background -->
+        <v-rect
+          :config="{
+            x: 0,
+            y: 0,
+            width: stageConfig.width,
+            height: stageConfig.height,
+            fill: '#f5f5f5',
+          }"
+        />
+
+        <!-- Grid -->
+        <!-- Document layers (PDFs, images) - rendered between background and drawings -->
         <template v-for="layer in visibleLayers" :key="layer.id">
           <v-group :config="{
             x: layer.x,
@@ -36,22 +49,6 @@
             />
           </v-group>
         </template>
-      </v-layer>
-
-      <!-- Main Layer (drawings, annotations) -->
-      <v-layer ref="layerRef">
-        <!-- Background -->
-        <v-rect
-          :config="{
-            x: 0,
-            y: 0,
-            width: stageConfig.width,
-            height: stageConfig.height,
-            fill: '#f5f5f5',
-          }"
-        />
-
-        <!-- Grid -->
         <!-- Note: viewport transform is applied at stage level via stageConfig,
              so elements are rendered in their natural canvas coordinates -->
         <v-group :config="{ x: 0, y: 0 }">
@@ -536,7 +533,6 @@ const emit = defineEmits<{
 const containerRef = ref<HTMLDivElement | null>(null)
 const stageRef = ref<any>(null)
 const layerRef = ref<any>(null)
-const documentLayerRef = ref<any>(null)
 const transformerLayerRef = ref<any>(null)
 
 // Document layer composable with Yjs sync
@@ -663,14 +659,9 @@ const stageHeight = ref(1500)
 const layerImageCache = new Map<string, HTMLImageElement>()
 
 function getLayerImage(src: string): HTMLImageElement | null {
-  // Check cache first
   if (layerImageCache.has(src)) {
-    const cached = layerImageCache.get(src)!
-    // Only return if image is loaded or failed (complete)
-    if (cached.complete) return cached
+    return layerImageCache.get(src)!
   }
-
-  // Create and cache new image (this won't trigger re-render since Map is non-reactive)
   const img = new Image()
   img.src = src
   layerImageCache.set(src, img)
