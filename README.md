@@ -98,7 +98,27 @@ NUXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 WS_PORT=3001
 NUXT_PUBLIC_WS_URL=ws://localhost:3001
 NUXT_PUBLIC_SITE_URL=http://localhost:3000
+AUTH_PASSWORD=your-shared-password
+AUTH_SECRET=your-random-secret-key
 ```
+
+### 4. Run Development Server
+
+```bash
+npm run dev:all
+```
+
+Visit `http://localhost:3000` — you'll be prompted to enter the password.
+
+## Authentication
+
+The dashboard is protected by a shared password. All pages, API routes, and WebSocket connections require authentication.
+
+- **Login**: Visit any protected page and enter the shared password
+- **Logout**: Click "Sign Out" in the dashboard header
+- **Share links**: `/s/[id]` share links bypass authentication for client access to individual whiteboards
+
+The password is stored in `AUTH_PASSWORD` and cookies are signed with `AUTH_SECRET` (generate with `openssl rand -hex 32`).
 
 ### 4. Run Development Server
 
@@ -118,7 +138,7 @@ Visit `http://localhost:3000`
 4. Configure build settings:
    - Build Command: `npm run build`
    - Run Command: `npm start`
-5. Add environment variables from `.env`
+5. Add environment variables from `.env` (including `AUTH_PASSWORD` and `AUTH_SECRET`)
 6. Enable WebSockets in app settings
 7. Deploy!
 
@@ -214,16 +234,22 @@ vp-whiteboard/
 │       ├── CursorPointer.vue       # Collaborative cursors
 │       └── UserList.vue            # Online users
 ├── composables/
+│   ├── useAuth.ts                  # Authentication state
 │   ├── useCollaborativeCanvas.ts   # Yjs integration
 │   ├── useWhiteboardStorage.ts     # Supabase integration
 │   └── useDrawingTools.ts          # Drawing helpers
+├── middleware/
+│   └── auth.global.ts              # Client-side auth guard
 ├── pages/
 │   ├── index.vue                   # Whiteboard list
+│   ├── login.vue                   # Login page
 │   ├── new.vue                     # Create whiteboard
 │   └── whiteboard/
 │       └── [id].vue                # Whiteboard editor
 ├── server/
+│   ├── api/auth/                   # Auth endpoints
 │   ├── api/whiteboard/             # REST API routes
+│   ├── middleware/auth.ts          # Server-side auth middleware
 │   └── websocket/[...].ts          # WebSocket handler
 ├── types/
 │   └── index.ts                    # TypeScript definitions
@@ -271,5 +297,3 @@ npm run preview
 ## License
 
 Copyright © 2025 VP Associates
-# Trigger deployment
-# Deploy test
