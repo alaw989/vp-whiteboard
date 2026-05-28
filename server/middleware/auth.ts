@@ -72,14 +72,15 @@ export default defineEventHandler((event) => {
     return
   }
 
-  // Check share token for whiteboard routes
-  const whiteboardMatch = path.match(/^\/whiteboard\/([^/]+)/)
-  if (whiteboardMatch && cookies['vp-share-access']) {
-    const whiteboardId = whiteboardMatch[1]
-    if (isValidShareToken(cookies['vp-share-access'], whiteboardId, secret)) {
-      return
-    }
-  }
+  // Individual whiteboard pages are public (anyone with the link can view/edit)
+  // But /whiteboard/new requires auth
+  if (path.match(/^\/whiteboard\/[^/]+$/) && !path.endsWith('/new')) return
+
+  // Whiteboard read/write API is public for collaborative editing
+  if (path.match(/^\/api\/whiteboard\/[^/]+$/)) return
+
+  // File uploads for whiteboards are public (images, PDFs added to canvas)
+  if (path.match(/^\/api\/whiteboard\/[^/]+\/.+/)) return
 
   // Unauthorized
   if (path.startsWith('/api/')) {
