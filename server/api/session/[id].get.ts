@@ -1,6 +1,22 @@
+import { createHmac } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { isValidSessionId } from '~/server/utils/session-id'
 import type { ApiResponse, Session } from '~/types'
+
+function setShareCookie(event: any, whiteboardId: string) {
+  const config = useRuntimeConfig()
+  const secret = config.authSecret as string
+  if (!secret) return
+
+  const token = createHmac('sha256', secret).update(`share:${whiteboardId}`).digest('hex')
+  setCookie(event, 'vp-share-access', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60, // 24 hours
+    path: '/',
+  })
+}
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
@@ -40,6 +56,7 @@ export default defineEventHandler(async (event) => {
       success: true,
       data: mockSession,
     }
+    setShareCookie(event, mockSession.id)
     return response
   }
 
@@ -79,7 +96,7 @@ export default defineEventHandler(async (event) => {
       success: true,
       data: session,
     }
-
+    setShareCookie(event, session.id)
     return response
   } catch (error) {
     if (error && typeof error === 'object' && 'statusCode' in error) {

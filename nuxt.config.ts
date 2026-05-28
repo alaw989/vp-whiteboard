@@ -58,6 +58,8 @@ export default defineNuxtConfig({
     // Private keys (server-side only)
     supabaseUrl: process.env.SUPABASE_URL || '',
     supabaseKey: process.env.SUPABASE_ANON_KEY || '',
+    authPassword: process.env.AUTH_PASSWORD || '',
+    authSecret: process.env.AUTH_SECRET || '',
     wsPort: parseInt(process.env.WS_PORT || '3001'),
 
     // Public keys (exposed to client)

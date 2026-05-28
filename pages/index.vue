@@ -8,13 +8,19 @@
             <h1 class="text-2xl font-bold text-gray-900">VP Associates</h1>
             <p class="text-sm text-gray-500">Collaborative Whiteboard</p>
           </div>
-          <NuxtLink
-            to="/whiteboard/new"
-            class="btn-primary"
-          >
-            <Icon name="mdi:plus" class="w-5 h-5" />
-            New Whiteboard
-          </NuxtLink>
+          <div class="flex items-center gap-3">
+            <NuxtLink
+              to="/whiteboard/new"
+              class="btn-primary"
+            >
+              <Icon name="mdi:plus" class="w-5 h-5" />
+              New Whiteboard
+            </NuxtLink>
+            <button @click="handleLogout" class="btn-ghost text-sm">
+              <Icon name="mdi:logout" class="w-4 h-4" />
+              Sign Out
+            </button>
+          </div>
         </div>
       </div>
     </header>
@@ -94,6 +100,11 @@ import type { Whiteboard, ApiResponse } from '~/types'
 const { data, pending, error, refresh } = await useFetch<ApiResponse<Whiteboard[]>>('/api/whiteboard')
 
 const whiteboards = computed(() => data.value?.success ? (data.value.data || []) : [])
+
+async function handleLogout() {
+  await $fetch('/api/auth/logout', { method: 'POST' })
+  navigateTo('/login')
+}
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString)

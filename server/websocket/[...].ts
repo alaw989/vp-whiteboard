@@ -2,7 +2,48 @@
 // This route enables Yjs y-websocket to work with Nitro
 // Configured for instant retry reconnection (no exponential backoff)
 
+import { createHmac, timingSafeEqual } from 'crypto'
 import type { Peer } from 'crossws'
+
+function parseCookies(cookieHeader: string | null): Record<string, string> {
+  const cookies: Record<string, string> = {}
+  if (!cookieHeader) return cookies
+  for (const part of cookieHeader.split(';')) {
+    const [key, ...rest] = part.split('=')
+    if (key) cookies[key.trim()] = rest.join('=').trim()
+  }
+  return cookies
+}
+
+function isAuthed(cookies: Record<string, string>, roomId: string): boolean {
+  const config = useRuntimeConfig()
+  const password = config.authPassword as string
+  const secret = config.authSecret as string
+
+  if (!password || !secret) return true
+
+  const token = cookies['vp-auth-token']
+  if (token) {
+    const expected = createHmac('sha256', secret).update(password).digest('hex')
+    if (token.length === expected.length) {
+      try {
+        if (timingSafeEqual(Buffer.from(token), Buffer.from(expected))) return true
+      } catch {}
+    }
+  }
+
+  const shareToken = cookies['vp-share-access']
+  if (shareToken && roomId) {
+    const expected = createHmac('sha256', secret).update(`share:${roomId}`).digest('hex')
+    if (shareToken.length === expected.length) {
+      try {
+        if (timingSafeEqual(Buffer.from(shareToken), Buffer.from(expected))) return true
+      } catch {}
+    }
+  }
+
+  return false
+}
 
 // Store active connections
 const connections = new Map<string, Set<Peer>>()
@@ -13,6 +54,19 @@ const connectionUsers = new Map<Peer, { userId: string; userName: string; lastHe
 export default defineWebSocketHandler({
   async open(peer) {
     const url = new URL(peer.request.url || '', `ws://${peer.request.headers?.get('host') || 'localhost'}`)
+
+    // Validate auth
+    const cookies = parseCookies(peer.request.headers?.get('cookie') || null)
+    const pathname = url.pathname
+    const match = pathname.match(/(?:whiteboard:)?([^/]+)$/)
+    const roomId = match && match[1] ? match[1] : 'default'
+
+    if (!isAuthed(cookies, roomId)) {
+      console.log(`[WebSocket] Rejected unauthenticated connection to room=${roomId}`)
+      peer.send(JSON.stringify({ type: 'error', message: 'Authentication required' }))
+      peer.close()
+      return
+    }
     const pathname = url.pathname
 
     // Extract room/whiteboard ID from pathname

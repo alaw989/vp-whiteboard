@@ -16,9 +16,50 @@
 
 import { WebSocketServer } from 'ws'
 import { createServer } from 'http'
+import { createHmac, timingSafeEqual } from 'crypto'
 
 const PORT = process.env.WS_PORT || 3001
 const HOST = process.env.WS_HOST || '0.0.0.0'
+const AUTH_PASSWORD = process.env.AUTH_PASSWORD || ''
+const AUTH_SECRET = process.env.AUTH_SECRET || ''
+
+function parseCookies(cookieHeader) {
+  const cookies = {}
+  if (!cookieHeader) return cookies
+  for (const part of cookieHeader.split(';')) {
+    const [key, ...rest] = part.split('=')
+    if (key) cookies[key.trim()] = rest.join('=').trim()
+  }
+  return cookies
+}
+
+function isAuthed(cookies, roomId) {
+  if (!AUTH_PASSWORD || !AUTH_SECRET) return true
+
+  // Check auth token
+  const token = cookies['vp-auth-token']
+  if (token) {
+    const expected = createHmac('sha256', AUTH_SECRET).update(AUTH_PASSWORD).digest('hex')
+    if (token.length === expected.length) {
+      try {
+        if (timingSafeEqual(Buffer.from(token), Buffer.from(expected))) return true
+      } catch {}
+    }
+  }
+
+  // Check share token
+  const shareToken = cookies['vp-share-access']
+  if (shareToken && roomId) {
+    const expected = createHmac('sha256', AUTH_SECRET).update(`share:${roomId}`).digest('hex')
+    if (shareToken.length === expected.length) {
+      try {
+        if (timingSafeEqual(Buffer.from(shareToken), Buffer.from(expected))) return true
+      } catch {}
+    }
+  }
+
+  return false
+}
 
 // Create HTTP server for WebSocket upgrade
 const server = createServer((req, res) => {
@@ -59,6 +100,14 @@ wss.on('connection', (ws, req) => {
   // Match room ID from path (supports both /whiteboard:{id} and /{id} formats)
   const match = pathname.match(/(?:whiteboard:)?([^/]+)$/)
   const roomId = match && match[1] ? match[1] : 'default'
+
+  // Validate auth
+  const cookies = parseCookies(req.headers.cookie)
+  if (!isAuthed(cookies, roomId)) {
+    console.log(`[Yjs WS] 🚫 Rejected unauthenticated connection to room=${roomId}`)
+    ws.close(4001, 'Authentication required')
+    return
+  }
 
   // Extract user info from query params
   const userId = url.searchParams.get('userId') || 'anonymous'
