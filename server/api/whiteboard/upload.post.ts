@@ -21,7 +21,18 @@ export default defineEventHandler(async (event) => {
     const supabaseUrl = config.supabaseUrl as string
     const supabaseKey = config.supabaseKey as string
 
-    const useLocalStorage = !supabaseUrl || !supabaseKey
+    const useLocalStorage = (() => {
+      if (!supabaseUrl || !supabaseKey) {
+        if (process.env.NODE_ENV === 'production') {
+          throw createError({
+            statusCode: 503,
+            message: 'Database not configured',
+          })
+        }
+        return true
+      }
+      return false
+    })()
 
     // Parse form data
     const formData = await readFormData(event)

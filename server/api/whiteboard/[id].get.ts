@@ -14,15 +14,21 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Return mock data if Supabase is not configured (for testing)
+  // Mock data only available in development
   if (!supabaseUrl || !supabaseKey) {
+    if (process.env.NODE_ENV === 'production') {
+      throw createError({
+        statusCode: 503,
+        message: 'Database not configured',
+      })
+    }
     const response: ApiResponse<Whiteboard> = {
       success: true,
       data: {
         id,
-        name: 'New Whiteboard',  // Generic name for newly created mock whiteboards
+        name: 'New Whiteboard (Dev)',
         project_id: 'project-1',
-        created_by: 'test-user',
+        created_by: 'dev-user',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         canvas_state: { version: 1, elements: [] },

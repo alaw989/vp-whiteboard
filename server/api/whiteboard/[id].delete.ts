@@ -8,6 +8,12 @@ export default defineEventHandler(async (event) => {
     const supabaseKey = config.supabaseKey as string
 
     if (!supabaseUrl || !supabaseKey) {
+      if (process.env.NODE_ENV === 'production') {
+        throw createError({
+          statusCode: 503,
+          message: 'Database not configured',
+        })
+      }
       throw createError({
         statusCode: 500,
         message: 'Supabase configuration missing',

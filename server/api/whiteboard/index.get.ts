@@ -8,6 +8,12 @@ export default defineEventHandler(async (event) => {
 
   // Return mock data if Supabase is not configured (for testing)
   if (!supabaseUrl || !supabaseKey) {
+    if (process.env.NODE_ENV === 'production') {
+      throw createError({
+        statusCode: 503,
+        message: 'Database not configured',
+      })
+    }
     const response: ApiResponse<unknown> = {
       success: true,
       data: [
