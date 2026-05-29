@@ -4,10 +4,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (import.meta.server) return
   if (to.path === '/login') return
 
+  // Individual whiteboard pages are public (Google Docs-style)
+  if (to.path.match(/^\/whiteboard\/[^/]+$/) && !to.path.endsWith('/new')) return
+
   try {
-    const whiteboardMatch = to.path.match(/^\/whiteboard\/([^/]+)/)
-    const params = whiteboardMatch ? { whiteboardId: whiteboardMatch[1] } : {}
-    const res = await $fetch<{ authenticated: boolean }>('/api/auth/verify', { params })
+    const res = await $fetch<{ authenticated: boolean }>('/api/auth/verify')
 
     if (!res.authenticated) {
       return navigateTo(`/login?redirect=${encodeURIComponent(to.fullPath)}`, { redirectCode: 302 })
