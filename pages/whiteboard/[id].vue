@@ -12,7 +12,25 @@
         </NuxtLink>
 
         <div class="min-w-0">
-          <h1 class="text-lg font-semibold text-neutral-900 truncate">{{ whiteboard?.name || 'Loading...' }}</h1>
+          <div v-if="isEditingName" class="flex items-center gap-2">
+            <input
+              ref="nameInput"
+              v-model="editNameValue"
+              class="text-lg font-semibold text-neutral-900 bg-blue-50 border border-blue-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0"
+              @keydown.enter="saveName"
+              @keydown.escape="cancelNameEdit"
+              @blur="saveName"
+            />
+          </div>
+          <h1
+            v-else
+            class="text-lg font-semibold text-neutral-900 truncate cursor-pointer hover:text-blue-600 transition-colors"
+            title="Click to rename"
+            @click="startNameEdit"
+          >
+            {{ whiteboard?.name || 'Loading...' }}
+            <Icon name="mdi:pencil-outline" class="w-3.5 h-3.5 inline ml-1 opacity-0 group-hover:opacity-50" />
+          </h1>
           <p v-if="connectedUsers.size > 1" class="text-xs text-neutral-500 flex items-center gap-1">
             <Icon name="mdi:account-group" class="w-3 h-3" />
             {{ connectedUsers.size }} users online
@@ -258,6 +276,7 @@ import UserPresenceList from '~/components/whiteboard/UserPresenceList.vue'
 import ScaleBadge from '~/components/whiteboard/ScaleBadge.vue'
 import ScaleToolPalette from '~/components/whiteboard/ScaleToolPalette.vue'
 import KeyboardShortcutsModal from '~/components/whiteboard/KeyboardShortcutsModal.vue'
+import { toastSuccess, toastError } from '~/composables/useToast'
 
 // Canvas instance type combining composable return with exposed methods
 type CanvasInstanceType = ReturnType<typeof useCollaborativeCanvas> & {
@@ -305,6 +324,48 @@ const showUploadModal = ref(false)
 const showExportDialog = ref(false)
 const showScalePalette = ref(false)
 const showKeyboardShortcuts = ref(false)
+
+// Inline rename state
+const isEditingName = ref(false)
+const editNameValue = ref('')
+const nameInput = ref<HTMLInputElement | null>(null)
+
+function startNameEdit() {
+  if (!whiteboard.value) return
+  editNameValue.value = whiteboard.value.name
+  isEditingName.value = true
+  nextTick(() => {
+    nameInput.value?.focus()
+    nameInput.value?.select()
+  })
+}
+
+async function saveName() {
+  if (!isEditingName.value) return
+  const name = editNameValue.value.trim()
+  if (!name || name === whiteboard.value?.name) {
+    cancelNameEdit()
+    return
+  }
+  try {
+    await $fetch(`/api/whiteboard/${whiteboardId}`, {
+      method: 'PATCH',
+      body: { name },
+    })
+    if (whiteboardData.value?.data) {
+      whiteboardData.value.data.name = name
+    }
+    toastSuccess('Whiteboard renamed')
+  } catch {
+    toastError('Failed to rename')
+  }
+  isEditingName.value = false
+}
+
+function cancelNameEdit() {
+  isEditingName.value = false
+  editNameValue.value = ''
+}
 
 // Scale state
 const scaleInstance = ref<ReturnType<typeof useScale> | null>(null)
