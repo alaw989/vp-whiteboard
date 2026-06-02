@@ -1145,6 +1145,13 @@ function getPointerPos(event: any) {
   }
 }
 
+// Get raw stage pointer position for hit detection (getAllIntersections expects this space)
+function getStagePointerPos(): { x: number; y: number } {
+  const stage = stageRef.value?.getNode()
+  if (!stage) return { x: 0, y: 0 }
+  return stage.getPointerPosition() || { x: 0, y: 0 }
+}
+
 // Extract pressure and pointer type from pointer event
 function updatePointerState(event: any) {
   // Pointer events provide pressure (0-1) and pointerType ('mouse', 'pen', 'touch')
@@ -1168,16 +1175,10 @@ function updatePointerState(event: any) {
  * Uses hit detection to find and remove elements
  * Note: x, y are canvas coordinates (already divided by zoom)
  */
-function eraseElementAt(x: number, y: number) {
+function eraseElementAt(stageX: number, stageY: number) {
   const stage = stageRef.value?.getNode()
   if (!stage) return
 
-  // Convert canvas coordinates back to stage coordinates for hit detection
-  // Stage coordinates = canvas coordinates * zoom
-  const stageX = x * viewport.value.zoom
-  const stageY = y * viewport.value.zoom
-
-  // Get all shapes at the clicked position using stage coordinates
   const shapes = stage.getAllIntersections({ x: stageX, y: stageY })
 
   // Filter out document layer and background
@@ -1260,8 +1261,8 @@ function handleMouseDown(event: any) {
 
   // Select tool - handle element selection
   if (props.currentTool === 'select') {
-    const pos = getPointerPos(event)
-    selectElementAtPosition(pos.x, pos.y)
+    const stagePos = getStagePointerPos()
+    selectElementAtPosition(stagePos.x, stagePos.y)
     return
   }
 
@@ -1311,7 +1312,8 @@ function handleMouseDown(event: any) {
     // Find the shape at clicked position
     const stage = stageRef.value?.getNode()
     if (stage) {
-      const allShapes = stage.getAllIntersections({ x: pos.x, y: pos.y })
+      const stagePos = getStagePointerPos()
+      const allShapes = stage.getAllIntersections({ x: stagePos.x, y: stagePos.y })
       const canvasShapes = allShapes.filter((shape: any) => {
         const parent = shape.getParent()
         const layer = parent?.getParent()
@@ -1346,8 +1348,8 @@ function handleMouseDown(event: any) {
     currentStrokePoints.value = [[pos.x, pos.y, currentPressure.value]]
     isDrawing.value = true
   } else if (props.currentTool === 'eraser') {
-    // Eraser starts immediately - check for elements to delete
-    eraseElementAt(pos.x, pos.y)
+    const stagePos = getStagePointerPos()
+    eraseElementAt(stagePos.x, stagePos.y)
   } else if (props.currentTool === 'text-annotation') {
     // Text annotation tool - click to place text, drag to set leader line
     textAnnotationStart.value = pos
@@ -1421,7 +1423,8 @@ function handleMouseMove(event: any) {
     if (currentStrokePoints.value.length % 10 === 0) {
     }
   } else if (props.currentTool === 'eraser') {
-    eraseElementAt(pos.x, pos.y)
+    const stagePos = getStagePointerPos()
+    eraseElementAt(stagePos.x, stagePos.y)
   }
   // ... other tool handling
 }
@@ -2766,6 +2769,16 @@ watch(() => props.currentTool, (newTool, oldTool) => {
     // Clear any pending pan state
     panStartPointer.value = null
     panStartViewport.value = null
+  }
+
+  if (newTool === 'eraser') {
+    if (container) {
+      container.style.setProperty('cursor', 'crosshair')
+    }
+  } else if (oldTool === 'eraser' && newTool !== 'pan') {
+    if (container) {
+      container.style.removeProperty('cursor')
+    }
   }
 })
 
