@@ -1221,8 +1221,10 @@ function placeStamp(x: number, y: number, stampType: StampType) {
   const config = STAMP_CONFIGS[stampType]
   const fontSize = config.fontSize
 
-  // Estimate text width (approximate based on character count)
-  const textWidth = config.text.length * fontSize * 0.6
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')!
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`
+  const textWidth = ctx.measureText(config.text).width
   const width = textWidth + config.padding * 2
   const height = fontSize + config.padding * 2
 
@@ -2241,16 +2243,16 @@ function getStampTextConfig(element: CanvasElement) {
   const data = element.data as StampElement
   return {
     text: data.text,
-    x: data.width / 2,
-    y: data.height / 2,
+    x: 0,
+    y: 0,
+    width: data.width,
+    height: data.height,
     fontSize: data.fontSize,
     fill: data.textColor,
     fontFamily: 'Arial, sans-serif',
     fontStyle: 'bold',
     align: 'center',
     verticalAlign: 'middle',
-    offsetX: 0,
-    offsetY: 0,
   }
 }
 
