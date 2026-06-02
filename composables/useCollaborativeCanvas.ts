@@ -203,7 +203,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       if (message.type === 'sync-request') {
         // Send current state
         const state = exportState()
-        ws.send(JSON.stringify({ type: 'sync-state', state }))
+        ws?.send(JSON.stringify({ type: 'sync-state', state }))
       } else if (message.type === 'sync-state' && message.state) {
         // Apply received state
         importState(message.state)
@@ -708,8 +708,8 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     currentUser,
     connectedUsers,
     elements,
-    canUndo: computed(() => undoManager.canUndo()),
-    canRedo: computed(() => undoManager.canRedo()),
+    canUndo: computed(() => { elements.value; const v = undoManager.canUndo(); return v }),
+    canRedo: computed(() => { elements.value; const v = undoManager.canRedo(); return v }),
     activeStrokes,
 
     // Methods
@@ -750,6 +750,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     yElements,
     yMeta,
     yDocumentLayers,
+    wsProvider,
   }
 }
 

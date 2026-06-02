@@ -120,6 +120,7 @@
 <script setup lang="ts">
 import type { ExportFormat } from '~/types'
 import type { Stage } from 'konva/lib/Stage'
+import { toastError } from '~/composables/useToast'
 
 const props = defineProps<{
   show: boolean
@@ -167,7 +168,10 @@ watch(() => props.show, async (isOpen) => {
         })
       } catch (error) {
         console.error('Failed to generate export preview:', error)
-        canvasSize.value = 'Preview unavailable'
+        const msg = error instanceof Error && error.message.includes('tainted')
+          ? 'Preview blocked by cross-origin image'
+          : 'Preview unavailable'
+        canvasSize.value = msg
       }
     } else {
       canvasSize.value = 'Stage not available'

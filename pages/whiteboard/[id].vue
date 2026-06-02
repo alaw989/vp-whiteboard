@@ -255,6 +255,19 @@
       />
     </ClientOnly>
 
+    <!-- Clear Canvas Confirmation -->
+    <ClientOnly>
+      <ConfirmDialog
+        :show="showClearConfirm"
+        title="Clear Canvas"
+        message="Are you sure you want to clear the canvas? This cannot be undone."
+        confirm-text="Clear"
+        :destructive="true"
+        @confirm="confirmClearCanvas"
+        @cancel="showClearConfirm = false"
+      />
+    </ClientOnly>
+
     <!-- Keyboard Shortcut Hint Button -->
     <button
       class="fixed bottom-4 right-4 z-30 w-10 h-10 rounded-xl bg-neutral-800/90 hover:bg-neutral-700 text-white flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg backdrop-blur-sm"
@@ -276,6 +289,7 @@ import UserPresenceList from '~/components/whiteboard/UserPresenceList.vue'
 import ScaleBadge from '~/components/whiteboard/ScaleBadge.vue'
 import ScaleToolPalette from '~/components/whiteboard/ScaleToolPalette.vue'
 import KeyboardShortcutsModal from '~/components/whiteboard/KeyboardShortcutsModal.vue'
+import ConfirmDialog from '~/components/whiteboard/ConfirmDialog.vue'
 import { toastSuccess, toastError } from '~/composables/useToast'
 
 // Canvas instance type combining composable return with exposed methods
@@ -324,6 +338,7 @@ const showUploadModal = ref(false)
 const showExportDialog = ref(false)
 const showScalePalette = ref(false)
 const showKeyboardShortcuts = ref(false)
+const showClearConfirm = ref(false)
 
 // Inline rename state
 const isEditingName = ref(false)
@@ -376,11 +391,11 @@ const scaleDisplayFormat = ref<string>('No scale set')
 const instance = computed(() => canvasInstance.value)
 const isConnected = computed(() => {
   const inst = instance.value
-  return inst ? (inst.isConnected as any).value : false
+  return inst ? !!inst.isConnected : false
 })
 const connectionStatus = computed(() => {
   const inst = instance.value
-  return inst ? (inst.connectionStatus as any).value : 'disconnected'
+  return inst ? (inst.connectionStatus || 'disconnected') : 'disconnected'
 })
 const connectedUsers = computed(() => {
   const inst = instance.value
@@ -392,11 +407,11 @@ const elements = computed(() => {
 })
 const canUndo = computed(() => {
   const inst = instance.value
-  return inst ? inst.canUndo : false
+  return inst ? !!inst.canUndo : false
 })
 const canRedo = computed(() => {
   const inst = instance.value
-  return inst ? inst.canRedo : false
+  return inst ? !!inst.canRedo : false
 })
 const activeStrokes = computed(() => {
   const inst = instance.value
@@ -617,9 +632,12 @@ function redo() {
 }
 
 function clearCanvas() {
-  if (confirm('Are you sure you want to clear the canvas? This cannot be undone.')) {
-    canvasInstance.value?.clearCanvas()
-  }
+  showClearConfirm.value = true
+}
+
+function confirmClearCanvas() {
+  showClearConfirm.value = false
+  canvasInstance.value?.clearCanvas()
 }
 
 function handleDeleteElement(elementId: string) {

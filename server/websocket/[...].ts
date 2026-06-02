@@ -67,12 +67,6 @@ export default defineWebSocketHandler({
       peer.close()
       return
     }
-    const pathname = url.pathname
-
-    // Extract room/whiteboard ID from pathname
-    // Expected format: /ws/whiteboard:{id} or /ws/{id}
-    const match = pathname.match(/(?:whiteboard:)?([^/]+)$/)
-    const roomId = match && match[1] ? match[1] : 'default'
 
     // Get user info from query params
     const userId = url.searchParams.get('userId')

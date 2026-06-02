@@ -2,6 +2,7 @@ import { ref, readonly } from 'vue'
 import type { Stage } from 'konva/lib/Stage'
 import jsPDF from 'jspdf'
 import type { ExportFormat, ExportOptions, ExportState } from '~/types'
+import { toastError } from '~/composables/useToast'
 
 export function useExport() {
   const isExporting = ref(false)
@@ -64,7 +65,9 @@ export function useExport() {
       const filename = options.filename ?? generateFilename('whiteboard', 'png')
       triggerDownload(dataUrl, filename)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : 'Export failed'
+      const msg = e instanceof Error ? e.message : 'Export failed'
+      error.value = msg
+      toastError(msg.includes('tainted') ? 'Export blocked by cross-origin image. Try removing uploaded images first.' : 'Export failed')
     } finally {
       isExporting.value = false
     }
@@ -126,7 +129,9 @@ export function useExport() {
 
       progress.value = 100
     } catch (e) {
-      error.value = e instanceof Error ? e.message : 'PDF export failed'
+      const msg = e instanceof Error ? e.message : 'PDF export failed'
+      error.value = msg
+      toastError(msg.includes('tainted') ? 'Export blocked by cross-origin image. Try removing uploaded images first.' : 'PDF export failed')
     } finally {
       isExporting.value = false
     }

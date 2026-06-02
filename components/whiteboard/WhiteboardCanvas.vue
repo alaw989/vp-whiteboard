@@ -452,6 +452,7 @@ import { useViewport } from '~/composables/useViewport'
 import { useCursors, type CursorState } from '~/composables/useCursors'
 import { useMeasurements } from '~/composables/useMeasurements'
 import { useSnapping } from '~/composables/useSnapping'
+import { toastError } from '~/composables/useToast'
 
 // Stamp configurations with styling
 const STAMP_CONFIGS = {
@@ -663,6 +664,7 @@ function getLayerImage(src: string): HTMLImageElement | null {
     return layerImageCache.get(src)!
   }
   const img = new Image()
+  img.crossOrigin = 'anonymous'
   img.src = src
   layerImageCache.set(src, img)
   return img
@@ -673,6 +675,7 @@ watch(visibleLayers, (layers) => {
   for (const layer of layers) {
     if (layer.src && !layerImageCache.has(layer.src)) {
       const img = new Image()
+      img.crossOrigin = 'anonymous'
       img.src = layer.src
       layerImageCache.set(layer.src, img)
     }
@@ -1322,17 +1325,20 @@ function handleMouseDown(event: any) {
         return layer?.name !== 'documentLayer'
       })
 
-      if (canvasShapes.length > 0) {
-        const shape = canvasShapes[0]
+      let measured = false
+      for (const shape of canvasShapes) {
         const elementId = shape.id() || shape.getParent()?.id()
-
         if (elementId) {
-          // Find element and create area measurement
           const targetElement = props.elements.find(el => el.id === elementId)
           if (targetElement && (targetElement.type === 'rectangle' || targetElement.type === 'circle' || targetElement.type === 'ellipse')) {
             measureArea(elementId, props.currentColor)
+            measured = true
+            break
           }
         }
+      }
+      if (!measured) {
+        toastError('Click on a rectangle, circle, or ellipse to measure its area')
       }
     }
     return
@@ -1383,6 +1389,34 @@ function handleMouseMove(event: any) {
   // Clear snap point for non-measurement tools
   if (props.currentTool !== 'measure-distance') {
     currentSnapPoint.value = null
+  }
+
+  // Measure area tool - update cursor when hovering over measurable shapes
+  if (props.currentTool === 'measure-area') {
+    const stage = stageRef.value?.getNode()
+    const container = stage?.container()
+    if (stage && container) {
+      const stagePos = getStagePointerPos()
+      const shapes = stage.getAllIntersections({ x: stagePos.x, y: stagePos.y })
+      const canvasShapes = shapes.filter((shape: any) => {
+        const parent = shape.getParent()
+        const layer = parent?.getParent()
+        return layer?.name !== 'documentLayer'
+      })
+      let overMeasurable = false
+      for (const shape of canvasShapes) {
+        const elementId = shape.id() || shape.getParent()?.id()
+        if (elementId) {
+          const el = props.elements.find(e => e.id === elementId)
+          if (el && (el.type === 'rectangle' || el.type === 'circle' || el.type === 'ellipse')) {
+            overMeasurable = true
+            break
+          }
+        }
+      }
+      container.style.cursor = overMeasurable ? 'pointer' : 'crosshair'
+    }
+    return
   }
 
   // Pan tool is handled by Konva's draggable (dragmove watcher updates viewport)
@@ -2144,6 +2178,7 @@ function getEllipseConfig(element: CanvasElement) {
 function getImageConfig(element: CanvasElement) {
   const data = element.data as ImageElement
   const image = new Image()
+  image.crossOrigin = 'anonymous'
   image.src = data.src
   return {
     x: data.x,
@@ -2782,9 +2817,20 @@ watch(() => props.currentTool, (newTool, oldTool) => {
       container.style.removeProperty('cursor')
     }
   }
+
+  if (newTool === 'measure-area') {
+    if (container) {
+      container.style.setProperty('cursor', 'crosshair')
+    }
+  } else if (oldTool === 'measure-area' && newTool !== 'pan' && newTool !== 'eraser') {
+    if (container) {
+      container.style.removeProperty('cursor')
+    }
+  }
 })
 
 defineExpose({
+  stageRef,
   exportAsImage,
   loadPDF,
   addImageLayer,
