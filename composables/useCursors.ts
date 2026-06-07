@@ -72,7 +72,7 @@ export function useCursors(
   // Throttled cursor update function (~60fps max)
   // Uses VueUse's useDebounceFn for RAF-style timing
   const updateLocalCursor = useDebounceFn((x: number, y: number, tool?: DrawingTool) => {
-    if (!awareness) return
+    if (!awareness || typeof awareness.setLocalState !== 'function') return
 
     awareness.setLocalState({
       user: {
@@ -87,7 +87,7 @@ export function useCursors(
 
   // Cleanup function
   function cleanup() {
-    if (awareness) {
+    if (awareness && typeof awareness.setLocalState === 'function') {
       awareness.off('change', handleAwarenessChange)
       // Mark CURRENT user as offline by clearing local state
       awareness.setLocalState(null)

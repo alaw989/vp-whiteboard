@@ -180,6 +180,70 @@
     <!-- Divider -->
     <div class="h-px bg-neutral-200" />
 
+    <!-- CAD Modes -->
+    <div class="flex flex-col gap-1">
+      <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Modes</h4>
+
+      <button
+        :class="[
+          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
+          props.orthoEnabled
+            ? 'bg-green-100 text-green-600 shadow-sm'
+            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
+        ]"
+        :aria-pressed="props.orthoEnabled"
+        title="Ortho mode (F8)"
+        @click="$emit('toggle-ortho')"
+      >
+        <Icon name="mdi:arrow-expand" class="w-5 h-5" />
+      </button>
+
+      <button
+        :class="[
+          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
+          props.polarEnabled
+            ? 'bg-green-100 text-green-600 shadow-sm'
+            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
+        ]"
+        :aria-pressed="props.polarEnabled"
+        title="Polar tracking (F10)"
+        @click="$emit('toggle-polar')"
+      >
+        <Icon name="mdi:compass-outline" class="w-5 h-5" />
+      </button>
+
+      <button
+        :class="[
+          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
+          props.gridEnabled
+            ? 'bg-green-100 text-green-600 shadow-sm'
+            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
+        ]"
+        :aria-pressed="props.gridEnabled"
+        title="Grid (GRID)"
+        @click="$emit('toggle-grid')"
+      >
+        <Icon name="mdi:grid" class="w-5 h-5" />
+      </button>
+
+      <button
+        :class="[
+          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
+          props.snapEnabled
+            ? 'bg-green-100 text-green-600 shadow-sm'
+            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
+        ]"
+        :aria-pressed="props.snapEnabled"
+        title="Object snap (OSNAP)"
+        @click="$emit('toggle-snap')"
+      >
+        <Icon name="mdi:magnet" class="w-5 h-5" />
+      </button>
+    </div>
+
+    <!-- Divider -->
+    <div class="h-px bg-neutral-200" />
+
     <!-- Export -->
     <div class="flex flex-col gap-1">
       <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Export</h4>
@@ -197,6 +261,21 @@
       >
         <Icon :name="isExporting ? 'mdi:loading' : 'mdi:download'" class="w-5 h-5" />
       </button>
+    </div>
+
+    <!-- Divider -->
+    <div class="h-px bg-neutral-200" />
+
+    <!-- Layer -->
+    <div class="flex flex-col gap-1">
+      <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Layer</h4>
+      <WhiteboardLayerSelector
+        v-if="layers && layers.length > 0"
+        :layers="layers"
+        :model-value="activeLayerId || 'default'"
+        @update:model-value="$emit('set-active-layer', $event)"
+        @add-layer="$emit('add-layer')"
+      />
     </div>
     </div>
   </div>
@@ -476,8 +555,8 @@
 </template>
 
 <script setup lang="ts">
-import type { DrawingTool } from '~/types'
-import type { StampType } from '~/components/whiteboard/WhiteboardCanvas.vue'
+import type { DrawingTool, LayerDefinition } from '~/types'
+import type { StampType } from '~/composables/tools/useStampTool'
 import { COLORS, TOOL_SIZES } from '~/types'
 
 const props = defineProps<{
@@ -488,6 +567,12 @@ const props = defineProps<{
   canRedo: boolean
   isExporting?: boolean
   exportProgress?: number
+  layers?: LayerDefinition[]
+  activeLayerId?: string
+  orthoEnabled?: boolean
+  polarEnabled?: boolean
+  gridEnabled?: boolean
+  snapEnabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -499,6 +584,12 @@ const emit = defineEmits<{
   'clear': []
   'open-export': []
   'stamp-type-change': [stampType: StampType]
+  'set-active-layer': [layerId: string]
+  'add-layer': []
+  'toggle-ortho': []
+  'toggle-polar': []
+  'toggle-grid': []
+  'toggle-snap': []
 }>()
 
 // Mobile state
@@ -604,6 +695,14 @@ const tools = [
   { id: 'rectangle' as DrawingTool, name: 'Rectangle', shortcut: 'R', icon: 'mdi:rectangle-outline' },
   { id: 'circle' as DrawingTool, name: 'Circle', shortcut: 'C', icon: 'mdi:circle-outline' },
   { id: 'ellipse' as DrawingTool, name: 'Ellipse', shortcut: 'E', icon: 'mdi:ellipse-outline' },
+  { id: 'polyline' as DrawingTool, name: 'Polyline', shortcut: 'PL', icon: 'mdi:vector-polyline' },
+  { id: 'arc' as DrawingTool, name: 'Arc', shortcut: 'ARC', icon: 'mdi:vector-curve' },
+  { id: 'offset' as DrawingTool, name: 'Offset', shortcut: 'O', icon: 'mdi:format-line-spacing' },
+  { id: 'trim' as DrawingTool, name: 'Trim', shortcut: 'TR', icon: 'mdi:content-cut' },
+  { id: 'extend' as DrawingTool, name: 'Extend', shortcut: 'EX', icon: 'mdi:arrow-expand-horizontal' },
+  { id: 'fillet' as DrawingTool, name: 'Fillet', shortcut: 'F', icon: 'mdi:vector-radius' },
+  { id: 'mirror' as DrawingTool, name: 'Mirror', shortcut: 'MI', icon: 'mdi:flip-horizontal' },
+  { id: 'dimension' as DrawingTool, name: 'Dimension', shortcut: 'DIM', icon: 'mdi:ruler-square' },
   { id: 'eraser' as DrawingTool, name: 'Eraser', shortcut: 'X', icon: 'mdi:eraser' },
   { id: 'measure-distance' as DrawingTool, name: 'Measure Distance', shortcut: 'M', icon: 'mdi:ruler' },
   { id: 'measure-area' as DrawingTool, name: 'Measure Area', shortcut: 'Shift+M', icon: 'mdi:chart-box-outline' },

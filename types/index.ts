@@ -46,13 +46,23 @@ export interface CanvasState {
   viewport?: ViewportState
 }
 
+export interface LayerDefinition {
+  id: string
+  name: string
+  color: string
+  visible: boolean
+  locked: boolean
+  order: number
+}
+
 export interface CanvasElement {
   id: string
-  type: 'stroke' | 'line' | 'rectangle' | 'circle' | 'ellipse' | 'image' | 'text' | 'arrow' | 'stamp' | 'text-annotation' | 'measurement-distance' | 'measurement-area'
+  type: 'stroke' | 'line' | 'rectangle' | 'circle' | 'ellipse' | 'image' | 'text' | 'arrow' | 'stamp' | 'text-annotation' | 'measurement-distance' | 'measurement-area' | 'polyline' | 'arc' | 'fillet-arc' | 'dimension'
   userId: string
   userName: string
   timestamp: number
-  data: StrokeElement | LineElement | RectangleElement | CircleElement | EllipseElement | ImageElement | TextElement | ArrowElement | StampElement | TextAnnotationElement | MeasurementDistanceElement | MeasurementAreaElement
+  layerId?: string
+  data: StrokeElement | LineElement | RectangleElement | CircleElement | EllipseElement | ImageElement | TextElement | ArrowElement | StampElement | TextAnnotationElement | MeasurementDistanceElement | MeasurementAreaElement | PolylineElement | ArcElement | FilletArcElement | DimensionElement
 }
 
 export interface StrokeElement {
@@ -98,6 +108,43 @@ export interface EllipseElement {
   stroke: string
   strokeWidth: number
   fill?: string
+}
+
+export interface PolylineElement {
+  points: [number, number][]
+  color: string
+  size: number
+  closed: boolean
+}
+
+export interface ArcElement {
+  start: [number, number]
+  through: [number, number]
+  end: [number, number]
+  color: string
+  size: number
+}
+
+export interface FilletArcElement {
+  center: [number, number]
+  radius: number
+  startAngle: number
+  endAngle: number
+  color: string
+  size: number
+}
+
+export interface DimensionElement {
+  start: [number, number]
+  end: [number, number]
+  offset: number // perpendicular distance from measured line to dimension line
+  pixelsPerInch: number
+  unit: 'inches' | 'feet'
+  precision: number
+  style: 'linear' | 'aligned'
+  color: string
+  size: number
+  value?: number
 }
 
 export interface ArrowElement {
@@ -199,7 +246,7 @@ export interface SharedViewportState extends ViewportState {
 }
 
 // Drawing Tool Types
-export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser' | 'measure-distance' | 'measure-area'
+export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser' | 'measure-distance' | 'measure-area' | 'polyline' | 'arc' | 'offset' | 'trim' | 'extend' | 'fillet' | 'mirror' | 'dimension'
 
 export interface ToolSettings {
   tool: DrawingTool

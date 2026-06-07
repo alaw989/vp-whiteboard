@@ -86,6 +86,23 @@
 
     <!-- Main Content -->
     <div class="flex-1 flex overflow-hidden">
+      <!-- Layer Panel (between toolbar and canvas) -->
+      <ClientOnly>
+        <LayerPanel
+          :show="showLayerPanel"
+          :layers="layerList"
+          :active-layer-id="activeLayerId"
+          @close="showLayerPanel = false"
+          @set-active="handleSetActiveLayer"
+          @toggle-visibility="handleToggleLayerVisibility"
+          @toggle-lock="handleToggleLayerLock"
+          @set-color="handleSetLayerColor"
+          @remove="handleRemoveLayer"
+          @add="handleAddLayer"
+          @rename="handleRenameLayer"
+        />
+      </ClientOnly>
+
       <!-- Toolbar (responsive - handles desktop/mobile display internally) -->
       <WhiteboardToolbar
         :current-tool="currentTool"
@@ -95,6 +112,12 @@
         :can-redo="canRedo"
         :is-exporting="isExporting"
         :export-progress="exportProgress"
+        :layers="layerList"
+        :active-layer-id="activeLayerId"
+        :ortho-enabled="orthoEnabled"
+        :polar-enabled="polarTrackingActive"
+        :grid-enabled="gridEnabled"
+        :snap-enabled="snapEnabled"
         @select-tool="setTool"
         @select-color="setColor"
         @select-size="setSize"
@@ -103,39 +126,48 @@
         @redo="redo"
         @clear="clearCanvas"
         @open-export="openExportDialog"
+        @set-active-layer="handleSetActiveLayer"
+        @add-layer="handleAddLayer"
+        @toggle-ortho="toggleOrtho"
+        @toggle-polar="togglePolarTracking"
+        @toggle-grid="toggleGridFromToolbar"
+        @toggle-snap="toggleSnapFromToolbar"
       />
 
       <!-- Canvas Area -->
-      <main class="flex-1 relative overflow-hidden pb-16 md:pb-0">
-        <ClientOnly>
-          <WhiteboardCanvas
-            ref="canvasRef"
-            :whiteboard-id="whiteboardId"
-            :user-id="currentUser.id"
-            :user-name="currentUser.name"
-            :elements="elements"
-            :connected-users="connectedUsers"
-            :ws-provider="canvasInstance?.wsProvider"
-            :current-tool="currentTool"
-            :current-color="currentColor"
-            :current-size="currentSize"
-            :current-stamp-type="currentStampType"
-            :active-strokes="activeStrokes"
-            :start-active-stroke="startActiveStroke"
-            :broadcast-stroke-point="broadcastStrokePoint"
-            :end-active-stroke="endActiveStroke"
-            :get-viewport="(canvasInstance as any)?.getViewport"
-            :sync-viewport="(canvasInstance as any)?.syncViewport"
-            :observe-viewport="(canvasInstance as any)?.observeViewport"
-            :y-document-layers="(canvasInstance as any)?.yDocumentLayers"
-            :add-document-layer="(canvasInstance as any)?.addDocumentLayer"
-            :update-document-layer="(canvasInstance as any)?.updateDocumentLayer"
-            :remove-document-layer="(canvasInstance as any)?.removeDocumentLayer"
-            @element-add="(element) => canvasInstance?.addElement?.(element)"
-            @element-delete="handleDeleteElement"
-            @cursor-update="updateCursor"
-          />
-          <template #fallback>
+      <main class="flex-1 relative overflow-hidden pb-16 md:pb-0 flex flex-col">
+        <div class="flex-1 relative">
+          <ClientOnly>
+            <WhiteboardCanvas
+              ref="canvasRef"
+              :whiteboard-id="whiteboardId"
+              :user-id="currentUser.id"
+              :user-name="currentUser.name"
+              :elements="elements"
+              :connected-users="connectedUsers"
+              :ws-provider="canvasInstance?.wsProvider"
+              :current-tool="currentTool"
+              :current-color="currentColor"
+              :current-size="currentSize"
+              :current-stamp-type="currentStampType"
+              :hidden-layer-ids="hiddenLayerIds"
+              :active-layer-id="activeLayerId"
+              :active-strokes="activeStrokes"
+              :start-active-stroke="startActiveStroke"
+              :broadcast-stroke-point="broadcastStrokePoint"
+              :end-active-stroke="endActiveStroke"
+              :get-viewport="(canvasInstance as any)?.getViewport"
+              :sync-viewport="(canvasInstance as any)?.syncViewport"
+              :observe-viewport="(canvasInstance as any)?.observeViewport"
+              :y-document-layers="(canvasInstance as any)?.yDocumentLayers"
+              :add-document-layer="(canvasInstance as any)?.addDocumentLayer"
+              :update-document-layer="(canvasInstance as any)?.updateDocumentLayer"
+              :remove-document-layer="(canvasInstance as any)?.removeDocumentLayer"
+              @element-add="(element) => canvasInstance?.addElement?.(element)"
+              @element-delete="handleDeleteElement"
+              @cursor-update="updateCursor"
+            />
+            <template #fallback>
             <div class="flex flex-col items-center justify-center h-full gap-6 animate-fade-in">
               <div class="relative">
                 <!-- Outer ring -->
@@ -167,10 +199,36 @@
         <!-- Scale Badge -->
         <ClientOnly>
           <ScaleBadge
-            v-if="scaleInstance"
+            v-if="scaleInstance && !showLayerPanel"
             :display-format="scaleDisplayFormat"
             :current-scale="currentScaleValue"
             @open-scale-dialog="showScalePalette = true"
+          />
+        </ClientOnly>
+
+        <!-- Coordinate Display -->
+        <ClientOnly>
+          <CoordinateDisplay
+            :x="cursorPosition.x"
+            :y="cursorPosition.y"
+            :distance="cursorDistance"
+            :angle="cursorAngle"
+            :ortho-enabled="orthoEnabled"
+            :polar-enabled="polarTrackingActive"
+          />
+        </ClientOnly>
+        </div>
+
+        <!-- Command Line -->
+        <ClientOnly>
+          <CommandLine
+            :visible="true"
+            :output-lines="commandOutputLines"
+            :execute="executeCommand"
+            :cancel-pending="cancelCommandPending"
+            :get-completions="getCommandCompletions"
+            :is-waiting-for-param="commandWaitingForParam"
+            :pending-prompt="commandPendingPrompt"
           />
         </ClientOnly>
       </main>
@@ -282,7 +340,7 @@
 
 <script setup lang="ts">
 import type { Whiteboard, CanvasElement, UploadResult, DrawingTool, ApiResponse } from '~/types'
-import type { StampType } from '~/components/whiteboard/WhiteboardCanvas.vue'
+import type { StampType } from '~/composables/tools/useStampTool'
 import ExportDialog from '~/components/whiteboard/ExportDialog.vue'
 import WhiteboardShareModal from '~/components/whiteboard/WhiteboardShareModal.vue'
 import UserPresenceList from '~/components/whiteboard/UserPresenceList.vue'
@@ -290,7 +348,12 @@ import ScaleBadge from '~/components/whiteboard/ScaleBadge.vue'
 import ScaleToolPalette from '~/components/whiteboard/ScaleToolPalette.vue'
 import KeyboardShortcutsModal from '~/components/whiteboard/KeyboardShortcutsModal.vue'
 import ConfirmDialog from '~/components/whiteboard/ConfirmDialog.vue'
+import CommandLine from '~/components/whiteboard/CommandLine.vue'
+import CoordinateDisplay from '~/components/whiteboard/CoordinateDisplay.vue'
+import LayerPanel from '~/components/whiteboard/LayerPanel.vue'
 import { toastSuccess, toastError } from '~/composables/useToast'
+import { useCommandEngine } from '~/composables/useCommandEngine'
+import { useLayers } from '~/composables/useLayers'
 
 // Canvas instance type combining composable return with exposed methods
 type CanvasInstanceType = ReturnType<typeof useCollaborativeCanvas> & {
@@ -339,6 +402,22 @@ const showExportDialog = ref(false)
 const showScalePalette = ref(false)
 const showKeyboardShortcuts = ref(false)
 const showClearConfirm = ref(false)
+const showLayerPanel = ref(false)
+
+// Layer state
+const layerInstance = ref<ReturnType<typeof useLayers> | null>(null)
+const layerList = computed(() => {
+  const inst = layerInstance.value
+  return inst ? inst.sortedLayers : []
+})
+const activeLayerId = computed(() => {
+  const inst = layerInstance.value
+  return inst ? inst.activeLayerId : 'default'
+})
+const hiddenLayerIds = computed(() => {
+  const inst = layerInstance.value
+  return inst ? inst.hiddenLayerIds : new Set<string>()
+})
 
 // Inline rename state
 const isEditingName = ref(false)
@@ -447,6 +526,122 @@ const endActiveStroke = computed(() => canvasInstance.value?.endActiveStroke)
 // Export functionality
 const { isExporting, progress: exportProgress, exportAsPNG, exportAsPDF } = useExport()
 
+// Ortho mode — synced with canvas via exposed ref
+const orthoEnabled = ref(false)
+
+function toggleOrtho() {
+  const canvas = canvasRef.value as any
+  if (canvas?.toggleOrtho) {
+    canvas.toggleOrtho()
+  }
+  // Read the current state (defineExpose unwraps refs, so no .value needed)
+  syncCanvasState()
+}
+
+// Polar tracking — synced with canvas
+const polarTrackingActive = ref(false)
+
+function togglePolarTracking() {
+  const canvas = canvasRef.value as any
+  if (canvas?.polarTracking) {
+    canvas.polarTracking.toggle()
+  }
+  syncCanvasState()
+}
+
+function syncCanvasState() {
+  const canvas = canvasRef.value as any
+  // defineExpose unwraps refs — access directly without .value
+  if (canvas?.orthoEnabled !== undefined) {
+    orthoEnabled.value = !!canvas.orthoEnabled
+  }
+  if (canvas?.polarTracking?.isPolarEnabled !== undefined) {
+    polarTrackingActive.value = !!canvas.polarTracking.isPolarEnabled
+  }
+  if (canvas?.gridEnabled !== undefined) {
+    gridEnabled.value = !!canvas.gridEnabled
+  }
+  if (canvas?.snapEnabled !== undefined) {
+    snapEnabled.value = !!canvas.snapEnabled
+  }
+}
+
+// Grid and snap mode — synced with canvas
+const gridEnabled = ref(false)
+const snapEnabled = ref(true)
+
+function toggleGridFromToolbar() {
+  const canvas = canvasRef.value as any
+  if (canvas?.toggleGrid) {
+    canvas.toggleGrid()
+  }
+  syncCanvasState()
+}
+
+function toggleSnapFromToolbar() {
+  const canvas = canvasRef.value as any
+  if (canvas?.toggleSnap) {
+    canvas.toggleSnap()
+  }
+  syncCanvasState()
+}
+
+// Cursor position tracking for coordinate display
+const cursorPosition = ref({ x: 0, y: 0 })
+const cursorDistance = ref<number | null>(null)
+const cursorAngle = ref<number | null>(null)
+const lastClickPosition = ref<{ x: number; y: number } | null>(null)
+
+// Command engine
+const {
+  outputLines: commandOutputLines,
+  isWaitingForParam: commandWaitingForParam,
+  pendingPrompt: commandPendingPrompt,
+  execute: executeCommand,
+  cancelPending: cancelCommandPending,
+  getCompletions: getCommandCompletions,
+  output: commandOutput,
+} = useCommandEngine({
+  setActiveTool: (tool) => { currentTool.value = tool },
+  toggleGrid: () => {
+    const canvas = canvasRef.value as any
+    if (canvas?.toggleGrid) {
+      canvas.toggleGrid()
+      commandOutput(canvas.gridEnabled ? 'GRID: ON' : 'GRID: OFF')
+    }
+  },
+  toggleGridSnap: () => {
+    const canvas = canvasRef.value as any
+    if (canvas?.toggleGridSnap) {
+      canvas.toggleGridSnap()
+      commandOutput(canvas.gridSnapEnabled ? 'GRID SNAP: ON' : 'GRID SNAP: OFF')
+    }
+  },
+  toggleOrtho: () => { toggleOrtho(); commandOutput(orthoEnabled.value ? 'ORTHO: ON' : 'ORTHO: OFF') },
+  togglePolarTracking: () => { togglePolarTracking(); commandOutput(polarTrackingActive.value ? 'POLAR: ON' : 'POLAR: OFF') },
+  toggleSnap: () => {
+    const canvas = canvasRef.value as any
+    if (canvas?.toggleSnap) {
+      canvas.toggleSnap()
+      commandOutput(canvas.snapEnabled ? 'OSNAP: ON' : 'OSNAP: OFF')
+    }
+  },
+  undo: () => { canvasInstance.value?.undo?.() },
+  redo: () => { canvasInstance.value?.redo?.() },
+  applyDirectDistance: (dist: number) => {
+    const canvas = canvasRef.value as any
+    // Convert from inches to pixels (96 ppi default)
+    const pixelsPerInch = 96
+    const pixelDist = dist * pixelsPerInch
+    return canvas?.applyDirectDistance?.(pixelDist) ?? false
+  },
+  isDrawing: () => {
+    const canvas = canvasRef.value as any
+    // defineExpose unwraps refs — isDrawing is a boolean, not a ref
+    return !!canvas?.isDrawing
+  },
+})
+
 // Cursor tracking state from WhiteboardCanvas's useCursors
 const currentUserFromCanvas = ref<{ id: string; name: string; color: string }>({
   id: currentUser.id,
@@ -473,6 +668,12 @@ onMounted(() => {
     if (canvasInstance.value) {
       const yMeta = canvasInstance.value.yMeta as any
       const ydoc = canvasInstance.value.ydoc as any
+
+      // Initialize layer system
+      const layers = useLayers(yMeta, ydoc, currentUser.id)
+      layers.observeLayers()
+      layerInstance.value = layers
+
       scaleInstance.value = useScale({
         yMeta: yMeta,
         ydoc: ydoc,
@@ -494,6 +695,10 @@ onMounted(() => {
       }
     }
   })
+
+  // Sync canvas constraint state (ortho/polar) periodically
+  const syncInterval = setInterval(() => syncCanvasState(), 500)
+  onUnmounted(() => clearInterval(syncInterval))
 })
 
 // Watch for cursor tracking updates from WhiteboardCanvas component
@@ -644,8 +849,44 @@ function handleDeleteElement(elementId: string) {
   canvasInstance.value?.deleteElement(elementId)
 }
 
+// Layer handlers
+function handleSetActiveLayer(layerId: string) {
+  layerInstance.value?.setActiveLayer(layerId)
+}
+
+function handleToggleLayerVisibility(layerId: string) {
+  layerInstance.value?.toggleLayerVisibility(layerId)
+}
+
+function handleToggleLayerLock(layerId: string) {
+  layerInstance.value?.toggleLayerLock(layerId)
+}
+
+function handleSetLayerColor(layerId: string, color: string) {
+  layerInstance.value?.setLayerColor(layerId, color)
+}
+
+function handleRemoveLayer(layerId: string) {
+  layerInstance.value?.removeLayer(layerId)
+}
+
+function handleAddLayer() {
+  layerInstance.value?.addLayer()
+}
+
+function handleRenameLayer(layerId: string, name: string) {
+  layerInstance.value?.renameLayer(layerId, name)
+}
+
 function updateCursor(x: number, y: number) {
   canvasInstance.value?.updateCursor(x, y)
+  cursorPosition.value = { x, y }
+  if (lastClickPosition.value) {
+    const dx = x - lastClickPosition.value.x
+    const dy = y - lastClickPosition.value.y
+    cursorDistance.value = Math.sqrt(dx * dx + dy * dy)
+    cursorAngle.value = Math.atan2(-dy, dx) * (180 / Math.PI)
+  }
 }
 
 // Scale handlers
@@ -705,6 +946,43 @@ watch([currentColor, currentSize], () => {
 // Keyboard shortcuts listener
 onMounted(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
+    // F8 for ortho toggle (works even when input focused)
+    if (e.key === 'F8') {
+      e.preventDefault()
+      toggleOrtho()
+      return
+    }
+
+    // F10 for polar tracking toggle
+    if (e.key === 'F10') {
+      e.preventDefault()
+      togglePolarTracking()
+      commandOutput(polarTrackingActive.value ? 'POLAR: ON' : 'POLAR: OFF')
+      return
+    }
+
+    // F7 for grid toggle
+    if (e.key === 'F7') {
+      e.preventDefault()
+      const canvas = canvasRef.value as any
+      if (canvas?.toggleGrid) {
+        canvas.toggleGrid()
+        commandOutput(canvas.gridEnabled ? 'GRID: ON' : 'GRID: OFF')
+      }
+      return
+    }
+
+    // F9 for grid snap toggle
+    if (e.key === 'F9') {
+      e.preventDefault()
+      const canvas = canvasRef.value as any
+      if (canvas?.toggleGridSnap) {
+        canvas.toggleGridSnap()
+        commandOutput(canvas.gridSnapEnabled ? 'GRID SNAP: ON' : 'GRID SNAP: OFF')
+      }
+      return
+    }
+
     // Ignore if typing in an input
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
       return
@@ -733,6 +1011,9 @@ onMounted(() => {
           break
         case 'L':
           setTool('line')
+          break
+        case 'K':
+          showLayerPanel.value = !showLayerPanel.value
           break
         case 'A':
           setTool('arrow')
@@ -788,6 +1069,8 @@ onMounted(() => {
     if (e.key === 'Escape') {
       setTool('select')
     }
+
+
   }
 
   window.addEventListener('keydown', handleKeyDown)

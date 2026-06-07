@@ -7,6 +7,9 @@ export interface KeyboardShortcutOptions {
   onRedo: () => void
   onDelete?: () => void
   onEscape?: () => void
+  onToggleOrtho?: () => void
+  onToggleGrid?: () => void
+  onToggleGridSnap?: () => void
   toolShortcuts?: Record<string, string> // key -> tool name mapping
 }
 
@@ -18,6 +21,9 @@ export function useKeyboardShortcuts(options: KeyboardShortcutOptions) {
     onRedo,
     onDelete,
     onEscape,
+    onToggleOrtho,
+    onToggleGrid,
+    onToggleGridSnap,
     toolShortcuts,
   } = options
 
@@ -72,6 +78,27 @@ export function useKeyboardShortcuts(options: KeyboardShortcutOptions) {
     if (event.key === 'Escape' && onEscape) {
       event.preventDefault()
       onEscape()
+      return
+    }
+
+    // F8 for ortho toggle
+    if (event.key === 'F8' && onToggleOrtho) {
+      event.preventDefault()
+      onToggleOrtho()
+      return
+    }
+
+    // F7 for grid toggle
+    if (event.key === 'F7' && onToggleGrid) {
+      event.preventDefault()
+      onToggleGrid()
+      return
+    }
+
+    // F9 for grid snap toggle
+    if (event.key === 'F9' && onToggleGridSnap) {
+      event.preventDefault()
+      onToggleGridSnap()
       return
     }
 

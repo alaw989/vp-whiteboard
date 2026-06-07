@@ -29,7 +29,22 @@
           }"
         />
 
-        <!-- Grid -->
+        <!-- Grid lines -->
+        <template v-if="grid.gridEnabled.value">
+          <v-line
+            v-for="(gl, idx) in gridLines"
+            :key="'grid-' + idx"
+            :config="{
+              points: gl.type === 'vertical'
+                ? [gl.position, -10000, gl.position, 10000]
+                : [-10000, gl.position, 10000, gl.position],
+              stroke: '#ddd',
+              strokeWidth: 0.5,
+              listening: false,
+              perfectDrawEnabled: false,
+            }"
+          />
+        </template>
         <!-- Document layers (PDFs, images) - rendered between background and drawings -->
         <template v-for="layer in visibleLayers" :key="layer.id">
           <v-group :config="{
@@ -132,6 +147,55 @@
               @dragmove="handleDragMove"
               @dragend="handleDragEnd"
             />
+
+            <!-- Polyline elements -->
+            <v-line
+              v-else-if="element.type === 'polyline'"
+              :config="{
+                ...getPolylineConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
+              @dragend="handleDragEnd"
+            />
+
+            <!-- Arc elements -->
+            <v-line
+              v-else-if="element.type === 'arc'"
+              :config="{
+                ...getArcConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
+              @dragend="handleDragEnd"
+            />
+
+            <!-- Fillet arc elements -->
+            <v-line
+              v-else-if="element.type === 'fillet-arc'"
+              :config="{
+                ...getFilletArcConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
+              @dragend="handleDragEnd"
+            />
+
+            <!-- Dimension elements -->
+            <template v-else-if="element.type === 'dimension'">
+              <template v-for="(cfg, idx) in getDimensionConfigs(element)" :key="element.id + '-d-' + idx">
+                <v-line :config="cfg" />
+              </template>
+              <v-text
+                :config="getDimensionTextConfig(element)"
+              />
+            </template>
 
             <!-- Image elements -->
             <v-image
@@ -265,6 +329,165 @@
             :config="currentShapePreview.config"
           />
 
+          <!-- Current polyline preview -->
+          <v-line
+            v-if="currentPolylinePreview"
+            :config="currentPolylinePreview"
+          />
+          <!-- Polyline vertex markers -->
+          <template v-if="polylineVertices.length > 0">
+            <v-circle
+              v-for="(vertex, idx) in polylineVertices"
+              :key="`poly-vert-${idx}`"
+              :config="{
+                x: vertex.x,
+                y: vertex.y,
+                radius: 4,
+                fill: idx === 0 ? '#22C55E' : '#3B82F6',
+                stroke: '#FFFFFF',
+                strokeWidth: 1,
+                listening: false,
+              }"
+            />
+          </template>
+
+          <!-- Current arc preview -->
+          <v-line
+            v-if="currentArcPreview"
+            :config="currentArcPreview"
+          />
+          <!-- Arc point markers -->
+          <template v-if="arcClickState.length > 0">
+            <v-circle
+              v-for="(pt, idx) in arcClickState"
+              :key="`arc-pt-${idx}`"
+              :config="{
+                x: pt[0],
+                y: pt[1],
+                radius: 5,
+                fill: idx === 0 ? '#22C55E' : idx === 1 ? '#F59E0B' : '#3B82F6',
+                stroke: '#FFFFFF',
+                strokeWidth: 2,
+                listening: false,
+              }"
+            />
+          </template>
+
+          <!-- Modification tool previews -->
+          <!-- Offset preview -->
+          <template v-if="currentTool === 'offset' && offsetPreview">
+            <v-line
+              v-if="offsetPreview.offsetEl.type === 'line'"
+              :config="{
+                points: [
+                  ...(offsetPreview.offsetEl.data as any).start,
+                  ...(offsetPreview.offsetEl.data as any).end,
+                ],
+                stroke: currentColor,
+                strokeWidth: currentSize,
+                dash: [6, 4],
+                listening: false,
+                opacity: 0.6,
+              }"
+            />
+            <v-line
+              v-if="offsetPreview.offsetEl.type === 'polyline'"
+              :config="{
+                points: (offsetPreview.offsetEl.data as any).points.flat(),
+                stroke: currentColor,
+                strokeWidth: currentSize,
+                dash: [6, 4],
+                listening: false,
+                opacity: 0.6,
+              }"
+            />
+          </template>
+
+          <!-- Mirror preview elements -->
+          <template v-if="currentTool === 'mirror' && mirrorPreviewElements.length > 0">
+            <template v-for="mel in mirrorPreviewElements" :key="'mirror-' + mel.id">
+              <v-line
+                v-if="mel.type === 'line'"
+                :config="{
+                  points: [...(mel.data as any).start, ...(mel.data as any).end],
+                  stroke: (mel.data as any).color,
+                  strokeWidth: (mel.data as any).size,
+                  dash: [6, 4],
+                  listening: false,
+                  opacity: 0.5,
+                }"
+              />
+              <v-line
+                v-if="mel.type === 'polyline'"
+                :config="{
+                  points: (mel.data as any).points.flat(),
+                  stroke: (mel.data as any).color,
+                  strokeWidth: (mel.data as any).size,
+                  dash: [6, 4],
+                  listening: false,
+                  opacity: 0.5,
+                }"
+              />
+            </template>
+          </template>
+          <!-- Mirror axis preview -->
+          <v-line
+            v-if="currentTool === 'mirror' && mirrorAxisFirst && mirrorAxisSecond"
+            :config="{
+              points: [mirrorAxisFirst.x, mirrorAxisFirst.y, mirrorAxisSecond.x, mirrorAxisSecond.y],
+              stroke: '#F59E0B',
+              strokeWidth: 1.5,
+              dash: [8, 4],
+              listening: false,
+            }"
+          />
+          <v-circle
+            v-if="currentTool === 'mirror' && mirrorAxisFirst"
+            :config="{
+              x: mirrorAxisFirst.x,
+              y: mirrorAxisFirst.y,
+              radius: 5,
+              fill: '#F59E0B',
+              stroke: '#FFFFFF',
+              strokeWidth: 2,
+              listening: false,
+            }"
+          />
+
+          <!-- Dimension tool preview -->
+          <template v-if="currentTool === 'dimension' && dimensionToolState">
+            <!-- First point marker -->
+            <v-circle
+              v-if="dimensionToolState.startPoint"
+              :config="{
+                x: dimensionToolState.startPoint[0],
+                y: dimensionToolState.startPoint[1],
+                radius: 4,
+                fill: '#8B5CF6',
+                stroke: '#FFFFFF',
+                strokeWidth: 2,
+                listening: false,
+              }"
+            />
+            <!-- Line from start to cursor (step: end) or start to end (step: offset) -->
+            <v-line
+              v-if="dimensionToolState.startPoint && dimensionToolState.step === 'end' && dimensionToolState.currentPos"
+              :config="{
+                points: [dimensionToolState.startPoint[0], dimensionToolState.startPoint[1], dimensionToolState.currentPos.x, dimensionToolState.currentPos.y],
+                stroke: '#8B5CF6',
+                strokeWidth: 1,
+                dash: [4, 4],
+                listening: false,
+              }"
+            />
+            <!-- Full dimension preview during offset step -->
+            <template v-if="dimensionToolState.step === 'offset' && dimensionToolState.startPoint && dimensionToolState.endPoint">
+              <template v-for="(cfg, idx) in getDimensionPreviewConfigs(dimensionToolState.startPoint, dimensionToolState.endPoint, dimensionToolState.previewOffset)" :key="'dim-preview-' + idx">
+                <v-line :config="cfg" />
+              </template>
+            </template>
+          </template>
+
           <!-- Current leader line preview for text annotation -->
           <v-line
             v-if="currentLeaderLinePreview"
@@ -309,17 +532,101 @@
             />
           </template>
 
-          <!-- Snap indicator circle -->
-          <v-circle
-            v-if="currentSnapPoint"
+          <!-- Snap indicator (different shapes per snap type) -->
+          <!-- Endpoint: green square -->
+          <v-rect
+            v-if="currentSnapPoint && (currentSnapPoint.type === 'endpoint' || currentSnapPoint.type === 'corner')"
+            :config="{
+              x: currentSnapPoint.x - 5,
+              y: currentSnapPoint.y - 5,
+              width: 10,
+              height: 10,
+              fill: '#22C55E',
+              stroke: '#15803D',
+              strokeWidth: 1,
+              listening: false,
+            }"
+          />
+          <!-- Midpoint: orange triangle (rendered as small rotated rect) -->
+          <v-regular-polygon
+            v-if="currentSnapPoint && currentSnapPoint.type === 'midpoint'"
             :config="{
               x: currentSnapPoint.x,
               y: currentSnapPoint.y,
-              radius: 8,
+              sides: 3,
+              radius: 6,
+              fill: '#F97316',
+              stroke: '#C2410C',
+              strokeWidth: 1,
+              listening: false,
+            }"
+          />
+          <!-- Center: blue circle -->
+          <v-circle
+            v-if="currentSnapPoint && currentSnapPoint.type === 'center'"
+            :config="{
+              x: currentSnapPoint.x,
+              y: currentSnapPoint.y,
+              radius: 5,
               fill: 'transparent',
-              stroke: '#F59E0B',
+              stroke: '#3B82F6',
               strokeWidth: 2,
-              dash: [3, 3],
+              listening: false,
+            }"
+          />
+          <!-- Perpendicular: purple diamond -->
+          <v-regular-polygon
+            v-if="currentSnapPoint && currentSnapPoint.type === 'perpendicular'"
+            :config="{
+              x: currentSnapPoint.x,
+              y: currentSnapPoint.y,
+              sides: 4,
+              radius: 6,
+              fill: '#A855F7',
+              stroke: '#7C3AED',
+              strokeWidth: 1,
+              rotation: 45,
+              listening: false,
+            }"
+          />
+          <!-- Tangent: cyan X shape -->
+          <v-regular-polygon
+            v-if="currentSnapPoint && currentSnapPoint.type === 'tangent'"
+            :config="{
+              x: currentSnapPoint.x,
+              y: currentSnapPoint.y,
+              sides: 4,
+              radius: 6,
+              fill: '#06B6D4',
+              stroke: '#0891B2',
+              strokeWidth: 1,
+              rotation: 0,
+              listening: false,
+            }"
+          />
+          <!-- Nearest: amber dot -->
+          <v-circle
+            v-if="currentSnapPoint && currentSnapPoint.type === 'nearest'"
+            :config="{
+              x: currentSnapPoint.x,
+              y: currentSnapPoint.y,
+              radius: 4,
+              fill: '#F59E0B',
+              stroke: '#D97706',
+              strokeWidth: 1,
+              listening: false,
+            }"
+          />
+
+          <!-- Polar tracking guide line -->
+          <v-line
+            v-if="polarTrackingResult?.snapped && isDrawing"
+            :config="{
+              points: getGuideLinePoints(polarTrackingResult),
+              stroke: '#22D3EE',
+              strokeWidth: 1,
+              dash: [6, 4],
+              listening: false,
             }"
           />
         </v-group>
@@ -443,7 +750,7 @@
 
 <script setup lang="ts">
 import { getStroke } from 'perfect-freehand'
-import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, StampElement, MeasurementDistanceElement, MeasurementAreaElement, UserPresence, DocumentLayer } from '~/types'
+import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, StampElement, MeasurementDistanceElement, MeasurementAreaElement, PolylineElement, ArcElement, FilletArcElement, DimensionElement, UserPresence, DocumentLayer } from '~/types'
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
 import WhiteboardCursorPointer from '~/components/whiteboard/WhiteboardCursorPointer.vue'
 import type { PDFLoadingState } from '~/types'
@@ -452,49 +759,35 @@ import { useViewport } from '~/composables/useViewport'
 import { useCursors, type CursorState } from '~/composables/useCursors'
 import { useMeasurements } from '~/composables/useMeasurements'
 import { useSnapping } from '~/composables/useSnapping'
+import { useOrthoMode } from '~/composables/useOrthoMode'
 import { toastError } from '~/composables/useToast'
+import { useToolHandlers, type ToolContext } from '~/composables/useToolHandlers'
+import { usePolarTracking } from '~/composables/usePolarTracking'
+import { useSelectTool } from '~/composables/tools/useSelectTool'
+import { usePanTool } from '~/composables/tools/usePanTool'
+import { usePenTool } from '~/composables/tools/usePenTool'
+import { useHighlighterTool } from '~/composables/tools/useHighlighterTool'
+import { useLineTool } from '~/composables/tools/useLineTool'
+import { useArrowTool } from '~/composables/tools/useArrowTool'
+import { useTextAnnotationTool } from '~/composables/tools/useTextAnnotationTool'
+import { useRectangleTool } from '~/composables/tools/useRectangleTool'
+import { useCircleTool } from '~/composables/tools/useCircleTool'
+import { useEllipseTool } from '~/composables/tools/useEllipseTool'
+import { useStampTool } from '~/composables/tools/useStampTool'
+import { useEraserTool } from '~/composables/tools/useEraserTool'
+import { useMeasureDistanceTool } from '~/composables/tools/useMeasureDistanceTool'
+import { useMeasureAreaTool } from '~/composables/tools/useMeasureAreaTool'
+import { usePolylineTool } from '~/composables/tools/usePolylineTool'
+import { useArcTool } from '~/composables/tools/useArcTool'
+import { useOffsetTool } from '~/composables/tools/useOffsetTool'
+import { useTrimTool } from '~/composables/tools/useTrimTool'
+import { useExtendTool } from '~/composables/tools/useExtendTool'
+import { useFilletTool } from '~/composables/tools/useFilletTool'
+import { useMirrorTool } from '~/composables/tools/useMirrorTool'
+import { useDimensionTool } from '~/composables/tools/useDimensionTool'
+import { useGrid } from '~/composables/useGrid'
 
-// Stamp configurations with styling
-const STAMP_CONFIGS = {
-  APPROVED: {
-    text: 'APPROVED',
-    backgroundColor: '#10B981',  // Green
-    textColor: '#FFFFFF',
-    borderColor: '#059669',
-    fontSize: 24,
-    padding: 12,
-    borderRadius: 4,
-  },
-  REVISED: {
-    text: 'REVISED',
-    backgroundColor: '#F59E0B',  // Amber
-    textColor: '#FFFFFF',
-    borderColor: '#D97706',
-    fontSize: 24,
-    padding: 12,
-    borderRadius: 4,
-  },
-  NOTE: {
-    text: 'NOTE',
-    backgroundColor: '#3B82F6',  // Blue
-    textColor: '#FFFFFF',
-    borderColor: '#2563EB',
-    fontSize: 20,
-    padding: 10,
-    borderRadius: 4,
-  },
-  'FOR REVIEW': {
-    text: 'FOR REVIEW',
-    backgroundColor: '#EF4444',  // Red
-    textColor: '#FFFFFF',
-    borderColor: '#DC2626',
-    fontSize: 20,
-    padding: 10,
-    borderRadius: 4,
-  },
-} as const
-
-export type StampType = keyof typeof STAMP_CONFIGS
+import type { StampType } from '~/composables/tools/useStampTool'
 
 const props = defineProps<{
   whiteboardId: string
@@ -521,6 +814,9 @@ const props = defineProps<{
   addDocumentLayer?: ((layer: any) => void) | null
   updateDocumentLayer?: ((id: string, updates: any) => void) | null
   removeDocumentLayer?: ((id: string) => void) | null
+  // Layer visibility filtering
+  hiddenLayerIds?: Set<string>
+  activeLayerId?: string
 }>()
 
 const emit = defineEmits<{
@@ -586,7 +882,8 @@ const {
 })
 
 // Snapping composable
-const { findSnapPoint } = useSnapping({ threshold: 10 })
+const snapping = useSnapping({ threshold: 10 })
+const { findSnapPoint } = snapping
 
 // Selection composable
 const {
@@ -807,6 +1104,55 @@ function getElementBoundingBox(element: CanvasElement): { left: number; right: n
       break
     }
 
+    case 'polyline': {
+      const data = element.data as PolylineElement
+      if (data.points.length === 0) {
+        bbox = { left: 0, right: 0, top: 0, bottom: 0 }
+      } else {
+        const first = data.points[0]!
+        let minX = first[0], maxX = first[0]
+        let minY = first[1], maxY = first[1]
+        for (let i = 1; i < data.points.length; i++) {
+          const p = data.points[i]!
+          minX = Math.min(minX, p[0])
+          maxX = Math.max(maxX, p[0])
+          minY = Math.min(minY, p[1])
+          maxY = Math.max(maxY, p[1])
+        }
+        const padding = data.size / 2 + 10
+        bbox = {
+          left: minX - padding,
+          right: maxX + padding,
+          top: minY - padding,
+          bottom: maxY + padding,
+        }
+      }
+      break
+    }
+
+    case 'arc': {
+      const data = element.data as ArcElement
+      const allPoints = [data.start, data.through, data.end]
+      const first = allPoints[0]!
+      let minX = first[0], maxX = first[0]
+      let minY = first[1], maxY = first[1]
+      for (let i = 1; i < allPoints.length; i++) {
+        const p = allPoints[i]!
+        minX = Math.min(minX, p[0])
+        maxX = Math.max(maxX, p[0])
+        minY = Math.min(minY, p[1])
+        maxY = Math.max(maxY, p[1])
+      }
+      const padding = data.size / 2 + 10
+      bbox = {
+        left: minX - padding,
+        right: maxX + padding,
+        top: minY - padding,
+        bottom: maxY + padding,
+      }
+      break
+    }
+
     case 'image': {
       const data = element.data as ImageElement
       bbox = {
@@ -901,6 +1247,32 @@ function getElementBoundingBox(element: CanvasElement): { left: number; right: n
       break
     }
 
+    case 'dimension': {
+      const data = element.data as DimensionElement
+      const allX = [data.start[0], data.end[0]]
+      const allY = [data.start[1], data.end[1]]
+      // Include offset dimension line position
+      const dx = data.end[0] - data.start[0]
+      const dy = data.end[1] - data.start[1]
+      const len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 0) {
+        const nx = -dy / len
+        const ny = dx / len
+        allX.push(data.start[0] + nx * data.offset)
+        allX.push(data.end[0] + nx * data.offset)
+        allY.push(data.start[1] + ny * data.offset)
+        allY.push(data.end[1] + ny * data.offset)
+      }
+      const padding = 30
+      bbox = {
+        left: Math.min(...allX) - padding,
+        right: Math.max(...allX) + padding,
+        top: Math.min(...allY) - padding,
+        bottom: Math.max(...allY) + padding,
+      }
+      break
+    }
+
     default:
       bbox = { left: 0, right: 0, top: 0, bottom: 0 }
   }
@@ -933,16 +1305,23 @@ function isElementInViewport(
  * Only filters when element count >= 500 for performance
  */
 const visibleElements = computed(() => {
-  // If we have fewer than 500 elements, return all (no filtering needed)
-  if (props.elements.length < 500) {
-    return props.elements
+  let filtered = props.elements
+
+  // Filter out elements on hidden layers
+  if (props.hiddenLayerIds && props.hiddenLayerIds.size > 0) {
+    filtered = filtered.filter(el => !props.hiddenLayerIds!.has(el.layerId || 'default'))
+  }
+
+  // If we have fewer than 500 elements, return all (no viewport culling needed)
+  if (filtered.length < 500) {
+    return filtered
   }
 
   // Get viewport bounds for culling
   const bounds = getViewportBounds(stageWidth.value, stageHeight.value)
 
   // Filter elements that intersect with viewport
-  return props.elements.filter(element => isElementInViewport(element, bounds))
+  return filtered.filter(element => isElementInViewport(element, bounds))
 })
 
 // Watch elements changes to clear bounding box cache
@@ -970,8 +1349,8 @@ watch(() => props.elements, (newElements, oldElements) => {
 
 // Drawing state
 const isDrawing = ref(false)
-const currentPressure = ref(0.5) // Current pressure from pointer/stylus (0-1, default 0.5)
-const currentPointerType = ref<'mouse' | 'pen' | 'touch'>('mouse') // Track input type
+const currentPressure = ref(0.5)
+const currentPointerType = ref<'mouse' | 'pen' | 'touch'>('mouse')
 
 // Gesture state for two-finger pan using pointer events
 const activePointers = ref<Map<number, {x: number, y: number}>>(new Map())
@@ -980,33 +1359,256 @@ const gestureState = ref({
   lastViewport: { x: 0, y: 0, zoom: 1 },
 })
 
-// Manual pan tool state (for pan tool without Konva draggable)
+// Manual pan tool state
 const panStartPointer = ref<{x: number, y: number} | null>(null)
 const panStartViewport = ref<{x: number, y: number} | null>(null)
-// Local ref to track if pan tool is active (separate from composable's isPanning)
 const isPanToolActive = ref(false)
-const currentStrokePoints = ref<[number, number, number][]>([])
-const currentStrokeId = ref<string | null>(null)
+const currentSnapPoint = ref<{x: number, y: number, type?: string} | null>(null)
 
-// Text annotation state
-const textAnnotationStart = ref<{x: number, y: number} | null>(null)
-const currentLeaderLineEnd = ref<{x: number, y: number} | null>(null)
-const pendingAnnotationText = ref('')
-const showAnnotationInput = ref(false)
-const annotationInputPosition = ref<{x: number, y: number}>({ x: 0, y: 0 })
+// Polar tracking
+const polarTracking = usePolarTracking()
+const polarTrackingResult = ref<{ point: { x: number; y: number }; angle: number; snapped: boolean } | null>(null)
 
-// Arrow and line drawing state
-const arrowStart = ref<{x: number, y: number} | null>(null)
-const currentArrowEnd = ref<{x: number, y: number} | null>(null)
-const lineStart = ref<{x: number, y: number} | null>(null)
-const currentLineEnd = ref<{x: number, y: number} | null>(null)
+// Grid composable
+const grid = useGrid()
+const gridLines = computed(() =>
+  grid.getVisibleGridLines(viewport.value, stageWidth.value, stageHeight.value)
+)
 
-// Shape drawing state
-const shapeStart = ref<{x: number, y: number} | null>(null)
-const currentShapeEnd = ref<{x: number, y: number} | null>(null)
+// Unified constraint pipeline: ortho mode (polar tracking is handled at tool level)
+// Exposed to parent via props/events for ortho toggle
+const orthoMode = useOrthoMode()
+const orthoEnabled = orthoMode.isOrthoEnabled
 
-// Measurement tool state
-const currentSnapPoint = ref<{x: number, y: number} | null>(null)
+/**
+ * Unified constraint pipeline applied in priority order:
+ * 1. Ortho (H/V lock)
+ * 2. Polar tracking (angle snap)
+ * Ortho takes priority; polar is applied when ortho is off.
+ */
+function constrainPoint(origin: { x: number; y: number }, cursor: { x: number; y: number }): { x: number; y: number } {
+  // Ortho first
+  if (orthoEnabled.value) {
+    const orthoResult = orthoMode.constrainPoint(origin, cursor)
+    polarTrackingResult.value = null
+    return orthoResult
+  }
+
+  // Polar tracking
+  if (polarTracking.isPolarEnabled.value) {
+    const result = polarTracking.constrainPoint(origin, cursor)
+    polarTrackingResult.value = result
+    return result.point
+  }
+
+  polarTrackingResult.value = null
+
+  // Grid snap (lowest priority)
+  if (grid.gridSnapEnabled.value) {
+    return grid.snapToGrid(cursor, viewport.value)
+  }
+
+  return cursor
+}
+
+// Tool handler registry
+const toolRegistry = useToolHandlers()
+
+// Create tool context (shared by all tools)
+const toolContext: ToolContext = {
+  get userId() { return props.userId },
+  get userName() { return props.userName },
+  get currentTool() { return props.currentTool as any },
+  get currentColor() { return props.currentColor },
+  get currentSize() { return props.currentSize },
+  get currentStampType() { return props.currentStampType },
+  get elements() { return props.elements },
+  isDrawing,
+  viewport,
+  stageRef,
+  layerRef,
+  currentPressure,
+  currentPointerType,
+  getPointerPos,
+  getStagePointerPos,
+  emitElementAdd: (el) => {
+    const layerId = props.activeLayerId || 'default'
+    if (layerId !== 'default' || el.layerId) {
+      emit('element-add', { ...el, layerId })
+    } else {
+      emit('element-add', el)
+    }
+  },
+  emitElementDelete: (id) => emit('element-delete', id),
+  emitElementUpdate: (id, updates) => emit('element-update', id, updates),
+  emitCursorUpdate: (x, y) => emit('cursor-update', x, y),
+  currentSnapPoint,
+  findSnapPoint: (pos, elements) => {
+    const snap = findSnapPoint(pos, elements)
+    return snap ? { x: snap.x, y: snap.y, type: snap.type } : null
+  },
+  constrainPoint,
+  polarTrackingResult,
+  applyDirectDistance: (dist: number) => {
+    // Find the active drawing tool's start point
+    const origin = lineStart.value || arrowStart.value || shapeStart.value
+    if (!origin || !isDrawing.value) return false
+
+    // Determine the current angle from the last cursor movement
+    const currentEnd = currentLineEnd.value || currentArrowEnd.value || currentShapeEnd.value
+    if (!currentEnd) return false
+
+    let angle = Math.atan2(currentEnd.y - origin.y, currentEnd.x - origin.x)
+
+    // Apply ortho: snap to nearest cardinal
+    if (orthoEnabled.value) {
+      const dx = currentEnd.x - origin.x
+      const dy = currentEnd.y - origin.y
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        angle = dx >= 0 ? 0 : Math.PI
+      } else {
+        angle = dy >= 0 ? Math.PI / 2 : -Math.PI / 2
+      }
+    }
+
+    // Calculate endpoint at distance along angle
+    const endpoint = {
+      x: origin.x + dist * Math.cos(angle),
+      y: origin.y + dist * Math.sin(angle),
+    }
+
+    // Dispatch mouseup with the calculated endpoint to complete the drawing
+    toolRegistry.dispatchMouseUp(props.currentTool as any, null, endpoint)
+    return true
+  },
+  setCursor(cursor: string) {
+    const stage = stageRef.value?.getNode()
+    const container = stage?.container()
+    if (container) container.style.setProperty('cursor', cursor)
+  },
+  clearCursor() {
+    const stage = stageRef.value?.getNode()
+    const container = stage?.container()
+    if (container) container.style.removeProperty('cursor')
+  },
+  get activeStrokes() { return props.activeStrokes },
+  get startActiveStroke() { return props.startActiveStroke },
+  get broadcastStrokePoint() { return props.broadcastStrokePoint },
+  get endActiveStroke() { return props.endActiveStroke },
+  isMeasuring,
+  measurementStart,
+  currentMeasurementEnd,
+  previewLine,
+  startDistanceMeasurement,
+  updateMeasurementPreview,
+  completeDistanceMeasurement,
+  cancelMeasurement,
+  measureArea,
+  selectedId,
+  selectElementAtPosition,
+  isPanning,
+  enablePan,
+  disablePan,
+  setViewportDirect,
+  panStartPointer,
+  panStartViewport,
+  get activeLayerId() { return props.activeLayerId || 'default' },
+}
+
+// Instantiate all tool handlers
+const selectTool = useSelectTool(toolContext)
+const panToolHandler = usePanTool(toolContext)
+const penTool = usePenTool(toolContext)
+const highlighterTool = useHighlighterTool(toolContext)
+const lineTool = useLineTool(toolContext)
+const arrowTool = useArrowTool(toolContext)
+const textAnnotationTool = useTextAnnotationTool(toolContext)
+const rectangleTool = useRectangleTool(toolContext)
+const circleTool = useCircleTool(toolContext)
+const ellipseTool = useEllipseTool(toolContext)
+const stampTool = useStampTool(toolContext)
+const eraserTool = useEraserTool(toolContext)
+const measureDistanceTool = useMeasureDistanceTool(toolContext)
+const measureAreaTool = useMeasureAreaTool(toolContext)
+const polylineTool = usePolylineTool(toolContext)
+const arcTool = useArcTool(toolContext)
+const offsetTool = useOffsetTool(toolContext)
+const trimTool = useTrimTool(toolContext)
+const extendTool = useExtendTool(toolContext)
+const filletTool = useFilletTool(toolContext)
+const mirrorTool = useMirrorTool(toolContext)
+const dimensionTool = useDimensionTool(toolContext)
+
+// Register all tools
+toolRegistry.register('select', selectTool)
+toolRegistry.register('pan', panToolHandler)
+toolRegistry.register('pen', penTool)
+toolRegistry.register('highlighter', highlighterTool)
+toolRegistry.register('line', lineTool)
+toolRegistry.register('arrow', arrowTool)
+toolRegistry.register('text-annotation', textAnnotationTool)
+toolRegistry.register('rectangle', rectangleTool)
+toolRegistry.register('circle', circleTool)
+toolRegistry.register('ellipse', ellipseTool)
+toolRegistry.register('stamp', stampTool)
+toolRegistry.register('eraser', eraserTool)
+toolRegistry.register('measure-distance', measureDistanceTool)
+toolRegistry.register('measure-area', measureAreaTool)
+toolRegistry.register('polyline', polylineTool)
+toolRegistry.register('arc', arcTool)
+toolRegistry.register('offset', offsetTool)
+toolRegistry.register('trim', trimTool)
+toolRegistry.register('extend', extendTool)
+toolRegistry.register('fillet', filletTool)
+toolRegistry.register('mirror', mirrorTool)
+toolRegistry.register('dimension', dimensionTool)
+
+// Expose tool state for template rendering
+const currentStrokePoints = penTool.state!.currentStrokePoints
+const currentStrokeId = penTool.state!.currentStrokeId
+const arrowStart = arrowTool.state!.arrowStart
+const currentArrowEnd = arrowTool.state!.currentArrowEnd
+const lineStart = lineTool.state!.lineStart
+const currentLineEnd = lineTool.state!.currentLineEnd
+const shapeStart = rectangleTool.state!.shapeStart
+const currentShapeEnd = rectangleTool.state!.currentShapeEnd
+const textAnnotationStart = textAnnotationTool.state!.textAnnotationStart
+const currentLeaderLineEnd = textAnnotationTool.state!.currentLeaderLineEnd
+const showAnnotationInput = textAnnotationTool.state!.showAnnotationInput
+const pendingAnnotationText = textAnnotationTool.state!.pendingAnnotationText
+const annotationInputPosition = textAnnotationTool.state!.annotationInputPosition
+const confirmAnnotation = textAnnotationTool.state!.confirmAnnotation
+const cancelAnnotation = textAnnotationTool.state!.cancelAnnotation
+
+// Polyline tool state
+const polylineVertices = polylineTool.state!.vertices
+const polylineCurrentVertex = polylineTool.state!.currentVertex
+const polylineIsDrawing = polylineTool.state!.isDrawing
+
+// Arc tool state
+const arcClickState = arcTool.state!.clickPoints
+const arcCurrentCursor = arcTool.state!.currentCursor
+const arcIsDrawing = arcTool.state!.isDrawing
+
+// Modification tool state
+const offsetPreview = offsetTool.state!.previewResult
+const trimHighlightId = trimTool.state!.highlightId
+const trimCuttingEdgeId = trimTool.state!.cuttingEdgeId
+const trimStep = trimTool.state!.step
+const extendHighlightId = extendTool.state!.highlightId
+const extendBoundaryId = extendTool.state!.boundaryId
+const extendStep = extendTool.state!.step
+const filletHighlightId = filletTool.state!.highlightId
+const filletFirstLineId = filletTool.state!.firstLineId
+const filletStep = filletTool.state!.step
+const mirrorSelectedIds = mirrorTool.state!.selectedIds
+const mirrorAxisFirst = mirrorTool.state!.axisFirst
+const mirrorAxisSecond = mirrorTool.state!.axisSecond
+const mirrorPreviewElements = mirrorTool.state!.previewElements
+const mirrorStep = mirrorTool.state!.step
+
+// Dimension tool state
+const dimensionToolState = dimensionTool.state
 
 // Measurement edit dialog state
 const showMeasurementEditDialog = ref(false)
@@ -1173,537 +1775,39 @@ function updatePointerState(event: any) {
   }
 }
 
-/**
- * Erase element at the given position
- * Uses hit detection to find and remove elements
- * Note: x, y are canvas coordinates (already divided by zoom)
- */
-function eraseElementAt(stageX: number, stageY: number) {
-  const stage = stageRef.value?.getNode()
-  if (!stage) return
-
-  const shapes = stage.getAllIntersections({ x: stageX, y: stageY })
-
-  // Filter out document layer and background
-  const canvasShapes = shapes.filter((shape: any) => {
-    const parent = shape.getParent()
-    const layer = parent?.getParent()
-    return layer?.name !== 'documentLayer'
-  })
-
-  // Delete the first element found
-  // Try multiple ways to get the element ID since vue-konva might not set it properly
-  for (const shape of canvasShapes) {
-    let elementId = shape.id()
-
-    // If no ID on shape, check parent (groups have the ID)
-    if (!elementId) {
-      const parent = shape.getParent()
-      if (parent && parent !== stage) {
-        elementId = parent.id()
-      }
-    }
-
-    // Also check attrs as fallback
-    if (!elementId && shape.attrs?.id) {
-      elementId = shape.attrs.id
-    }
-
-    if (elementId) {
-      emit('element-delete', elementId)
-      break
-    }
-  }
-}
-
-/**
- * Place a stamp at the given position
- * Stamps are placed centered on the click position
- */
-function placeStamp(x: number, y: number, stampType: StampType) {
-  const config = STAMP_CONFIGS[stampType]
-  const fontSize = config.fontSize
-
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')!
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`
-  const textWidth = ctx.measureText(config.text).width
-  const width = textWidth + config.padding * 2
-  const height = fontSize + config.padding * 2
-
-  const element: CanvasElement = {
-    id: `${props.userId}-${Date.now()}`,
-    type: 'stamp',
-    userId: props.userId,
-    userName: props.userName,
-    timestamp: Date.now(),
-    data: {
-      stampType,
-      text: config.text,
-      x: x - width / 2,  // Center on click
-      y: y - height / 2,
-      width,
-      height,
-      backgroundColor: config.backgroundColor,
-      textColor: config.textColor,
-      borderColor: config.borderColor,
-      fontSize,
-      padding: config.padding,
-      borderRadius: config.borderRadius,
-    } as StampElement,
-  }
-
-  emit('element-add', element)
-}
-
-// Mouse handlers
+// Mouse handlers — dispatch through tool registry
 function handleMouseDown(event: any) {
-  // Pan tool - track drag state but let Konva's draggable handle the movement
-  if (props.currentTool === 'pan') {
-    isDrawing.value = true
-    return
-  }
-
-  // Select tool - handle element selection
-  if (props.currentTool === 'select') {
-    const stagePos = getStagePointerPos()
-    selectElementAtPosition(stagePos.x, stagePos.y)
-    return
-  }
-
-  // Drawing tools
   const pos = getPointerPos(event)
-
-  // Stamp tool - place stamp immediately on click
-  if (props.currentTool === 'stamp' && props.currentStampType) {
-    placeStamp(pos.x, pos.y, props.currentStampType)
-    return
-  }
-
-  // Measure distance tool - click-click interaction
-  if (props.currentTool === 'measure-distance') {
-    if (!isMeasuring.value) {
-      // First click - start measurement
-      const snap = findSnapPoint(pos, props.elements)
-      const startPoint: [number, number] = snap ? [snap.x, snap.y] : [pos.x, pos.y]
-      startDistanceMeasurement(startPoint)
-    } else {
-      // Second click - complete measurement
-      const snap = findSnapPoint(pos, props.elements)
-      const endPoint: [number, number] = snap ? [snap.x, snap.y] : [pos.x, pos.y]
-      completeDistanceMeasurement(endPoint, props.currentColor)
-    }
-    return
-  }
-
-  isDrawing.value = true
-
-  // Arrow tool - start drawing arrow
-  if (props.currentTool === 'arrow') {
-    arrowStart.value = pos
-    currentArrowEnd.value = pos
-    return
-  }
-
-  // Line tool - start drawing line
-  if (props.currentTool === 'line') {
-    lineStart.value = pos
-    currentLineEnd.value = pos
-    return
-  }
-
-  // Measure area tool - select shape to measure
-  if (props.currentTool === 'measure-area') {
-    // Find the shape at clicked position
-    const stage = stageRef.value?.getNode()
-    if (stage) {
-      const stagePos = getStagePointerPos()
-      const allShapes = stage.getAllIntersections({ x: stagePos.x, y: stagePos.y })
-      const canvasShapes = allShapes.filter((shape: any) => {
-        const parent = shape.getParent()
-        const layer = parent?.getParent()
-        return layer?.name !== 'documentLayer'
-      })
-
-      let measured = false
-      for (const shape of canvasShapes) {
-        const elementId = shape.id() || shape.getParent()?.id()
-        if (elementId) {
-          const targetElement = props.elements.find(el => el.id === elementId)
-          if (targetElement && (targetElement.type === 'rectangle' || targetElement.type === 'circle' || targetElement.type === 'ellipse')) {
-            measureArea(elementId, props.currentColor)
-            measured = true
-            break
-          }
-        }
-      }
-      if (!measured) {
-        toastError('Click on a rectangle, circle, or ellipse to measure its area')
-      }
-    }
-    return
-  }
-
-  // Shape tools - start drawing shape
-  if (props.currentTool === 'rectangle' || props.currentTool === 'circle' || props.currentTool === 'ellipse') {
-    shapeStart.value = pos
-    currentShapeEnd.value = pos
-    return
-  }
-
-  if (props.currentTool === 'pen' || props.currentTool === 'highlighter') {
-    // Start stroke with captured pressure from pointer event
-    currentStrokePoints.value = [[pos.x, pos.y, currentPressure.value]]
-    isDrawing.value = true
-  } else if (props.currentTool === 'eraser') {
-    const stagePos = getStagePointerPos()
-    eraseElementAt(stagePos.x, stagePos.y)
-  } else if (props.currentTool === 'text-annotation') {
-    // Text annotation tool - click to place text, drag to set leader line
-    textAnnotationStart.value = pos
-    currentLeaderLineEnd.value = pos
-  } else {
-    // Other tools - add default pressure of 0.5
-    currentStrokePoints.value = [[pos.x, pos.y, 0.5]]
-  }
+  toolRegistry.dispatchMouseDown(props.currentTool as any, event, pos)
 }
 
 function handleMouseMove(event: any) {
   const pos = getPointerPos(event)
 
-  // Update local cursor position via Awareness API
+  // Update cursor presence (shared across all tools)
   updateLocalCursor(pos.x, pos.y, props.currentTool as any)
-
-  // Also emit cursor update for parent (backward compatibility)
   emit('cursor-update', pos.x, pos.y)
-
-  // Handle measurement tool snapping (even when not drawing)
-  if (props.currentTool === 'measure-distance' && isMeasuring.value) {
-    const snap = findSnapPoint(pos, props.elements)
-    const updatePos: [number, number] = snap ? [snap.x, snap.y] : [pos.x, pos.y]
-    updateMeasurementPreview(updatePos)
-    currentSnapPoint.value = snap || null
-    return
-  }
 
   // Clear snap point for non-measurement tools
   if (props.currentTool !== 'measure-distance') {
     currentSnapPoint.value = null
   }
 
-  // Measure area tool - update cursor when hovering over measurable shapes
-  if (props.currentTool === 'measure-area') {
-    const stage = stageRef.value?.getNode()
-    const container = stage?.container()
-    if (stage && container) {
-      const stagePos = getStagePointerPos()
-      const shapes = stage.getAllIntersections({ x: stagePos.x, y: stagePos.y })
-      const canvasShapes = shapes.filter((shape: any) => {
-        const parent = shape.getParent()
-        const layer = parent?.getParent()
-        return layer?.name !== 'documentLayer'
-      })
-      let overMeasurable = false
-      for (const shape of canvasShapes) {
-        const elementId = shape.id() || shape.getParent()?.id()
-        if (elementId) {
-          const el = props.elements.find(e => e.id === elementId)
-          if (el && (el.type === 'rectangle' || el.type === 'circle' || el.type === 'ellipse')) {
-            overMeasurable = true
-            break
-          }
-        }
-      }
-      container.style.cursor = overMeasurable ? 'pointer' : 'crosshair'
-    }
-    return
-  }
+  // Pan tool movement is handled in pointer handler
+  if (props.currentTool === 'pan') return
 
-  // Pan tool is handled by Konva's draggable (dragmove watcher updates viewport)
-  // Skip manual pan handling for pan tool
-  if (props.currentTool === 'pan') {
-    return
-  }
-
-  if (!isDrawing.value) {
-    return
-  }
-
-  // Update arrow preview
-  if (props.currentTool === 'arrow' && arrowStart.value) {
-    currentArrowEnd.value = pos
-    return
-  }
-
-  // Update line preview
-  if (props.currentTool === 'line' && lineStart.value) {
-    currentLineEnd.value = pos
-    return
-  }
-
-  // Update shape preview
-  if ((props.currentTool === 'rectangle' || props.currentTool === 'circle' || props.currentTool === 'ellipse') && shapeStart.value) {
-    currentShapeEnd.value = pos
-    return
-  }
-
-  // Update text annotation leader line preview
-  if (props.currentTool === 'text-annotation' && textAnnotationStart.value) {
-    currentLeaderLineEnd.value = pos
-    return
-  }
-
-  if (props.currentTool === 'pen' || props.currentTool === 'highlighter') {
-    currentStrokePoints.value.push([pos.x, pos.y, currentPressure.value])
-    // Log every 10th point to avoid spam
-    if (currentStrokePoints.value.length % 10 === 0) {
-    }
-  } else if (props.currentTool === 'eraser') {
-    const stagePos = getStagePointerPos()
-    eraseElementAt(stagePos.x, stagePos.y)
-  }
-  // ... other tool handling
+  toolRegistry.dispatchMouseMove(props.currentTool as any, event, pos)
 }
 
 function handleMouseUp(event: any) {
-  // Pan tool - Konva's draggable handles movement, dragmove watcher updates viewport
-  if (props.currentTool === 'pan') {
-    isDrawing.value = false
-    // Don't disable draggable - the watcher will handle cleanup when tool changes
-    return
-  }
-
-  // Only disable pan if we're not in pan tool mode (two-finger gesture)
+  // Handle two-finger gesture pan cleanup
   if (isPanning.value && props.currentTool !== 'pan') {
     disablePan()
     return
   }
 
-  if (!isDrawing.value) return
-
-  // Complete arrow drawing
-  if (props.currentTool === 'arrow' && arrowStart.value && currentArrowEnd.value) {
-    const start = arrowStart.value
-    const end = currentArrowEnd.value
-
-    const element: CanvasElement = {
-      id: `${props.userId}-${Date.now()}`,
-      type: 'arrow',
-      userId: props.userId,
-      userName: props.userName,
-      timestamp: Date.now(),
-      data: {
-        points: [[start.x, start.y], [end.x, end.y]],
-        pointerLength: 10,
-        pointerWidth: 10,
-        stroke: props.currentColor,
-        strokeWidth: props.currentSize,
-        fill: props.currentColor,
-      } as ArrowElement,
-    }
-    emit('element-add', element)
-
-    arrowStart.value = null
-    currentArrowEnd.value = null
-    isDrawing.value = false
-    return
-  }
-
-  // Complete line drawing
-  if (props.currentTool === 'line' && lineStart.value && currentLineEnd.value) {
-    const start = lineStart.value
-    const end = currentLineEnd.value
-
-    const element: CanvasElement = {
-      id: `${props.userId}-${Date.now()}`,
-      type: 'line',
-      userId: props.userId,
-      userName: props.userName,
-      timestamp: Date.now(),
-      data: {
-        start: [start.x, start.y],
-        end: [end.x, end.y],
-        color: props.currentColor,
-        size: props.currentSize,
-      } as LineElement,
-    }
-    emit('element-add', element)
-
-    lineStart.value = null
-    currentLineEnd.value = null
-    isDrawing.value = false
-    return
-  }
-
-  // Complete rectangle drawing
-  if (props.currentTool === 'rectangle' && shapeStart.value && currentShapeEnd.value) {
-    const start = shapeStart.value
-    const end = currentShapeEnd.value
-
-    const x = Math.min(start.x, end.x)
-    const y = Math.min(start.y, end.y)
-    const width = Math.abs(end.x - start.x)
-    const height = Math.abs(end.y - start.y)
-
-    if (width > 5 && height > 5) {  // Minimum size to avoid accidental clicks
-      const element: CanvasElement = {
-        id: `${props.userId}-${Date.now()}`,
-        type: 'rectangle',
-        userId: props.userId,
-        userName: props.userName,
-        timestamp: Date.now(),
-        data: {
-          x,
-          y,
-          width,
-          height,
-          stroke: props.currentColor,
-          strokeWidth: props.currentSize,
-          fill: 'transparent',
-        } as RectangleElement,
-      }
-      emit('element-add', element)
-    }
-
-    shapeStart.value = null
-    currentShapeEnd.value = null
-    isDrawing.value = false
-    return
-  }
-
-  // Complete circle drawing
-  if (props.currentTool === 'circle' && shapeStart.value && currentShapeEnd.value) {
-    const start = shapeStart.value
-    const end = currentShapeEnd.value
-
-    const dx = end.x - start.x
-    const dy = end.y - start.y
-    const radius = Math.sqrt(dx * dx + dy * dy)
-
-    if (radius > 5) {  // Minimum radius
-      const element: CanvasElement = {
-        id: `${props.userId}-${Date.now()}`,
-        type: 'circle',
-        userId: props.userId,
-        userName: props.userName,
-        timestamp: Date.now(),
-        data: {
-          cx: start.x,
-          cy: start.y,
-          radius,
-          stroke: props.currentColor,
-          strokeWidth: props.currentSize,
-          fill: 'transparent',
-        } as CircleElement,
-      }
-      emit('element-add', element)
-    }
-
-    shapeStart.value = null
-    currentShapeEnd.value = null
-    isDrawing.value = false
-    return
-  }
-
-  // Complete ellipse drawing
-  if (props.currentTool === 'ellipse' && shapeStart.value && currentShapeEnd.value) {
-    const start = shapeStart.value
-    const end = currentShapeEnd.value
-
-    const x = Math.min(start.x, end.x)
-    const y = Math.min(start.y, end.y)
-    const width = Math.abs(end.x - start.x)
-    const height = Math.abs(end.y - start.y)
-
-    if (width > 5 && height > 5) {
-      const element: CanvasElement = {
-        id: `${props.userId}-${Date.now()}`,
-        type: 'ellipse',
-        userId: props.userId,
-        userName: props.userName,
-        timestamp: Date.now(),
-        data: {
-          x: x + width / 2,  // Konva ellipse uses center position
-          y: y + height / 2,
-          radiusX: width / 2,
-          radiusY: height / 2,
-          rotation: 0,
-          stroke: props.currentColor,
-          strokeWidth: props.currentSize,
-          fill: 'transparent',
-        } as EllipseElement,
-      }
-      emit('element-add', element)
-    }
-
-    shapeStart.value = null
-    currentShapeEnd.value = null
-    isDrawing.value = false
-    return
-  }
-
-  // Complete text annotation - show input dialog
-  if (props.currentTool === 'text-annotation' && textAnnotationStart.value && currentLeaderLineEnd.value) {
-    const start = textAnnotationStart.value
-    const end = currentLeaderLineEnd.value
-
-    // Show input dialog at text position
-    annotationInputPosition.value = { x: start.x, y: start.y }
-    pendingAnnotationText.value = ''
-    showAnnotationInput.value = true
-
-    // Store leader line endpoint for when text is confirmed
-    ;(window as any).__pendingLeaderLine = {
-      start: [start.x, start.y],
-      end: [end.x, end.y],
-    }
-
-    textAnnotationStart.value = null
-    currentLeaderLineEnd.value = null
-    isDrawing.value = false
-    return
-  }
-
-  // Create pen or highlighter stroke element
-  if ((props.currentTool === 'pen' || props.currentTool === 'highlighter') && currentStrokePoints.value.length > 1) {
-    // Use perfect-freehand to render smooth stroke
-    const outline = getStroke(currentStrokePoints.value, {
-      size: props.currentSize,
-      thinning: props.currentTool === 'highlighter' ? 0 : 0.5,
-      smoothing: 0.5,
-      streamline: 0.5,
-    })
-
-    // Convert to flat array for Konva
-    const flatPoints = outline.flatMap(p => [p[0], p[1]])
-
-    const element: CanvasElement = {
-      id: `${props.userId}-${Date.now()}`,
-      type: 'stroke',
-      userId: props.userId,
-      userName: props.userName,
-      timestamp: Date.now(),
-      data: {
-        points: currentStrokePoints.value,
-        color: props.currentColor,
-        size: props.currentSize,
-        tool: props.currentTool,
-        smooth: true,
-      } as StrokeElement,
-    }
-
-    // End active stroke and move to permanent elements
-    if (currentStrokeId.value && props.endActiveStroke) {
-      props.endActiveStroke(currentStrokeId.value, element)
-    } else {
-      // Fallback to regular emit if no active stroke broadcasting
-      emit('element-add', element)
-    }
-  }
-
-  isDrawing.value = false
-  currentStrokePoints.value = []
-  currentStrokeId.value = null
+  const pos = getPointerPos(event)
+  toolRegistry.dispatchMouseUp(props.currentTool as any, event, pos)
 }
 
 // Track drag start position for delta calculation
@@ -1837,6 +1941,33 @@ function handleDragEnd(event: any) {
         scaleX: newScale.x,
         scaleY: newScale.y,
         rotation: newRotation,
+      }
+    }
+  } else if (element.type === 'polyline' || element.type === 'arc' || element.type === 'fillet-arc') {
+    // Polyline/arc/fillet-arc are v-line elements needing point transformation
+    const data = element.data as any
+    const startPos = dragStartPosition.value
+    if (startPos) {
+      const deltaX = newPosition.x - startPos.x
+      const deltaY = newPosition.y - startPos.y
+
+      if (element.type === 'polyline') {
+        updates.data = {
+          ...data,
+          points: data.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]),
+        }
+      } else if (element.type === 'arc') {
+        updates.data = {
+          ...data,
+          start: [data.start[0] + deltaX, data.start[1] + deltaY],
+          through: [data.through[0] + deltaX, data.through[1] + deltaY],
+          end: [data.end[0] + deltaX, data.end[1] + deltaY],
+        }
+      } else if (element.type === 'fillet-arc') {
+        updates.data = {
+          ...data,
+          center: [data.center[0] + deltaX, data.center[1] + deltaY],
+        }
       }
     }
   } else if (element.type === 'measurement-distance') {
@@ -2175,6 +2306,274 @@ function getEllipseConfig(element: CanvasElement) {
   }
 }
 
+function getPolylineConfig(element: CanvasElement) {
+  const data = element.data as PolylineElement
+  const flatPoints = data.points.flatMap(p => [p[0], p[1]])
+  return {
+    points: flatPoints,
+    stroke: data.color,
+    strokeWidth: data.size,
+    lineCap: 'round',
+    lineJoin: 'round',
+    closed: data.closed,
+    draggable: true,
+    hitStrokeWidth: 0,
+  }
+}
+
+function getArcConfig(element: CanvasElement) {
+  const data = element.data as ArcElement
+  const arcParams = calculateArcParams(data.start, data.through, data.end)
+  if (!arcParams) {
+    return {
+      points: [data.start[0], data.start[1], data.end[0], data.end[1]],
+      stroke: data.color,
+      strokeWidth: data.size,
+      lineCap: 'round',
+      draggable: true,
+      hitStrokeWidth: 0,
+    }
+  }
+  const segmentCount = 64
+  const angleStep = (arcParams.endAngle - arcParams.startAngle) / segmentCount
+  const points: number[] = []
+  for (let i = 0; i <= segmentCount; i++) {
+    const angle = arcParams.startAngle + angleStep * i
+    points.push(arcParams.cx + arcParams.radius * Math.cos(angle))
+    points.push(arcParams.cy + arcParams.radius * Math.sin(angle))
+  }
+  return {
+    points,
+    stroke: data.color,
+    strokeWidth: data.size,
+    lineCap: 'round',
+    lineJoin: 'round',
+    draggable: true,
+    hitStrokeWidth: 0,
+  }
+}
+
+function getFilletArcConfig(element: CanvasElement) {
+  const data = element.data as FilletArcElement
+  const segmentCount = 32
+  const points: number[] = []
+  // Determine sweep direction (shortest arc)
+  let sweep = data.endAngle - data.startAngle
+  if (sweep > Math.PI) sweep -= 2 * Math.PI
+  if (sweep < -Math.PI) sweep += 2 * Math.PI
+  const angleStep = sweep / segmentCount
+  for (let i = 0; i <= segmentCount; i++) {
+    const angle = data.startAngle + angleStep * i
+    points.push(data.center[0] + data.radius * Math.cos(angle))
+    points.push(data.center[1] + data.radius * Math.sin(angle))
+  }
+  return {
+    points,
+    stroke: data.color,
+    strokeWidth: data.size,
+    lineCap: 'round',
+    lineJoin: 'round',
+    draggable: true,
+    hitStrokeWidth: 0,
+  }
+}
+
+// Dimension rendering helpers
+function getDimensionLineParts(
+  start: [number, number],
+  end: [number, number],
+  offset: number,
+): { dimLineStart: { x: number; y: number }; dimLineEnd: { x: number; y: number }; extStart1: { x: number; y: number }; extStart2: { x: number; y: number }; extEnd1: { x: number; y: number }; extEnd2: { x: number; y: number } } {
+  const dx = end[0] - start[0]
+  const dy = end[1] - start[1]
+  const len = Math.sqrt(dx * dx + dy * dy)
+  if (len === 0) {
+    return {
+      dimLineStart: { x: start[0], y: start[1] + offset },
+      dimLineEnd: { x: end[0], y: end[1] + offset },
+      extStart1: { x: start[0], y: start[1] },
+      extStart2: { x: start[0], y: start[1] + offset },
+      extEnd1: { x: end[0], y: end[1] },
+      extEnd2: { x: end[0], y: end[1] + offset },
+    }
+  }
+  // Perpendicular unit vector (left side = positive offset)
+  const nx = -dy / len
+  const ny = dx / len
+
+  const dimLineStart = { x: start[0] + nx * offset, y: start[1] + ny * offset }
+  const dimLineEnd = { x: end[0] + nx * offset, y: end[1] + ny * offset }
+
+  // Extension lines: from the measured points to slightly past the dimension line
+  const extOvershoot = 6
+  const extEnd1Offset = offset >= 0 ? offset + extOvershoot : offset - extOvershoot
+
+  return {
+    dimLineStart,
+    dimLineEnd,
+    extStart1: { x: start[0], y: start[1] },
+    extStart2: { x: start[0] + nx * extEnd1Offset, y: start[1] + ny * extEnd1Offset },
+    extEnd1: { x: end[0], y: end[1] },
+    extEnd2: { x: end[0] + nx * extEnd1Offset, y: end[1] + ny * extEnd1Offset },
+  }
+}
+
+function getDimensionConfigs(element: CanvasElement) {
+  const data = element.data as DimensionElement
+  const parts = getDimensionLineParts(data.start, data.end, data.offset)
+  const tickSize = 6
+
+  const dx = data.end[0] - data.start[0]
+  const dy = data.end[1] - data.start[1]
+  const len = Math.sqrt(dx * dx + dy * dy)
+  // Unit vector along dimension line
+  const ux = len > 0 ? dx / len : 1
+  const uy = len > 0 ? dy / len : 0
+  // Perpendicular unit vector
+  const nx = -uy
+  const ny = ux
+
+  const stroke = data.color
+  const strokeWidth = Math.max(data.size, 1)
+
+  return [
+    // Dimension line
+    {
+      points: [parts.dimLineStart.x, parts.dimLineStart.y, parts.dimLineEnd.x, parts.dimLineEnd.y],
+      stroke,
+      strokeWidth,
+      listening: false,
+      hitStrokeWidth: 10,
+    },
+    // Extension line 1
+    {
+      points: [parts.extStart1.x, parts.extStart1.y, parts.extStart2.x, parts.extStart2.y],
+      stroke,
+      strokeWidth: Math.max(strokeWidth * 0.5, 0.5),
+      listening: false,
+    },
+    // Extension line 2
+    {
+      points: [parts.extEnd1.x, parts.extEnd1.y, parts.extEnd2.x, parts.extEnd2.y],
+      stroke,
+      strokeWidth: Math.max(strokeWidth * 0.5, 0.5),
+      listening: false,
+    },
+    // Tick mark at dimension line start
+    {
+      points: [
+        parts.dimLineStart.x + nx * tickSize, parts.dimLineStart.y + ny * tickSize,
+        parts.dimLineStart.x - nx * tickSize, parts.dimLineStart.y - ny * tickSize,
+      ],
+      stroke,
+      strokeWidth,
+      listening: false,
+    },
+    // Tick mark at dimension line end
+    {
+      points: [
+        parts.dimLineEnd.x + nx * tickSize, parts.dimLineEnd.y + ny * tickSize,
+        parts.dimLineEnd.x - nx * tickSize, parts.dimLineEnd.y - ny * tickSize,
+      ],
+      stroke,
+      strokeWidth,
+      listening: false,
+    },
+  ]
+}
+
+function getDimensionTextConfig(element: CanvasElement) {
+  const data = element.data as DimensionElement
+  const parts = getDimensionLineParts(data.start, data.end, data.offset)
+  const midX = (parts.dimLineStart.x + parts.dimLineEnd.x) / 2
+  const midY = (parts.dimLineStart.y + parts.dimLineEnd.y) / 2
+
+  const dx = data.end[0] - data.start[0]
+  const dy = data.end[1] - data.start[1]
+  const pixelDist = Math.sqrt(dx * dx + dy * dy)
+  const value = data.value ?? +(pixelDist / data.pixelsPerInch).toFixed(data.precision)
+
+  const unitLabel = data.unit === 'feet' ? ' ft' : ' in'
+  const text = `${value}${unitLabel}`
+
+  // Rotate text to align with dimension line
+  let angle = Math.atan2(dy, dx) * 180 / Math.PI
+  // Keep text readable (not upside down)
+  if (angle > 90) angle -= 180
+  if (angle < -90) angle += 180
+
+  const fontSize = 12
+
+  return {
+    x: midX,
+    y: midY,
+    text,
+    fontSize,
+    fill: data.color,
+    fontFamily: 'monospace',
+    align: 'center',
+    verticalAlign: 'middle',
+    rotation: angle,
+    offsetX: text.length * fontSize * 0.3,
+    offsetY: fontSize * 0.4,
+    listening: false,
+    padding: 2,
+    wrap: 'none',
+  }
+}
+
+function getDimensionPreviewConfigs(start: [number, number], end: [number, number], offset: number) {
+  const configs = getDimensionConfigs({
+    id: '',
+    type: 'dimension',
+    userId: '',
+    userName: '',
+    timestamp: 0,
+    data: {
+      start,
+      end,
+      offset,
+      pixelsPerInch: 96,
+      unit: 'inches',
+      precision: 4,
+      style: 'linear',
+      color: '#8B5CF6',
+      size: 1,
+    } as DimensionElement,
+  } as CanvasElement)
+  // Make all preview lines non-draggable and dashed
+  return configs.map(c => ({
+    ...c,
+    dash: [4, 4],
+    listening: false,
+  }))
+}
+
+function calculateArcParams(
+  start: [number, number],
+  through: [number, number],
+  end: [number, number]
+): { cx: number; cy: number; radius: number; startAngle: number; endAngle: number } | null {
+  const [x1, y1] = start
+  const [x2, y2] = through
+  const [x3, y3] = end
+  const cross = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1)
+  if (Math.abs(cross) < 1e-10) return null
+  const mid1x = (x1 + x2) / 2, mid1y = (y1 + y2) / 2
+  const d1x = x2 - x1, d1y = y2 - y1
+  const mid2x = (x2 + x3) / 2, mid2y = (y2 + y3) / 2
+  const d2x = x3 - x2, d2y = y3 - y2
+  const det = d1x * d2y - d1y * d2x
+  if (Math.abs(det) < 1e-10) return null
+  const t = ((mid2x - mid1x) * d2y - (mid2y - mid1y) * d2x) / det
+  const cx = mid1x + t * d1y
+  const cy = mid1y - t * d1x
+  const radius = Math.hypot(x1 - cx, y1 - cy)
+  const startAngle = Math.atan2(y1 - cy, x1 - cx)
+  const endAngle = Math.atan2(y3 - cy, x3 - cx)
+  return { cx, cy, radius, startAngle, endAngle }
+}
+
 function getImageConfig(element: CanvasElement) {
   const data = element.data as ImageElement
   const image = new Image()
@@ -2511,6 +2910,120 @@ const currentShapePreview = computed(() => {
   return null
 })
 
+// Current polyline preview config
+const currentPolylinePreview = computed(() => {
+  if (!polylineIsDrawing.value || polylineVertices.value.length === 0) return null
+
+  const points = polylineVertices.value.flatMap((v: { x: number; y: number }) => [v.x, v.y])
+  if (polylineCurrentVertex.value) {
+    points.push(polylineCurrentVertex.value.x, polylineCurrentVertex.value.y)
+  }
+
+  return {
+    points,
+    stroke: props.currentColor,
+    strokeWidth: props.currentSize,
+    lineCap: 'round',
+    lineJoin: 'round',
+    dash: [5, 5],
+    listening: false,
+  }
+})
+
+// Current arc preview config
+const currentArcPreview = computed(() => {
+  if (!arcIsDrawing.value || arcClickState.value.length === 0) return null
+
+  if (arcClickState.value.length === 1 && arcCurrentCursor.value) {
+    // Preview line from start to cursor
+    return {
+      points: [arcClickState.value[0]![0], arcClickState.value[0]![1], arcCurrentCursor.value.x, arcCurrentCursor.value.y],
+      stroke: props.currentColor,
+      strokeWidth: props.currentSize,
+      lineCap: 'round',
+      dash: [5, 5],
+      listening: false,
+    }
+  }
+
+  if (arcClickState.value.length === 2 && arcCurrentCursor.value) {
+    // Preview arc from start through second point to cursor
+    const start = arcClickState.value[0]!
+    const through = arcClickState.value[1]!
+    const end: [number, number] = [arcCurrentCursor.value.x, arcCurrentCursor.value.y]
+    const arcParams = calculateArcPreviewParams(start, through, end)
+    if (!arcParams) {
+      return {
+        points: [start[0], start[1], end[0], end[1]],
+        stroke: props.currentColor,
+        strokeWidth: props.currentSize,
+        lineCap: 'round',
+        dash: [5, 5],
+        listening: false,
+      }
+    }
+    const segmentCount = 64
+    const angleStep = (arcParams.endAngle - arcParams.startAngle) / segmentCount
+    const pts: number[] = []
+    for (let i = 0; i <= segmentCount; i++) {
+      const angle = arcParams.startAngle + angleStep * i
+      pts.push(arcParams.cx + arcParams.radius * Math.cos(angle))
+      pts.push(arcParams.cy + arcParams.radius * Math.sin(angle))
+    }
+    return {
+      points: pts,
+      stroke: props.currentColor,
+      strokeWidth: props.currentSize,
+      lineCap: 'round',
+      lineJoin: 'round',
+      dash: [5, 5],
+      listening: false,
+    }
+  }
+
+  return null
+})
+
+function calculateArcPreviewParams(
+  start: [number, number],
+  through: [number, number],
+  end: [number, number]
+): { cx: number; cy: number; radius: number; startAngle: number; endAngle: number } | null {
+  const [x1, y1] = start
+  const [x2, y2] = through
+  const [x3, y3] = end
+  const cross = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1)
+  if (Math.abs(cross) < 1e-10) return null
+  const mid1x = (x1 + x2) / 2, mid1y = (y1 + y2) / 2
+  const d1x = x2 - x1, d1y = y2 - y1
+  const mid2x = (x2 + x3) / 2, mid2y = (y2 + y3) / 2
+  const d2x = x3 - x2, d2y = y3 - y2
+  const det = d1x * d2y - d1y * d2x
+  if (Math.abs(det) < 1e-10) return null
+  const t = ((mid2x - mid1x) * d2y - (mid2y - mid1y) * d2x) / det
+  const cx = mid1x + t * d1y
+  const cy = mid1y - t * d1x
+  const radius = Math.hypot(x1 - cx, y1 - cy)
+  const startAngle = Math.atan2(y1 - cy, x1 - cx)
+  const endAngle = Math.atan2(y3 - cy, x3 - cx)
+  return { cx, cy, radius, startAngle, endAngle }
+}
+function getGuideLinePoints(result: { point: { x: number; y: number }; angle: number; snapped: boolean } | null): number[] {
+  if (!result?.snapped) return []
+  // We need the tool's start point to draw the guide from origin to edge
+  // Use whichever tool start is active
+  const origin = lineStart.value || arrowStart.value || shapeStart.value
+  if (!origin) return []
+  // Extend the guide line well beyond the cursor
+  const rad = (result.angle * Math.PI) / 180
+  const extend = 3000
+  return [
+    origin.x, origin.y,
+    origin.x + extend * Math.cos(rad),
+    origin.y - extend * Math.sin(rad),
+  ]
+}
+
 // Export canvas as image
 function exportAsImage(): string | null {
   const stage = stageRef.value?.getNode()
@@ -2600,51 +3113,6 @@ function cancelPDFLoad() {
 // Close loading indicator
 function closeLoadingIndicator() {
   pdfLoadingState.value = { loading: false, loaded: 0, total: 0, percent: 0 }
-}
-
-// Text annotation handlers
-function confirmAnnotation() {
-  const text = pendingAnnotationText.value.trim()
-  if (!text) {
-    showAnnotationInput.value = false
-    return
-  }
-
-  const leaderLine = (window as any).__pendingLeaderLine
-  if (!leaderLine) {
-    showAnnotationInput.value = false
-    return
-  }
-
-  const element: CanvasElement = {
-    id: `${props.userId}-${Date.now()}`,
-    type: 'text-annotation',
-    userId: props.userId,
-    userName: props.userName,
-    timestamp: Date.now(),
-    data: {
-      text,
-      x: leaderLine.start[0],
-      y: leaderLine.start[1],
-      fontSize: 16,
-      color: props.currentColor,
-      fontFamily: 'Arial, sans-serif',
-      leaderLine: {
-        start: leaderLine.end,
-        end: leaderLine.start,
-      },
-    } as TextAnnotationElement,
-  }
-
-  emit('element-add', element)
-  showAnnotationInput.value = false
-  delete (window as any).__pendingLeaderLine
-}
-
-function cancelAnnotation() {
-  showAnnotationInput.value = false
-  pendingAnnotationText.value = ''
-  delete (window as any).__pendingLeaderLine
 }
 
 /**
@@ -2786,46 +3254,18 @@ function getShapeCenterForElement(element: CanvasElement): { x: number; y: numbe
   return getShapeCenter(element)
 }
 
-// Watch for tool changes to enable/disable pan mode and update cursor
+// Watch for tool changes — dispatch activate/deactivate through registry
 watch(() => props.currentTool, (newTool, oldTool) => {
-  const stage = stageRef.value?.getNode()
-  const container = stage?.container()
+  if (oldTool) toolRegistry.deactivateTool(oldTool as any)
+  if (newTool) toolRegistry.activateTool(newTool as any)
 
-  if (newTool === 'pan' && oldTool !== 'pan') {
-    // Pan tool selected - update cursor
+  // Pan tool tracking (for pointer handler coordination)
+  if (newTool === 'pan') {
     isPanToolActive.value = true
-    if (container) {
-      container.style.setProperty('cursor', 'grab')
-    }
-  } else if (newTool !== 'pan' && oldTool === 'pan') {
-    // Pan tool deselected - clear cursor and state
+  } else {
     isPanToolActive.value = false
-    if (container) {
-      container.style.removeProperty('cursor')
-    }
-    // Clear any pending pan state
     panStartPointer.value = null
     panStartViewport.value = null
-  }
-
-  if (newTool === 'eraser') {
-    if (container) {
-      container.style.setProperty('cursor', 'crosshair')
-    }
-  } else if (oldTool === 'eraser' && newTool !== 'pan') {
-    if (container) {
-      container.style.removeProperty('cursor')
-    }
-  }
-
-  if (newTool === 'measure-area') {
-    if (container) {
-      container.style.setProperty('cursor', 'crosshair')
-    }
-  } else if (oldTool === 'measure-area' && newTool !== 'pan' && newTool !== 'eraser') {
-    if (container) {
-      container.style.removeProperty('cursor')
-    }
   }
 })
 
@@ -2843,6 +3283,21 @@ defineExpose({
   remoteCursors,
   // Measurement helpers
   getStaleMeasurements,
+  // Constraint pipeline
+  orthoEnabled,
+  toggleOrtho: orthoMode.toggle,
+  polarTracking,
+  polarTrackingResult,
+  gridEnabled: grid.gridEnabled,
+  gridSnapEnabled: grid.gridSnapEnabled,
+  toggleGrid: grid.toggleGrid,
+  toggleGridSnap: grid.toggleGridSnap,
+  // Direct distance entry
+  applyDirectDistance: toolContext.applyDirectDistance,
+  isDrawing,
+  // Snap toggle
+  snapEnabled: snapping.snapEnabled,
+  toggleSnap: snapping.toggleSnap,
 })
 </script>
 

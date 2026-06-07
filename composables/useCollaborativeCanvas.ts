@@ -486,20 +486,25 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     return yElements.toArray()
   }
 
-  // Export canvas state
+  // Export canvas state (includes layers if present)
   function exportState() {
+    const layers = yMeta.get('layers')
     return {
       version: yMeta.get('version') || 1,
       elements: getElements(),
+      ...(layers ? { layers } : {}),
     }
   }
 
-  // Import canvas state (for initial load)
-  function importState(state: { version: number; elements: CanvasElement[] }) {
+  // Import canvas state (for initial load, preserves existing layers if state has none)
+  function importState(state: { version: number; elements: CanvasElement[]; layers?: any[] }) {
     ydoc.transact(() => {
       yElements.delete(0, yElements.length)
       yElements.insert(0, state.elements)
       yMeta.set('version', state.version)
+      if (state.layers) {
+        yMeta.set('layers', state.layers)
+      }
     }, 'import')
   }
 
