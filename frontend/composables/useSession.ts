@@ -1,6 +1,7 @@
 import type { Session, ApiResponse } from '~/types'
 
 export function useSession() {
+  const { $api } = useNuxtApp()
   const config = useRuntimeConfig()
   const baseUrl = config.public.siteUrl as string || ''
 
@@ -10,14 +11,14 @@ export function useSession() {
   const error = ref<string | null>(null)
 
   /**
-   * Create a new session
+   * Create a new session (share link)
    */
   async function createSession(name: string): Promise<ApiResponse<Session>> {
     isLoading.value = true
     error.value = null
 
     try {
-      const response = await $fetch<ApiResponse<Session>>('/api/session', {
+      const response = await $api<ApiResponse<Session>>('/api/sessions', {
         method: 'POST',
         body: { name },
       })
@@ -37,14 +38,14 @@ export function useSession() {
   }
 
   /**
-   * Fetch a session by short ID
+   * Fetch a session by short ID (share token)
    */
   async function fetchSession(shortId: string): Promise<ApiResponse<Session>> {
     isLoading.value = true
     error.value = null
 
     try {
-      const response = await $fetch<ApiResponse<Session>>(`/api/session/${shortId}`)
+      const response = await $api<ApiResponse<Session>>(`/api/sessions/${shortId}`)
 
       if (response.success && response.data) {
         currentSession.value = response.data

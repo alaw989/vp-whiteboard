@@ -195,10 +195,27 @@
 import type { Whiteboard, ApiResponse } from '~/types'
 import { toastSuccess, toastError } from '~/composables/useToast'
 
-// Fetch whiteboards
-const { data, pending, error, refresh } = await useFetch<ApiResponse<Whiteboard[]>>('/api/whiteboard')
+const { $api } = useNuxtApp()
 
-const whiteboards = computed(() => data.value?.success ? (data.value.data || []) : [])
+// Fetch whiteboards
+const whiteboards = ref<Whiteboard[]>([])
+const pending = ref(true)
+const error = ref<string | null>(null)
+
+async function refresh() {
+  pending.value = true
+  error.value = null
+  try {
+    const res = await $api<ApiResponse<Whiteboard[]>>('/api/whiteboards')
+    whiteboards.value = res.success ? (res.data || []) : []
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to load'
+  } finally {
+    pending.value = false
+  }
+}
+
+await refresh()
 
 // Menu state
 const menuOpenId = ref<string | null>(null)
@@ -240,7 +257,7 @@ async function saveRename(id: string) {
   }
 
   try {
-    await $fetch(`/api/whiteboard/${id}`, {
+    await $api(`/api/whiteboards/${id}`, {
       method: 'PATCH',
       body: { name },
     })
@@ -265,7 +282,7 @@ function confirmDelete(whiteboard: Whiteboard) {
 async function handleDelete(id: string) {
   deleting.value = true
   try {
-    await $fetch(`/api/whiteboard/${id}`, { method: 'DELETE' })
+    await $api(`/api/whiteboards/${id}`, { method: 'DELETE' })
     toastSuccess('Whiteboard deleted')
     deleteTarget.value = null
     await refresh()
@@ -284,7 +301,7 @@ onMounted(() => {
 })
 
 async function handleLogout() {
-  await $fetch('/api/auth/logout', { method: 'POST' })
+  await $api('/api/logout', { method: 'POST' })
   navigateTo('/login')
 }
 

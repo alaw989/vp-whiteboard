@@ -45,29 +45,19 @@ export default defineNuxtConfig({
     experimental: {
       websocket: true,
     },
-    // Allow CORS for development
-    routeRules: {
-      '/**': {
-        cors: true,
-      },
-    },
   },
 
   // Runtime config for environment variables
   runtimeConfig: {
     // Private keys (server-side only)
-    supabaseUrl: process.env.SUPABASE_URL || '',
-    supabaseKey: process.env.SUPABASE_ANON_KEY || '',
-    authPassword: process.env.AUTH_PASSWORD || '',
-    authSecret: process.env.AUTH_SECRET || '',
+    laravelUrl: process.env.LARAVEL_URL || 'http://localhost:8000',
     wsPort: parseInt(process.env.WS_PORT || '3001'),
 
     // Public keys (exposed to client)
     public: {
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000',
       wsUrl: process.env.NUXT_PUBLIC_WS_URL || 'ws://localhost:3001',
-      supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL || '',
-      supabaseKey: process.env.NUXT_PUBLIC_SUPABASE_ANON_KEY || '',
+      laravelUrl: process.env.NUXT_PUBLIC_LARAVEL_URL || 'http://localhost:8000',
     },
   },
 

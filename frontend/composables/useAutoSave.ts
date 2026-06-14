@@ -60,7 +60,8 @@ export function useAutoSave<T extends CanvasState>(
     saveError.value = null
 
     try {
-      await $fetch(`/api/whiteboard/${whiteboardId}`, {
+      const { $api } = useNuxtApp()
+      await $api(`/api/whiteboards/${whiteboardId}`, {
         method: 'PATCH',
         body: { canvas_state: saveData as unknown as CanvasState },
       })

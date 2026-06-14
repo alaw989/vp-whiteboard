@@ -1,7 +1,6 @@
-import axios from 'axios'
 import type { UploadResult } from '~/types'
 
-// Validation constants per user decision
+// Validation constants
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const ALLOWED_TYPES = [
   'application/pdf',
@@ -30,7 +29,6 @@ export interface UploadOptions {
  * Validate file before upload
  */
 export function validateFile(file: File): FileValidationError {
-  // Check file type
   if (!ALLOWED_TYPES.includes(file.type as any)) {
     return {
       valid: false,
@@ -38,7 +36,6 @@ export function validateFile(file: File): FileValidationError {
     }
   }
 
-  // Check file size (10MB limit per user decision)
   if (file.size > MAX_FILE_SIZE) {
     return {
       valid: false,
@@ -72,8 +69,7 @@ export function getFileIcon(type: string): string {
 }
 
 export function useFileUpload() {
-  const config = useRuntimeConfig()
-  const baseUrl = config.public.apiBaseUrl || ''
+  const { $api, $ensureCsrf: ensureCsrf } = useNuxtApp()
 
   /**
    * Upload a file with progress tracking
@@ -83,71 +79,58 @@ export function useFileUpload() {
     file: File,
     options: UploadOptions = {}
   ): Promise<{ success: boolean; data?: UploadResult; error?: string }> {
-    // Validate file first (client-side validation per user decision)
     const validation = validateFile(file)
     if (!validation.valid) {
-      return {
-        success: false,
-        error: validation.error,
-      }
+      return { success: false, error: validation.error }
     }
 
     try {
+      await ensureCsrf()
+
       const formData = new FormData()
       formData.append('file', file)
       formData.append('whiteboard_id', whiteboardId)
 
-      const response = await axios.post<{
-        success: boolean
-        data?: UploadResult
-        error?: string
-      }>(
-        '/api/whiteboard/upload',
-        formData,
-        {
-          onUploadProgress: (progressEvent) => {
-            if (options.onProgress && progressEvent.total) {
-              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-              options.onProgress({
-                loaded: progressEvent.loaded,
-                total: progressEvent.total,
-                percent,
-              })
-            }
-          },
-          signal: options.signal,
-        }
+      const config = useRuntimeConfig()
+      const laravelUrl = (config.public.laravelUrl as string) || 'http://localhost:8000'
+
+      // Use raw $fetch for upload progress support (Nitro types don't include onUploadProgress)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fetchOpts: any = {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+        onUploadProgress: (progressEvent: { loaded: number; total?: number }) => {
+          if (options.onProgress && progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+            options.onProgress({
+              loaded: progressEvent.loaded,
+              total: progressEvent.total,
+              percent,
+            })
+          }
+        },
+        signal: options.signal,
+      }
+
+      const response = await $fetch<{ success: boolean; data?: UploadResult; error?: string }>(
+        `${laravelUrl}/api/files`,
+        fetchOpts
       )
 
-      if (response.data.success && response.data.data) {
-        return {
-          success: true,
-          data: response.data.data,
-        }
+      if (response.success && response.data) {
+        return { success: true, data: response.data }
       }
 
-      return {
-        success: false,
-        error: response.data.error || 'Upload failed',
-      }
+      return { success: false, error: response.error || 'Upload failed' }
     } catch (err) {
-      if (axios.isCancel(err)) {
-        return {
-          success: false,
-          error: 'Upload cancelled',
-        }
-      }
-
       const errorMsg = err instanceof Error ? err.message : 'Upload failed'
-      return {
-        success: false,
-        error: errorMsg,
-      }
+      return { success: false, error: errorMsg }
     }
   }
 
   /**
-   * Upload multiple files (sequential - one at a time per user decision)
+   * Upload multiple files (sequential)
    */
   async function uploadFiles(
     whiteboardId: string,
@@ -166,11 +149,7 @@ export function useFileUpload() {
       }
     }
 
-    return {
-      success: errors.length === 0,
-      results,
-      errors,
-    }
+    return { success: errors.length === 0, results, errors }
   }
 
   return {

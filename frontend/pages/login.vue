@@ -9,6 +9,20 @@
 
         <form @submit.prevent="handleLogin" class="space-y-4">
           <div>
+            <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              id="email"
+              v-model="email"
+              type="email"
+              autocomplete="email"
+              required
+              class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+              placeholder="you@example.com"
+              :disabled="loading"
+            />
+          </div>
+
+          <div>
             <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
             <input
               id="password"
@@ -29,7 +43,7 @@
           <button
             type="submit"
             class="btn-primary w-full"
-            :disabled="loading || !password"
+            :disabled="loading || !email || !password"
           >
             <div v-if="loading" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
             <span v-else>Sign In</span>
@@ -42,6 +56,8 @@
 
 <script setup lang="ts">
 const route = useRoute()
+const { $api, $ensureCsrf: ensureCsrf } = useNuxtApp()
+const email = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
@@ -51,17 +67,19 @@ async function handleLogin() {
   loading.value = true
 
   try {
-    const res = await $fetch<{ success: boolean }>('/api/auth/login', {
+    await ensureCsrf()
+    await $api('/api/login', {
       method: 'POST',
-      body: { password: password.value },
+      body: {
+        email: email.value,
+        password: password.value,
+      },
     })
 
-    if (res.success) {
-      const redirect = (route.query.redirect as string) || '/'
-      navigateTo(redirect, { replace: true })
-    }
+    const redirect = (route.query.redirect as string) || '/'
+    navigateTo(redirect, { replace: true })
   } catch (e: any) {
-    error.value = e?.data?.message || 'Invalid password'
+    error.value = e?.data?.message || e?.message || 'Invalid credentials'
   } finally {
     loading.value = false
   }

@@ -138,6 +138,7 @@
 import type { Whiteboard, ApiResponse } from '~/types'
 
 const router = useRouter()
+const { $api } = useNuxtApp()
 
 const formData = ref({
   name: '',
@@ -162,7 +163,7 @@ async function createWhiteboard() {
   creating.value = true
 
   try {
-    const response = await $fetch<ApiResponse<Whiteboard>>('/api/whiteboard', {
+    const response = await $api<ApiResponse<Whiteboard>>('/api/whiteboards', {
       method: 'POST',
       body: {
         name: formData.value.name,

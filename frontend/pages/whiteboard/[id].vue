@@ -375,10 +375,19 @@ const canvasInstance = ref<CanvasInstanceType | null>(null)
 const canvasRef = ref<{ stageRef?: { getNode: () => any } } | null>(null)
 
 // Fetch whiteboard data
-const { data: whiteboardData, error: fetchError } = await useFetch<ApiResponse<Whiteboard>>(`/api/whiteboard/${whiteboardId}`)
+const { $api } = useNuxtApp()
+const whiteboardData = ref<ApiResponse<Whiteboard> | null>(null)
+const fetchError = ref<unknown>(null)
+
+try {
+  whiteboardData.value = await $api<ApiResponse<Whiteboard>>(`/api/whiteboards/${whiteboardId}`)
+} catch (e) {
+  fetchError.value = e
+}
+
 const whiteboard = computed(() => whiteboardData.value?.data)
 
-// Handle error state - redirect to home with a message if whiteboard not found
+// Handle error state
 if (fetchError.value || (!whiteboardData.value?.success && !whiteboardData.value?.data)) {
   throw createError({
     statusCode: 404,
@@ -442,7 +451,7 @@ async function saveName() {
     return
   }
   try {
-    await $fetch(`/api/whiteboard/${whiteboardId}`, {
+    await $api(`/api/whiteboards/${whiteboardId}`, {
       method: 'PATCH',
       body: { name },
     })
@@ -731,7 +740,7 @@ onMounted(() => {
     const instance = canvasInstance.value
     if (instance && (instance.isConnected as any).value) {
       const state = instance.exportState()
-      $fetch(`/api/whiteboard/${whiteboardId}`, {
+      $api(`/api/whiteboards/${whiteboardId}`, {
         method: 'PATCH',
         body: { canvas_state: state },
       })
