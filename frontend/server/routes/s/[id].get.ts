@@ -1,50 +1,35 @@
-import { createHmac } from 'crypto'
-import { createClient } from '@supabase/supabase-js'
 import { isValidSessionId } from '~/server/utils/session-id'
-import type { Session } from '~/types'
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
+  const laravelUrl = (config.laravelUrl as string) || 'http://localhost:8000'
   const shortId = getRouterParam(event, 'id')
 
   if (!shortId || !isValidSessionId(shortId)) {
     return sendRedirect(event, '/', 302)
   }
 
-  // If Supabase not configured, use mock
-  const supabaseUrl = config.supabaseUrl as string
-  const supabaseKey = config.supabaseKey as string
+  try {
+    // Look up whiteboard by share_token via Laravel API
+    const res = await $fetch<{ success: boolean; data?: { id: string } }>(
+      `${laravelUrl}/api/sessions/${shortId}`
+    )
 
-  let whiteboardId: string
-
-  if (!supabaseUrl || !supabaseKey) {
-    whiteboardId = `mock-${shortId}`
-  } else {
-    const supabase = createClient(supabaseUrl, supabaseKey)
-    const { data: whiteboard } = await supabase
-      .from('whiteboards')
-      .select('id')
-      .like('name', `%:${shortId}`)
-      .single()
-
-    if (!whiteboard) {
+    if (!res.success || !res.data?.id) {
       return sendRedirect(event, '/', 302)
     }
-    whiteboardId = whiteboard.id
-  }
 
-  // Set share cookie
-  const secret = config.authSecret as string
-  if (secret) {
-    const token = createHmac('sha256', secret).update(`share:${whiteboardId}`).digest('hex')
-    setCookie(event, 'vp-share-access', token, {
+    // Set a simple share cookie for WS relay auth bypass
+    setCookie(event, 'vp_share_token', shortId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 24 * 60 * 60,
       path: '/',
     })
-  }
 
-  return sendRedirect(event, `/whiteboard/${whiteboardId}`, 302)
+    return sendRedirect(event, `/whiteboard/${res.data.id}`, 302)
+  } catch {
+    return sendRedirect(event, '/', 302)
+  }
 })

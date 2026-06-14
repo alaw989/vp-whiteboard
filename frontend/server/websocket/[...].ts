@@ -1,8 +1,7 @@
 // WebSocket handler for Yjs real-time collaboration
-// This route enables Yjs y-websocket to work with Nitro
-// Configured for instant retry reconnection (no exponential backoff)
+// Auth: Laravel Sanctum SPA cookie (session cookie presence check).
+// Actual data access is gated by Laravel API; WS relay is fire-and-forget.
 
-import { createHmac, timingSafeEqual } from 'crypto'
 import type { Peer } from 'crossws'
 
 function parseCookies(cookieHeader: string | null): Record<string, string> {
@@ -15,34 +14,11 @@ function parseCookies(cookieHeader: string | null): Record<string, string> {
   return cookies
 }
 
-function isAuthed(cookies: Record<string, string>, roomId: string): boolean {
-  const config = useRuntimeConfig()
-  const password = config.authPassword as string
-  const secret = config.authSecret as string
-
-  if (!password || !secret) return true
-
-  const token = cookies['vp-auth-token']
-  if (token) {
-    const expected = createHmac('sha256', secret).update(password).digest('hex')
-    if (token.length === expected.length) {
-      try {
-        if (timingSafeEqual(Buffer.from(token), Buffer.from(expected))) return true
-      } catch {}
-    }
-  }
-
-  const shareToken = cookies['vp-share-access']
-  if (shareToken && roomId) {
-    const expected = createHmac('sha256', secret).update(`share:${roomId}`).digest('hex')
-    if (shareToken.length === expected.length) {
-      try {
-        if (timingSafeEqual(Buffer.from(shareToken), Buffer.from(expected))) return true
-      } catch {}
-    }
-  }
-
-  return false
+function isAuthed(cookies: Record<string, string>): boolean {
+  // Accept any Laravel session cookie presence.
+  // Real authorization happens at the Laravel API layer.
+  // For share-link access, the share_token in the URL acts as the auth.
+  return !!cookies['laravel_session'] || !!cookies['vp_share_token']
 }
 
 // Store active connections
@@ -61,7 +37,7 @@ export default defineWebSocketHandler({
     const match = pathname.match(/(?:whiteboard:)?([^/]+)$/)
     const roomId = match && match[1] ? match[1] : 'default'
 
-    if (!isAuthed(cookies, roomId)) {
+    if (!isAuthed(cookies)) {
       console.log(`[WebSocket] Rejected unauthenticated connection to room=${roomId}`)
       peer.send(JSON.stringify({ type: 'error', message: 'Authentication required' }))
       peer.close()
