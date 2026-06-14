@@ -460,3 +460,97 @@ export function findNearestElementSegment(
 
   return best
 }
+
+// --- Revision cloud ---
+
+/**
+ * Signed area of a polygon (shoelace). Positive = one winding, negative = the
+ * other; sign is used to pick the consistent outward-normal side for lobes.
+ */
+export function signedArea(points: Point[]): number {
+  let area = 0
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!
+    const b = points[(i + 1) % points.length]!
+    area += a.x * b.y - b.x * a.y
+  }
+  return area / 2
+}
+
+/**
+ * Generate a revision-cloud (puffy arc) path along a polyline.
+ *
+ * Walks each segment in steps of roughly `arcLength` (the chord length per
+ * lobe). Each step is a semicircle (radius = stepLen/2, centered at the step
+ * midpoint) bulging along the outward normal of the segment.
+ *
+ * Outward side:
+ *  - closed polygons: derived from the signed-area sign so every lobe bulges
+ *    away from the interior.
+ *  - open clouds: fixed +90° (left-hand) normal, matching AutoCAD.
+ *
+ * Returns a flat `[x0, y0, x1, y1, ...]` array for Konva `v-line` rendering.
+ */
+export function revisionCloudPath(
+  points: Point[],
+  arcLength: number,
+  closed: boolean,
+  samplesPerLobe = 12,
+): number[] {
+  if (points.length < 2) {
+    return points.flatMap(p => [p.x, p.y])
+  }
+
+  const chord = arcLength > 1 ? arcLength : 24
+
+  // Build the segment list (closing segment added for closed clouds)
+  const segs: [Point, Point][] = []
+  for (let i = 0; i < points.length - 1; i++) {
+    segs.push([points[i]!, points[i + 1]!])
+  }
+  if (closed && points.length >= 3) {
+    segs.push([points[points.length - 1]!, points[0]!])
+  }
+
+  // Outward-normal side: derived from the chain's winding (signed area) for
+  // 3+ points, so lobes stay on the same side while drawing (open preview) and
+  // after the cloud closes. Falls back to +90° (left-hand) for short chains.
+  let side = 1
+  if (points.length >= 3) {
+    side = signedArea(points) >= 0 ? -1 : 1
+  }
+
+  const out: number[] = []
+  let firstLobe = true
+
+  for (const [a, b] of segs) {
+    const segLen = distance(a, b)
+    if (segLen < 1e-6) continue
+
+    // Evenly divide the segment into whole lobes of ~arcLength chord
+    const lobeCount = Math.min(64, Math.max(1, Math.round(segLen / chord)))
+    const stepLen = segLen / lobeCount
+    const r = stepLen / 2
+
+    for (let i = 0; i < lobeCount; i++) {
+      const p0 = lerp(a, b, i / lobeCount)
+      const p1 = lerp(a, b, (i + 1) / lobeCount)
+      const mid = midpoint(p0, p1)
+
+      // alpha0 = angle from center(mid) to p0; sweep = -side*π picks the
+      // semicircle passing through the outward apex.
+      const alpha0 = Math.atan2(p0.y - mid.y, p0.x - mid.x)
+      const sweep = -side * Math.PI
+
+      const start = firstLobe ? 0 : 1 // skip shared endpoint with prior lobe
+      for (let j = start; j <= samplesPerLobe; j++) {
+        const t = j / samplesPerLobe
+        const angle = alpha0 + sweep * t
+        out.push(mid.x + r * Math.cos(angle), mid.y + r * Math.sin(angle))
+      }
+      firstLobe = false
+    }
+  }
+
+  return out
+}

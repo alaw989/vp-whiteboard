@@ -57,12 +57,12 @@ export interface LayerDefinition {
 
 export interface CanvasElement {
   id: string
-  type: 'stroke' | 'line' | 'rectangle' | 'circle' | 'ellipse' | 'image' | 'text' | 'arrow' | 'stamp' | 'text-annotation' | 'measurement-distance' | 'measurement-area' | 'polyline' | 'arc' | 'fillet-arc' | 'dimension'
+  type: 'stroke' | 'line' | 'rectangle' | 'circle' | 'ellipse' | 'image' | 'text' | 'arrow' | 'stamp' | 'text-annotation' | 'measurement-distance' | 'measurement-area' | 'polyline' | 'arc' | 'fillet-arc' | 'dimension' | 'revision-cloud'
   userId: string
   userName: string
   timestamp: number
   layerId?: string
-  data: StrokeElement | LineElement | RectangleElement | CircleElement | EllipseElement | ImageElement | TextElement | ArrowElement | StampElement | TextAnnotationElement | MeasurementDistanceElement | MeasurementAreaElement | PolylineElement | ArcElement | FilletArcElement | DimensionElement
+  data: StrokeElement | LineElement | RectangleElement | CircleElement | EllipseElement | ImageElement | TextElement | ArrowElement | StampElement | TextAnnotationElement | MeasurementDistanceElement | MeasurementAreaElement | PolylineElement | ArcElement | FilletArcElement | DimensionElement | RevisionCloudElement
 }
 
 export interface StrokeElement {
@@ -112,6 +112,14 @@ export interface EllipseElement {
 
 export interface PolylineElement {
   points: [number, number][]
+  color: string
+  size: number
+  closed: boolean
+}
+
+export interface RevisionCloudElement {
+  points: [number, number][]
+  arcLength: number   // chord length per lobe
   color: string
   size: number
   closed: boolean
@@ -246,7 +254,7 @@ export interface SharedViewportState extends ViewportState {
 }
 
 // Drawing Tool Types
-export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser' | 'measure-distance' | 'measure-area' | 'polyline' | 'arc' | 'offset' | 'trim' | 'extend' | 'fillet' | 'mirror' | 'dimension'
+export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser' | 'measure-distance' | 'measure-area' | 'polyline' | 'arc' | 'offset' | 'trim' | 'extend' | 'fillet' | 'mirror' | 'dimension' | 'revision-cloud'
 
 export interface ToolSettings {
   tool: DrawingTool

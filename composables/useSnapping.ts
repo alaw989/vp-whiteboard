@@ -1,5 +1,5 @@
 import { useDebounceFn } from '@vueuse/core'
-import type { CanvasElement, LineElement, RectangleElement, CircleElement, EllipseElement, StrokeElement, PolylineElement, ArcElement, FilletArcElement, DimensionElement } from '~/types'
+import type { CanvasElement, LineElement, RectangleElement, CircleElement, EllipseElement, StrokeElement, PolylineElement, ArcElement, FilletArcElement, DimensionElement, RevisionCloudElement } from '~/types'
 
 export interface SnapPoint {
   x: number
@@ -182,6 +182,19 @@ export function useSnapping(options: SnappingOptions = {}) {
     ]
   }
 
+  function getRevisionCloudSnapPoints(element: CanvasElement): SnapPoint[] {
+    if (element.type !== 'revision-cloud') return []
+    const data = element.data as RevisionCloudElement
+    if (data.points.length === 0) return []
+    // Vertex endpoints (these are the meaningful snap targets on a cloud)
+    return data.points.map(pt => ({
+      x: pt[0],
+      y: pt[1],
+      type: 'endpoint' as const,
+      elementId: element.id,
+    }))
+  }
+
   function getElementSnapPoints(element: CanvasElement): SnapPoint[] {
     switch (element.type) {
       case 'line':
@@ -202,6 +215,8 @@ export function useSnapping(options: SnappingOptions = {}) {
         return getFilletArcSnapPoints(element)
       case 'dimension':
         return getDimensionSnapPoints(element)
+      case 'revision-cloud':
+        return getRevisionCloudSnapPoints(element)
       default:
         return []
     }

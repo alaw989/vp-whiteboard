@@ -174,6 +174,19 @@
               @dragend="handleDragEnd"
             />
 
+            <!-- Revision cloud elements -->
+            <v-line
+              v-else-if="element.type === 'revision-cloud'"
+              :config="{
+                ...getRevisionCloudConfig(element),
+                id: element.id,
+              }"
+              @click="handleElementClick(element, $event)"
+              @dragstart="handleDragStart"
+              @dragmove="handleDragMove"
+              @dragend="handleDragEnd"
+            />
+
             <!-- Fillet arc elements -->
             <v-line
               v-else-if="element.type === 'fillet-arc'"
@@ -368,6 +381,28 @@
                 fill: idx === 0 ? '#22C55E' : idx === 1 ? '#F59E0B' : '#3B82F6',
                 stroke: '#FFFFFF',
                 strokeWidth: 2,
+                listening: false,
+              }"
+            />
+          </template>
+
+          <!-- Current revision cloud preview -->
+          <v-line
+            v-if="currentRevisionCloudPreview"
+            :config="currentRevisionCloudPreview"
+          />
+          <!-- Revision cloud vertex markers -->
+          <template v-if="revisionCloudVertices.length > 0">
+            <v-circle
+              v-for="(vertex, idx) in revisionCloudVertices"
+              :key="`revcloud-vert-${idx}`"
+              :config="{
+                x: vertex.x,
+                y: vertex.y,
+                radius: 4,
+                fill: idx === 0 ? '#22C55E' : '#3B82F6',
+                stroke: '#FFFFFF',
+                strokeWidth: 1,
                 listening: false,
               }"
             />
@@ -750,7 +785,7 @@
 
 <script setup lang="ts">
 import { getStroke } from 'perfect-freehand'
-import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, StampElement, MeasurementDistanceElement, MeasurementAreaElement, PolylineElement, ArcElement, FilletArcElement, DimensionElement, UserPresence, DocumentLayer } from '~/types'
+import type { CanvasElement, StrokeElement, LineElement, RectangleElement, CircleElement, EllipseElement, ImageElement, TextElement, TextAnnotationElement, ArrowElement, StampElement, MeasurementDistanceElement, MeasurementAreaElement, PolylineElement, ArcElement, FilletArcElement, DimensionElement, RevisionCloudElement, UserPresence, DocumentLayer } from '~/types'
 import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue'
 import WhiteboardCursorPointer from '~/components/whiteboard/WhiteboardCursorPointer.vue'
 import type { PDFLoadingState } from '~/types'
@@ -779,6 +814,7 @@ import { useMeasureDistanceTool } from '~/composables/tools/useMeasureDistanceTo
 import { useMeasureAreaTool } from '~/composables/tools/useMeasureAreaTool'
 import { usePolylineTool } from '~/composables/tools/usePolylineTool'
 import { useArcTool } from '~/composables/tools/useArcTool'
+import { useRevisionCloudTool, DEFAULT_REVISION_CLOUD_ARC_LENGTH } from '~/composables/tools/useRevisionCloudTool'
 import { useOffsetTool } from '~/composables/tools/useOffsetTool'
 import { useTrimTool } from '~/composables/tools/useTrimTool'
 import { useExtendTool } from '~/composables/tools/useExtendTool'
@@ -786,6 +822,7 @@ import { useFilletTool } from '~/composables/tools/useFilletTool'
 import { useMirrorTool } from '~/composables/tools/useMirrorTool'
 import { useDimensionTool } from '~/composables/tools/useDimensionTool'
 import { useGrid } from '~/composables/useGrid'
+import { revisionCloudPath } from '~/utils/geometryUtils'
 
 import type { StampType } from '~/composables/tools/useStampTool'
 
@@ -1149,6 +1186,33 @@ function getElementBoundingBox(element: CanvasElement): { left: number; right: n
         right: maxX + padding,
         top: minY - padding,
         bottom: maxY + padding,
+      }
+      break
+    }
+
+    case 'revision-cloud': {
+      const data = element.data as RevisionCloudElement
+      if (data.points.length === 0) {
+        bbox = { left: 0, right: 0, top: 0, bottom: 0 }
+      } else {
+        const first = data.points[0]!
+        let minX = first[0], maxX = first[0]
+        let minY = first[1], maxY = first[1]
+        for (let i = 1; i < data.points.length; i++) {
+          const p = data.points[i]!
+          minX = Math.min(minX, p[0])
+          maxX = Math.max(maxX, p[0])
+          minY = Math.min(minY, p[1])
+          maxY = Math.max(maxY, p[1])
+        }
+        // Arc lobes bulge outward ~ arcLength/2 beyond the vertices
+        const padding = data.size / 2 + data.arcLength / 2 + 10
+        bbox = {
+          left: minX - padding,
+          right: maxX + padding,
+          top: minY - padding,
+          bottom: maxY + padding,
+        }
       }
       break
     }
@@ -1532,6 +1596,7 @@ const measureDistanceTool = useMeasureDistanceTool(toolContext)
 const measureAreaTool = useMeasureAreaTool(toolContext)
 const polylineTool = usePolylineTool(toolContext)
 const arcTool = useArcTool(toolContext)
+const revisionCloudTool = useRevisionCloudTool(toolContext)
 const offsetTool = useOffsetTool(toolContext)
 const trimTool = useTrimTool(toolContext)
 const extendTool = useExtendTool(toolContext)
@@ -1556,6 +1621,7 @@ toolRegistry.register('measure-distance', measureDistanceTool)
 toolRegistry.register('measure-area', measureAreaTool)
 toolRegistry.register('polyline', polylineTool)
 toolRegistry.register('arc', arcTool)
+toolRegistry.register('revision-cloud', revisionCloudTool)
 toolRegistry.register('offset', offsetTool)
 toolRegistry.register('trim', trimTool)
 toolRegistry.register('extend', extendTool)
@@ -1589,6 +1655,11 @@ const polylineIsDrawing = polylineTool.state!.isDrawing
 const arcClickState = arcTool.state!.clickPoints
 const arcCurrentCursor = arcTool.state!.currentCursor
 const arcIsDrawing = arcTool.state!.isDrawing
+
+// Revision cloud tool state
+const revisionCloudVertices = revisionCloudTool.state!.vertices
+const revisionCloudCurrentVertex = revisionCloudTool.state!.currentVertex
+const revisionCloudIsDrawing = revisionCloudTool.state!.isDrawing
 
 // Modification tool state
 const offsetPreview = offsetTool.state!.previewResult
@@ -1943,15 +2014,15 @@ function handleDragEnd(event: any) {
         rotation: newRotation,
       }
     }
-  } else if (element.type === 'polyline' || element.type === 'arc' || element.type === 'fillet-arc') {
-    // Polyline/arc/fillet-arc are v-line elements needing point transformation
+  } else if (element.type === 'polyline' || element.type === 'arc' || element.type === 'fillet-arc' || element.type === 'revision-cloud') {
+    // Polyline/arc/fillet-arc/revision-cloud are v-line elements needing point transformation
     const data = element.data as any
     const startPos = dragStartPosition.value
     if (startPos) {
       const deltaX = newPosition.x - startPos.x
       const deltaY = newPosition.y - startPos.y
 
-      if (element.type === 'polyline') {
+      if (element.type === 'polyline' || element.type === 'revision-cloud') {
         updates.data = {
           ...data,
           points: data.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]),
@@ -2348,6 +2419,22 @@ function getArcConfig(element: CanvasElement) {
     strokeWidth: data.size,
     lineCap: 'round',
     lineJoin: 'round',
+    draggable: true,
+    hitStrokeWidth: 0,
+  }
+}
+
+function getRevisionCloudConfig(element: CanvasElement) {
+  const data = element.data as RevisionCloudElement
+  const cloudPoints = data.points.map(p => ({ x: p[0], y: p[1] }))
+  const points = revisionCloudPath(cloudPoints, data.arcLength, data.closed)
+  return {
+    points,
+    stroke: data.color,
+    strokeWidth: data.size,
+    lineCap: 'round',
+    lineJoin: 'round',
+    closed: data.closed,
     draggable: true,
     hitStrokeWidth: 0,
   }
@@ -2925,6 +3012,33 @@ const currentPolylinePreview = computed(() => {
     strokeWidth: props.currentSize,
     lineCap: 'round',
     lineJoin: 'round',
+    dash: [5, 5],
+    listening: false,
+  }
+})
+
+// Current revision cloud preview config
+const currentRevisionCloudPreview = computed(() => {
+  if (!revisionCloudIsDrawing.value || revisionCloudVertices.value.length === 0) return null
+
+  const pts = revisionCloudVertices.value.map((v: { x: number; y: number }) => ({ x: v.x, y: v.y }))
+  if (revisionCloudCurrentVertex.value) {
+    pts.push({ x: revisionCloudCurrentVertex.value.x, y: revisionCloudCurrentVertex.value.y })
+  }
+  if (pts.length < 2) return null
+
+  // Open during placement: drawing closed here would add a lobe from the
+  // cursor back to the first vertex (a phantom lobe stretching across the
+  // canvas as you move). Side stays consistent with the finished cloud via
+  // the winding-based logic inside revisionCloudPath.
+  const points = revisionCloudPath(pts, DEFAULT_REVISION_CLOUD_ARC_LENGTH, false)
+  return {
+    points,
+    stroke: props.currentColor,
+    strokeWidth: props.currentSize,
+    lineCap: 'round',
+    lineJoin: 'round',
+    closed: false,
     dash: [5, 5],
     listening: false,
   }

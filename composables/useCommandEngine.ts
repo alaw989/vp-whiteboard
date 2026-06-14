@@ -111,6 +111,7 @@ export function useCommandEngine(options: CommandEngineOptions) {
   register({ name: 'MIRROR', aliases: ['MI'], description: 'Mirror tool — select elements then specify mirror axis', action: (eng) => { eng.setActiveTool('mirror'); eng.output('MIRROR: Click elements to select (Enter to confirm), then click two points for mirror axis') } })
   register({ name: 'POLYLINE', aliases: ['PL'], description: 'Polyline tool', action: (eng) => { eng.setActiveTool('polyline'); eng.output('POLYLINE: Click to add vertices, Enter/double-click to finish, Esc to cancel, C to close') } })
   register({ name: 'ARC', aliases: ['ARC'], description: 'Arc tool', action: (eng) => { eng.setActiveTool('arc'); eng.output('ARC: Click start point, through point, then end point') } })
+  register({ name: 'REVCLOUD', aliases: ['RC', 'REVC'], description: 'Revision cloud tool — click vertices, Enter to close the cloud', action: (eng) => { eng.setActiveTool('revision-cloud'); eng.output('REVCLOUD: Click to add vertices, Enter/double-click to close cloud, Backspace to undo, Esc to cancel') } })
   register({ name: 'DIMENSION', aliases: ['DIM', 'DI'], description: 'Dimension tool — click two points, drag to set offset', action: (eng) => { eng.setActiveTool('dimension'); eng.output('DIMENSION: Click first point, second point, then drag to set offset and click to place') } })
   register({ name: 'LAYER', aliases: ['LA'], description: 'Toggle layer panel', action: (eng) => { eng.output('LAYER: Use the layer panel in the toolbar to manage layers') } })
 

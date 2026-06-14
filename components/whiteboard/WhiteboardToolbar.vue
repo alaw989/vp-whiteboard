@@ -1,79 +1,159 @@
 <template>
   <!-- Desktop Sidebar Toolbar (with wrapper for proper positioning) -->
-  <div class="hidden md:flex flex flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen flex-shrink-0 bg-white border-r border-neutral-200" style="width: 7rem;" role="toolbar" aria-label="Whiteboard tools">
-    <div class="toolbar flex flex-col gap-2 p-2 rounded-lg shadow-sm border border-neutral-200 overflow-y-auto w-full scrollbar-thin" role="group" aria-label="Drawing tools and actions">
-    <!-- Drawing Tools -->
+  <div class="hidden md:flex flex flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen flex-shrink-0 bg-neutral-900 border-r border-neutral-800" style="width: 8.5rem;" role="toolbar" aria-label="Whiteboard tools">
+    <div class="toolbar flex flex-col gap-2 p-2 rounded-lg shadow-sm border border-neutral-800 overflow-y-auto w-full scrollbar-thin" role="group" aria-label="Drawing tools and actions">
+    <!-- NAV group -->
     <div class="flex flex-col gap-1">
-      <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Tools</h4>
-
-      <!-- Stamp tool with dropdown -->
-      <div class="relative">
+      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Nav</h4>
+      <div class="grid grid-cols-2 gap-1">
         <button
-          :class="[
-            'tool-btn w-full p-2 rounded-lg transition-colors flex items-center justify-center',
-            currentTool === 'stamp'
-              ? 'bg-blue-100 text-blue-600'
-              : 'hover:bg-neutral-100 text-neutral-600'
-          ]"
-          :aria-label="`Stamp tool, press S. Current: ${currentStampType}`"
-          :aria-expanded="showStampMenu"
-          aria-haspopup="menu"
-          @click="handleStampClick"
-          title="Stamp (S)"
+          v-for="tool in navTools"
+          :key="tool.id"
+          :title="`${tool.name} (${tool.shortcut})`"
+          :aria-label="`${tool.name} tool, press ${tool.shortcut}`"
+          :aria-pressed="currentTool === tool.id"
+          :class="['p-2 rounded-lg transition-colors flex items-center justify-center', toolButtonClass(tool.id)]"
+          @click="$emit('select-tool', tool.id)"
         >
-          <Icon name="mdi:certificate" class="w-5 h-5" />
+          <Icon :name="tool.icon" class="w-5 h-5" />
         </button>
-
-        <!-- Stamp type dropdown menu -->
-        <div
-          v-if="showStampMenu"
-          role="menu"
-          aria-label="Select stamp type"
-          class="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50 min-w-[140px]"
-        >
-          <button
-            v-for="stampType in stampTypes"
-            :key="stampType"
-            role="menuitem"
-            :aria-label="`Select ${stampType} stamp${currentStampType === stampType ? ', currently selected' : ''}`"
-            class="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-            :class="{ 'bg-blue-50': currentStampType === stampType }"
-            @click="selectStampType(stampType)"
-          >
-            <span
-              class="w-3 h-3 rounded-full flex-shrink-0"
-              :style="{ backgroundColor: getStampColor(stampType) }"
-              :aria-hidden="true"
-            />
-            <span class="text-sm font-medium">{{ stampType }}</span>
-          </button>
-        </div>
       </div>
-
-      <button
-        v-for="tool in tools"
-        :key="tool.id"
-        :title="`${tool.name} (${tool.shortcut})`"
-        :aria-label="`${tool.name} tool, press ${tool.shortcut}`"
-        :aria-pressed="currentTool === tool.id"
-        :class="[
-          'p-2 rounded-lg transition-all duration-150',
-          currentTool === tool.id
-            ? 'bg-blue-100 text-blue-600 shadow-sm'
-            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
-        ]"
-        @click="$emit('select-tool', tool.id)"
-      >
-        <Icon :name="tool.icon" class="w-5 h-5" />
-      </button>
     </div>
 
     <!-- Divider -->
-    <div class="h-px bg-neutral-200" />
+    <div class="h-px bg-neutral-800" />
+
+    <!-- DRAW group -->
+    <div class="flex flex-col gap-1">
+      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Draw</h4>
+      <div class="grid grid-cols-2 gap-1">
+        <button
+          v-for="tool in drawTools"
+          :key="tool.id"
+          :title="`${tool.name} (${tool.shortcut})`"
+          :aria-label="`${tool.name} tool, press ${tool.shortcut}`"
+          :aria-pressed="currentTool === tool.id"
+          :class="['p-2 rounded-lg transition-colors flex items-center justify-center', toolButtonClass(tool.id)]"
+          @click="$emit('select-tool', tool.id)"
+        >
+          <Icon :name="tool.icon" class="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="h-px bg-neutral-800" />
+
+    <!-- MODIFY group -->
+    <div class="flex flex-col gap-1">
+      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Modify</h4>
+      <div class="grid grid-cols-2 gap-1">
+        <button
+          v-for="tool in modifyTools"
+          :key="tool.id"
+          :title="`${tool.name} (${tool.shortcut})`"
+          :aria-label="`${tool.name} tool, press ${tool.shortcut}`"
+          :aria-pressed="currentTool === tool.id"
+          :class="['p-2 rounded-lg transition-colors flex items-center justify-center', toolButtonClass(tool.id)]"
+          @click="$emit('select-tool', tool.id)"
+        >
+          <Icon :name="tool.icon" class="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="h-px bg-neutral-800" />
+
+    <!-- ANNOTATE group -->
+    <div class="flex flex-col gap-1">
+      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Annotate</h4>
+      <div class="grid grid-cols-2 gap-1">
+        <button
+          v-for="tool in annotateTools"
+          :key="tool.id"
+          :title="`${tool.name} (${tool.shortcut})`"
+          :aria-label="`${tool.name} tool, press ${tool.shortcut}`"
+          :aria-pressed="currentTool === tool.id"
+          :class="['p-2 rounded-lg transition-colors flex items-center justify-center', toolButtonClass(tool.id)]"
+          @click="$emit('select-tool', tool.id)"
+        >
+          <Icon :name="tool.icon" class="w-5 h-5" />
+        </button>
+
+        <!-- Stamp tool with dropdown -->
+        <div class="relative">
+          <button
+            :class="[
+              'tool-btn w-full p-2 rounded-lg transition-colors flex items-center justify-center',
+              currentTool === 'stamp'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100'
+            ]"
+            :aria-label="`Stamp tool, press S. Current: ${currentStampType}`"
+            :aria-expanded="showStampMenu"
+            aria-haspopup="menu"
+            @click="handleStampClick"
+            title="Stamp (S)"
+          >
+            <Icon name="mdi:certificate" class="w-5 h-5" />
+          </button>
+
+          <!-- Stamp type dropdown menu -->
+          <div
+            v-if="showStampMenu"
+            role="menu"
+            aria-label="Select stamp type"
+            class="absolute bottom-full left-0 mb-2 bg-neutral-800 rounded-lg shadow-lg border border-neutral-700 text-neutral-100 overflow-hidden z-50 min-w-[140px]"
+          >
+            <button
+              v-for="stampType in stampTypes"
+              :key="stampType"
+              role="menuitem"
+              :aria-label="`Select ${stampType} stamp${currentStampType === stampType ? ', currently selected' : ''}`"
+              class="w-full px-4 py-2 text-left hover:bg-neutral-700 flex items-center gap-2"
+              :class="{ 'bg-blue-500/20': currentStampType === stampType }"
+              @click="selectStampType(stampType)"
+            >
+              <span
+                class="w-3 h-3 rounded-full flex-shrink-0"
+                :style="{ backgroundColor: getStampColor(stampType) }"
+                :aria-hidden="true"
+              />
+              <span class="text-sm font-medium">{{ stampType }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="h-px bg-neutral-800" />
+
+    <!-- MEASURE group -->
+    <div class="flex flex-col gap-1">
+      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Measure</h4>
+      <div class="grid grid-cols-2 gap-1">
+        <button
+          v-for="tool in measureTools"
+          :key="tool.id"
+          :title="`${tool.name} (${tool.shortcut})`"
+          :aria-label="`${tool.name} tool, press ${tool.shortcut}`"
+          :aria-pressed="currentTool === tool.id"
+          :class="['p-2 rounded-lg transition-colors flex items-center justify-center', toolButtonClass(tool.id)]"
+          @click="$emit('select-tool', tool.id)"
+        >
+          <Icon :name="tool.icon" class="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="h-px bg-neutral-800" />
 
     <!-- Color Picker -->
     <div class="flex flex-col gap-1">
-      <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Color</h4>
+      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Color</h4>
 
       <div class="grid grid-cols-3 gap-1" role="group" aria-label="Color palette">
         <button
@@ -83,10 +163,10 @@
           :aria-label="`Color ${color}${currentColor === color ? ', selected' : ''}`"
           :aria-pressed="currentColor === color"
           :class="[
-            'w-7 h-7 rounded-md transition-all duration-150',
+            'w-7 h-7 rounded-md transition-all duration-150 ring-1',
             currentColor === color
-              ? 'ring-2 ring-offset-1 ring-blue-500 scale-110 shadow-sm'
-              : 'hover:scale-110 hover:shadow-sm active:scale-95'
+              ? 'ring-2 ring-blue-500 scale-110 shadow-sm'
+              : 'ring-neutral-700 hover:scale-110 hover:shadow-sm active:scale-95'
           ]"
           :style="{ backgroundColor: color }"
           @click="$emit('select-color', color)"
@@ -94,21 +174,23 @@
       </div>
 
       <!-- Custom color input -->
-      <input
-        type="color"
-        :value="currentColor"
-        aria-label="Custom color picker"
-        class="w-full h-7 rounded cursor-pointer transition-transform hover:scale-105"
-        @input="$emit('select-color', ($event.target as HTMLInputElement).value)"
-      />
+      <div class="bg-neutral-800 p-1 rounded">
+        <input
+          type="color"
+          :value="currentColor"
+          aria-label="Custom color picker"
+          class="w-full h-6 rounded cursor-pointer transition-transform hover:scale-105"
+          @input="$emit('select-color', ($event.target as HTMLInputElement).value)"
+        />
+      </div>
     </div>
 
     <!-- Divider -->
-    <div class="h-px bg-neutral-200" />
+    <div class="h-px bg-neutral-800" />
 
     <!-- Size Picker -->
     <div class="flex flex-col gap-1">
-      <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Size</h4>
+      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Size</h4>
 
       <div class="flex flex-col gap-1" role="group" aria-label="Stroke size">
         <button
@@ -119,13 +201,13 @@
           :class="[
             'flex items-center gap-2 px-2 py-1 rounded-md transition-all duration-150',
             currentSize === size
-              ? 'bg-blue-100 text-blue-600 shadow-sm'
-              : 'hover:bg-neutral-100 text-neutral-600 hover:scale-[1.02] active:scale-95'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-neutral-300 hover:bg-neutral-800 hover:scale-[1.02] active:scale-95'
           ]"
           @click="$emit('select-size', size)"
         >
           <div
-            class="rounded-full bg-neutral-800"
+            class="rounded-full bg-neutral-300 flex-shrink-0"
             :style="{ width: `${size}px`, height: `${size}px` }"
           />
           <span class="text-xs">{{ size }}px</span>
@@ -134,127 +216,131 @@
     </div>
 
     <!-- Divider -->
-    <div class="h-px bg-neutral-200" />
+    <div class="h-px bg-neutral-800" />
 
     <!-- Actions -->
     <div class="flex flex-col gap-1">
-      <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Actions</h4>
+      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Actions</h4>
 
-      <button
-        :disabled="!canUndo"
-        :class="[
-          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
-          canUndo
-            ? 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
-            : 'opacity-40 cursor-not-allowed text-neutral-400'
-        ]"
-        title="Undo (Ctrl+Z)"
-        @click="$emit('undo')"
-      >
-        <Icon name="mdi:undo" class="w-5 h-5" />
-      </button>
+      <div class="grid grid-cols-3 gap-1">
+        <button
+          :disabled="!canUndo"
+          :class="[
+            'p-2 rounded-lg transition-colors flex items-center justify-center',
+            canUndo
+              ? 'hover:bg-neutral-800 text-neutral-300'
+              : 'opacity-40 cursor-not-allowed text-neutral-600'
+          ]"
+          title="Undo (Ctrl+Z)"
+          @click="$emit('undo')"
+        >
+          <Icon name="mdi:undo" class="w-5 h-5" />
+        </button>
 
-      <button
-        :disabled="!canRedo"
-        :class="[
-          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
-          canRedo
-            ? 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
-            : 'opacity-40 cursor-not-allowed text-neutral-400'
-        ]"
-        title="Redo (Ctrl+Y)"
-        @click="$emit('redo')"
-      >
-        <Icon name="mdi:redo" class="w-5 h-5" />
-      </button>
+        <button
+          :disabled="!canRedo"
+          :class="[
+            'p-2 rounded-lg transition-colors flex items-center justify-center',
+            canRedo
+              ? 'hover:bg-neutral-800 text-neutral-300'
+              : 'opacity-40 cursor-not-allowed text-neutral-600'
+          ]"
+          title="Redo (Ctrl+Y)"
+          @click="$emit('redo')"
+        >
+          <Icon name="mdi:redo" class="w-5 h-5" />
+        </button>
 
-      <button
-        class="p-2 rounded-lg hover:bg-red-50 hover:text-red-600 text-neutral-600 transition-all duration-150 hover:scale-105 active:scale-95"
-        title="Clear Canvas"
-        @click="$emit('clear')"
-      >
-        <Icon name="mdi:delete-sweep" class="w-5 h-5" />
-      </button>
+        <button
+          class="p-2 rounded-lg hover:bg-red-900/40 hover:text-red-400 text-neutral-300 transition-colors flex items-center justify-center"
+          title="Clear Canvas"
+          @click="$emit('clear')"
+        >
+          <Icon name="mdi:delete-sweep" class="w-5 h-5" />
+        </button>
+      </div>
     </div>
 
     <!-- Divider -->
-    <div class="h-px bg-neutral-200" />
+    <div class="h-px bg-neutral-800" />
 
     <!-- CAD Modes -->
     <div class="flex flex-col gap-1">
-      <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Modes</h4>
+      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Modes</h4>
 
-      <button
-        :class="[
-          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
-          props.orthoEnabled
-            ? 'bg-green-100 text-green-600 shadow-sm'
-            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
-        ]"
-        :aria-pressed="props.orthoEnabled"
-        title="Ortho mode (F8)"
-        @click="$emit('toggle-ortho')"
-      >
-        <Icon name="mdi:arrow-expand" class="w-5 h-5" />
-      </button>
+      <div class="grid grid-cols-2 gap-1">
+        <button
+          :class="[
+            'p-2 rounded-lg transition-colors flex items-center justify-center',
+            props.orthoEnabled
+              ? 'bg-green-600 text-white shadow-sm'
+              : 'hover:bg-neutral-800 text-neutral-300'
+          ]"
+          :aria-pressed="props.orthoEnabled"
+          title="Ortho mode (F8)"
+          @click="$emit('toggle-ortho')"
+        >
+          <Icon name="mdi:arrow-expand" class="w-5 h-5" />
+        </button>
 
-      <button
-        :class="[
-          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
-          props.polarEnabled
-            ? 'bg-green-100 text-green-600 shadow-sm'
-            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
-        ]"
-        :aria-pressed="props.polarEnabled"
-        title="Polar tracking (F10)"
-        @click="$emit('toggle-polar')"
-      >
-        <Icon name="mdi:compass-outline" class="w-5 h-5" />
-      </button>
+        <button
+          :class="[
+            'p-2 rounded-lg transition-colors flex items-center justify-center',
+            props.polarEnabled
+              ? 'bg-green-600 text-white shadow-sm'
+              : 'hover:bg-neutral-800 text-neutral-300'
+          ]"
+          :aria-pressed="props.polarEnabled"
+          title="Polar tracking (F10)"
+          @click="$emit('toggle-polar')"
+        >
+          <Icon name="mdi:compass-outline" class="w-5 h-5" />
+        </button>
 
-      <button
-        :class="[
-          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
-          props.gridEnabled
-            ? 'bg-green-100 text-green-600 shadow-sm'
-            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
-        ]"
-        :aria-pressed="props.gridEnabled"
-        title="Grid (GRID)"
-        @click="$emit('toggle-grid')"
-      >
-        <Icon name="mdi:grid" class="w-5 h-5" />
-      </button>
+        <button
+          :class="[
+            'p-2 rounded-lg transition-colors flex items-center justify-center',
+            props.gridEnabled
+              ? 'bg-green-600 text-white shadow-sm'
+              : 'hover:bg-neutral-800 text-neutral-300'
+          ]"
+          :aria-pressed="props.gridEnabled"
+          title="Grid (GRID)"
+          @click="$emit('toggle-grid')"
+        >
+          <Icon name="mdi:grid" class="w-5 h-5" />
+        </button>
 
-      <button
-        :class="[
-          'p-2 rounded-lg transition-all duration-150 flex items-center justify-center',
-          props.snapEnabled
-            ? 'bg-green-100 text-green-600 shadow-sm'
-            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
-        ]"
-        :aria-pressed="props.snapEnabled"
-        title="Object snap (OSNAP)"
-        @click="$emit('toggle-snap')"
-      >
-        <Icon name="mdi:magnet" class="w-5 h-5" />
-      </button>
+        <button
+          :class="[
+            'p-2 rounded-lg transition-colors flex items-center justify-center',
+            props.snapEnabled
+              ? 'bg-green-600 text-white shadow-sm'
+              : 'hover:bg-neutral-800 text-neutral-300'
+          ]"
+          :aria-pressed="props.snapEnabled"
+          title="Object snap (OSNAP)"
+          @click="$emit('toggle-snap')"
+        >
+          <Icon name="mdi:magnet" class="w-5 h-5" />
+        </button>
+      </div>
     </div>
 
     <!-- Divider -->
-    <div class="h-px bg-neutral-200" />
+    <div class="h-px bg-neutral-800" />
 
     <!-- Export -->
     <div class="flex flex-col gap-1">
-      <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide px-1">Export</h4>
+      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Export</h4>
 
       <button
         :disabled="isExporting"
         :class="[
-          'p-2 rounded-lg transition-all duration-150',
+          'p-2 rounded-lg transition-colors flex items-center justify-center',
           isExporting
-            ? 'animate-pulse bg-blue-100 text-blue-600'
-            : 'hover:bg-neutral-100 text-neutral-600 hover:scale-105 active:scale-95'
+            ? 'animate-pulse bg-blue-600 text-white'
+            : 'hover:bg-neutral-800 text-neutral-300'
         ]"
         :title="isExporting ? `Exporting ${exportProgress}%` : 'Export canvas'"
         @click="$emit('open-export')"
@@ -264,7 +350,7 @@
     </div>
 
     <!-- Divider -->
-    <div class="h-px bg-neutral-200" />
+    <div class="h-px bg-neutral-800" />
 
     <!-- Layer -->
     <div class="flex flex-col gap-1">
@@ -684,29 +770,60 @@ function handleDocumentClick(event: MouseEvent) {
   }
 }
 
-const tools = [
+// AutoCAD-style tool palette: grouped into ribbon-like panels.
+const navTools = [
   { id: 'select' as DrawingTool, name: 'Select', shortcut: 'V', icon: 'mdi:cursor-default' },
   { id: 'pan' as DrawingTool, name: 'Pan', shortcut: 'H', icon: 'mdi:pan' },
+]
+
+const drawTools = [
   { id: 'pen' as DrawingTool, name: 'Pen', shortcut: 'P', icon: 'mdi:pencil' },
   { id: 'highlighter' as DrawingTool, name: 'Highlighter', shortcut: 'B', icon: 'mdi:marker' },
   { id: 'line' as DrawingTool, name: 'Line', shortcut: 'L', icon: 'mdi:vector-line' },
   { id: 'arrow' as DrawingTool, name: 'Arrow', shortcut: 'A', icon: 'mdi:arrow-top-right' },
-  { id: 'text-annotation' as DrawingTool, name: 'Text Annotation', shortcut: 'T', icon: 'mdi:comment-text-outline' },
   { id: 'rectangle' as DrawingTool, name: 'Rectangle', shortcut: 'R', icon: 'mdi:rectangle-outline' },
   { id: 'circle' as DrawingTool, name: 'Circle', shortcut: 'C', icon: 'mdi:circle-outline' },
   { id: 'ellipse' as DrawingTool, name: 'Ellipse', shortcut: 'E', icon: 'mdi:ellipse-outline' },
   { id: 'polyline' as DrawingTool, name: 'Polyline', shortcut: 'PL', icon: 'mdi:vector-polyline' },
   { id: 'arc' as DrawingTool, name: 'Arc', shortcut: 'ARC', icon: 'mdi:vector-curve' },
+  { id: 'revision-cloud' as DrawingTool, name: 'Revision Cloud', shortcut: 'RC', icon: 'mdi:cloud-outline' },
+]
+
+const modifyTools = [
   { id: 'offset' as DrawingTool, name: 'Offset', shortcut: 'O', icon: 'mdi:format-line-spacing' },
+  { id: 'mirror' as DrawingTool, name: 'Mirror', shortcut: 'MI', icon: 'mdi:flip-horizontal' },
   { id: 'trim' as DrawingTool, name: 'Trim', shortcut: 'TR', icon: 'mdi:content-cut' },
   { id: 'extend' as DrawingTool, name: 'Extend', shortcut: 'EX', icon: 'mdi:arrow-expand-horizontal' },
   { id: 'fillet' as DrawingTool, name: 'Fillet', shortcut: 'F', icon: 'mdi:vector-radius' },
-  { id: 'mirror' as DrawingTool, name: 'Mirror', shortcut: 'MI', icon: 'mdi:flip-horizontal' },
-  { id: 'dimension' as DrawingTool, name: 'Dimension', shortcut: 'DIM', icon: 'mdi:ruler-square' },
   { id: 'eraser' as DrawingTool, name: 'Eraser', shortcut: 'X', icon: 'mdi:eraser' },
+]
+
+const annotateTools = [
+  { id: 'text-annotation' as DrawingTool, name: 'Text Annotation', shortcut: 'T', icon: 'mdi:comment-text-outline' },
+  { id: 'dimension' as DrawingTool, name: 'Dimension', shortcut: 'DIM', icon: 'mdi:ruler-square' },
+  // Note: Stamp (S) is rendered separately in the ANNOTATE grid with its dropdown.
+]
+
+const measureTools = [
   { id: 'measure-distance' as DrawingTool, name: 'Measure Distance', shortcut: 'M', icon: 'mdi:ruler' },
   { id: 'measure-area' as DrawingTool, name: 'Measure Area', shortcut: 'Shift+M', icon: 'mdi:chart-box-outline' },
-] as const
+]
+
+// Flat list for the mobile palette (Stamp handled separately there too).
+const tools = [
+  ...navTools,
+  ...drawTools,
+  ...modifyTools,
+  ...annotateTools,
+  ...measureTools,
+]
+
+// Active/inactive classes for grouped tool buttons (dark CAD chrome).
+function toolButtonClass(toolId: DrawingTool) {
+  return currentTool.value === toolId
+    ? 'bg-blue-600 text-white shadow-sm'
+    : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100'
+}
 
 // Use centralized color and size constants from types
 const colors = COLORS

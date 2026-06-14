@@ -70,6 +70,7 @@ Copy `.env.example` to `.env`. Required: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `N
 |------|----------|------|-------------|
 | Polyline | PL | `usePolylineTool.ts` | Multi-segment connected lines. Click to place vertices, Enter to finish, Backspace to undo last vertex, 'c' to close back to start, double-click to finish. Creates a `PolylineElement` with `closed` property |
 | Arc | ARC | `useArcTool.ts` | Three-point arc definition (AutoCAD-style). Click start point, click through-point (defines curve bulge), click end point. Escape to cancel |
+| Revision Cloud | RC | `useRevisionCloudTool.ts` | Puffy cloud outline for circling revisions (AutoCAD `REVCLOUD`). Click to place vertices, Enter/double-click to close the loop (≥2 vertices), `c` to close, Backspace to undo a vertex, Escape to cancel. Creates a `RevisionCloudElement` rendered as connected outward-bulging arc lobes via `revisionCloudPath` geometry util |
 | Offset | O | `useOffsetTool.ts` | Creates parallel copy at a specified distance. Click near element to set distance, click again to confirm offset side. Supports line, polyline, rectangle. Uses `parallelSegment` and `offsetPolyline` geometry utils |
 | Mirror | MI | `useMirrorTool.ts` | Creates reflected copy across a user-defined axis. Click elements to select (toggle), Enter to confirm, then click two points to define mirror axis. Supports line, polyline, arrow, rectangle, circle, ellipse, arc. Preserves originals |
 | Trim | TR | `useTrimTool.ts` | Cuts element at intersection with a cutting edge. Click to select cutting edge, then click portion of another element to remove. Keeps side opposite to click. Uses `segmentSegmentIntersection` geometry. Works with line and polyline |
@@ -125,7 +126,7 @@ All tools receive a shared `ToolContext` object from `WhiteboardCanvas.vue`:
 
 ### Command Line (`useCommandEngine.ts`, `useCommandRegistry.ts`, `CommandLine.vue`)
 - AutoCAD-style text command input at the bottom of the screen
-- Registered commands: LINE, CIRCLE, RECTANGLE, ELLIPSE, ARROW, TEXT, PEN, POLYLINE, ARC, OFFSET, TRIM, EXTEND, FILLET, MIRROR, DIMENSION, SELECT, PAN, GRID, ORTHO, OSNAP, POLAR, UNDO, REDO, LAYER
+- Registered commands: LINE, CIRCLE, RECTANGLE, ELLIPSE, ARROW, TEXT, PEN, POLYLINE, ARC, REVCLOUD, OFFSET, TRIM, EXTEND, FILLET, MIRROR, DIMENSION, SELECT, PAN, GRID, ORTHO, OSNAP, POLAR, UNDO, REDO, LAYER
 - Supports aliases (e.g., `L` → LINE, `C` → CIRCLE, `OS` → OSNAP)
 - Autocomplete suggestions as you type
 - Command history navigation with up/down arrow keys
