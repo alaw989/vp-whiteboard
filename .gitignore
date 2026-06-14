@@ -9,6 +9,9 @@ dist
 # Node dependencies
 node_modules
 
+# Laravel
+/vendor
+
 # Logs
 logs
 *.log
@@ -21,14 +24,12 @@ logs
 .DS_Store
 .fleet
 .idea
+Thumbs.db
 
 # Local env files
 .env
 .env.*
 !.env.example
-
-# Environment
-.env
 
 # TypeScript
 *.tsbuildinfo
