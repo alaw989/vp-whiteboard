@@ -28,3 +28,25 @@ logs
 
 # TypeScript
 *.tsbuildinfo
+
+# Tooling / MCP config
+.agents/
+.mcp.json
+.playwright-mcp/
+skills-lock.json
+
+# Test / audit screenshots (root-level)
+audit-*.png
+cmd-*.png
+layer-*.png
+line-*.png
+ortho-*.png
+phase2-*.png
+rect-*.png
+shapes-*.png
+stamp-*.png
+verification-*.png
+
+# Temp dirs and user uploads
+supabase/.temp/
+public/uploads/
