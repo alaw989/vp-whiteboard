@@ -14,12 +14,23 @@ export function useArrowTool(ctx: ToolContext): ToolHandler {
     state: { arrowStart, currentArrowEnd },
     onMouseDown(_event: any, pos: PointerPosition) {
       ctx.isDrawing.value = true
-      arrowStart.value = pos
-      currentArrowEnd.value = pos
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      const start = snap ? { x: snap.x, y: snap.y } : pos
+      arrowStart.value = start
+      currentArrowEnd.value = start
+      ctx.currentSnapPoint.value = snap || null
     },
     onMouseMove(_event: any, pos: PointerPosition) {
-      if (!ctx.isDrawing.value) return
-      currentArrowEnd.value = arrowStart.value ? ctx.constrainPoint(arrowStart.value, pos) : pos
+      if (!ctx.isDrawing.value || !arrowStart.value) return
+      // OSNAP takes priority; otherwise apply ortho/polar/grid constraint.
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      if (snap) {
+        currentArrowEnd.value = { x: snap.x, y: snap.y }
+        ctx.currentSnapPoint.value = snap
+      } else {
+        currentArrowEnd.value = ctx.constrainPoint(arrowStart.value, pos)
+        ctx.currentSnapPoint.value = null
+      }
     },
     onMouseUp(_event: any, _pos: PointerPosition) {
       if (!ctx.isDrawing.value || !arrowStart.value || !currentArrowEnd.value) return

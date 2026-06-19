@@ -11,7 +11,7 @@ import {
 } from '~/utils/geometryUtils'
 
 export function useFilletTool(ctx: ToolContext): ToolHandler {
-  const filletRadius = ref(20)
+  const filletRadius = ctx.filletRadius
   const firstLineId = ref<string | null>(null)
   const step = ref<'first-line' | 'second-line'>('first-line')
   const highlightId = ref<string | null>(null)
@@ -60,15 +60,16 @@ export function useFilletTool(ctx: ToolContext): ToolHandler {
     const result = calculateFillet(a1, a2, b1, b2, filletRadius.value)
     if (!result) return
 
-    // Shorten line1 to tangentA
-    ctx.emitElementUpdate(line1.id, {
-      data: { ...d1, end: [result.tangentA.x, result.tangentA.y] } as LineElement,
-    })
+    // Shorten whichever end of each line is nearer its tangent point (the
+    // correct corner side is resolved inside calculateFillet).
+    const trimLineData = (data: LineElement, tangent: Point): LineElement =>
+      distance(tangent, { x: data.start[0], y: data.start[1] }) <
+      distance(tangent, { x: data.end[0], y: data.end[1] })
+        ? { ...data, start: [tangent.x, tangent.y] }
+        : { ...data, end: [tangent.x, tangent.y] }
 
-    // Shorten line2 to tangentB
-    ctx.emitElementUpdate(line2.id, {
-      data: { ...d2, end: [result.tangentB.x, result.tangentB.y] } as LineElement,
-    })
+    ctx.emitElementUpdate(line1.id, { data: trimLineData(d1, result.tangentA) })
+    ctx.emitElementUpdate(line2.id, { data: trimLineData(d2, result.tangentB) })
 
     // Create arc element for the fillet
     // Calculate angles for the arc
@@ -125,15 +126,19 @@ export function useFilletTool(ctx: ToolContext): ToolHandler {
 
       applyFillet(firstLine, el)
     },
-    onKeyDown(event: KeyboardEvent) {
+    onKeyDown(event: KeyboardEvent): boolean {
       if (event.key === 'Escape') {
         if (step.value === 'second-line') {
           firstLineId.value = null
           step.value = 'first-line'
-        } else {
+          return true
+        } else if (firstLineId.value) {
           reset()
+          return true
         }
+        return false
       }
+      return false
     },
     deactivate() {
       reset()

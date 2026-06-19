@@ -14,12 +14,23 @@ export function useLineTool(ctx: ToolContext): ToolHandler {
     state: { lineStart, currentLineEnd },
     onMouseDown(_event: any, pos: PointerPosition) {
       ctx.isDrawing.value = true
-      lineStart.value = pos
-      currentLineEnd.value = pos
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      const start = snap ? { x: snap.x, y: snap.y } : pos
+      lineStart.value = start
+      currentLineEnd.value = start
+      ctx.currentSnapPoint.value = snap || null
     },
     onMouseMove(_event: any, pos: PointerPosition) {
-      if (!ctx.isDrawing.value) return
-      currentLineEnd.value = lineStart.value ? ctx.constrainPoint(lineStart.value, pos) : pos
+      if (!ctx.isDrawing.value || !lineStart.value) return
+      // OSNAP takes priority; otherwise apply ortho/polar/grid constraint.
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      if (snap) {
+        currentLineEnd.value = { x: snap.x, y: snap.y }
+        ctx.currentSnapPoint.value = snap
+      } else {
+        currentLineEnd.value = ctx.constrainPoint(lineStart.value, pos)
+        ctx.currentSnapPoint.value = null
+      }
     },
     onMouseUp(_event: any, _pos: PointerPosition) {
       if (!ctx.isDrawing.value || !lineStart.value || !currentLineEnd.value) return

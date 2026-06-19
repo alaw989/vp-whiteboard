@@ -7,6 +7,7 @@ export function useTextAnnotationTool(ctx: ToolContext): ToolHandler {
   const showAnnotationInput = ref(false)
   const pendingAnnotationText = ref('')
   const annotationInputPosition = ref<PointerPosition>({ x: 0, y: 0 })
+  const pendingLeaderLine = ref<{ start: [number, number]; end: [number, number] } | null>(null)
 
   function reset() {
     textAnnotationStart.value = null
@@ -17,10 +18,11 @@ export function useTextAnnotationTool(ctx: ToolContext): ToolHandler {
     const text = pendingAnnotationText.value.trim()
     if (!text) {
       showAnnotationInput.value = false
+      pendingLeaderLine.value = null
       return
     }
 
-    const leaderLine = (window as any).__pendingLeaderLine
+    const leaderLine = pendingLeaderLine.value
     if (!leaderLine) {
       showAnnotationInput.value = false
       return
@@ -48,13 +50,13 @@ export function useTextAnnotationTool(ctx: ToolContext): ToolHandler {
 
     ctx.emitElementAdd(element)
     showAnnotationInput.value = false
-    delete (window as any).__pendingLeaderLine
+    pendingLeaderLine.value = null
   }
 
   function cancelAnnotation() {
     showAnnotationInput.value = false
     pendingAnnotationText.value = ''
-    delete (window as any).__pendingLeaderLine
+    pendingLeaderLine.value = null
   }
 
   return {
@@ -77,7 +79,7 @@ export function useTextAnnotationTool(ctx: ToolContext): ToolHandler {
       pendingAnnotationText.value = ''
       showAnnotationInput.value = true
 
-      ;(window as any).__pendingLeaderLine = {
+      pendingLeaderLine.value = {
         start: [start.x, start.y],
         end: [currentLeaderLineEnd.value.x, currentLeaderLineEnd.value.y],
       }

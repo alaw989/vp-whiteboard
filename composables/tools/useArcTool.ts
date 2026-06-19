@@ -60,12 +60,14 @@ export function useArcTool(ctx: ToolContext): ToolHandler {
     onMouseUp() {
       // Arc uses clicks, not drag
     },
-    onKeyDown(event: KeyboardEvent) {
-      if (!isDrawing.value) return
+    onKeyDown(event: KeyboardEvent): boolean {
+      if (!isDrawing.value) return false
 
       if (event.key === 'Escape') {
         reset()
+        return true
       }
+      return false
     },
     deactivate() {
       reset()

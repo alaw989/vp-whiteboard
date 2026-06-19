@@ -258,72 +258,58 @@ export function calculateFillet(
   b1: Point, b2: Point,
   radius: number,
 ): FilletResult | null {
-  // Find intersection of the two lines
+  if (radius <= 0) return null
+
   const dirA = direction(a1, a2)
   const dirB = direction(b1, b2)
   const intersection = lineLineIntersection(a1, dirA, b1, dirB)
-  if (!intersection) return null
+  if (!intersection) return null // lines are parallel
 
-  // Angle between the two lines
-  const dot = dirA.x * dirB.x + dirA.y * dirB.y
-  const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
-  if (angle < 1e-6 || angle > Math.PI - 1e-6) return null
+  const nA = normal(dirA)
+  const nB = normal(dirB)
+  const eps = 0.5 // on-segment tolerance, in px
 
-  // Distance from intersection to tangent point
-  const halfAngle = angle / 2
-  const tanDist = radius / Math.tan(halfAngle)
+  // Construct the (up to four) radius-r circles tangent to both lines by
+  // intersecting each line offset by ±radius. The correct corner is whichever
+  // candidate has both tangent feet landing on the input segments — this
+  // auto-selects the correct side and rejects radii too large for the segments.
+  const offsetsA = [nA, { x: -nA.x, y: -nA.y }]
+  const offsetsB = [nB, { x: -nB.x, y: -nB.y }]
 
-  // Tangent points along each line from intersection
-  const tangentA: Point = {
-    x: intersection.x + dirA.x * tanDist,
-    y: intersection.y + dirA.y * tanDist,
-  }
-  const tangentB: Point = {
-    x: intersection.x + dirB.x * tanDist,
-    y: intersection.y + dirB.y * tanDist,
-  }
+  let best: { center: Point; tangentA: Point; tangentB: Point } | null = null
 
-  // Check tangents are on the correct side of the segments
-  // Tangent A should be between intersection and a2 (or at least on the ray)
-  // For now, accept and let caller validate
+  for (const oa of offsetsA) {
+    for (const ob of offsetsB) {
+      const center = lineLineIntersection(
+        { x: a1.x + oa.x * radius, y: a1.y + oa.y * radius }, dirA,
+        { x: b1.x + ob.x * radius, y: b1.y + ob.y * radius }, dirB,
+      )
+      if (!center) continue
 
-  // Fillet center: perpendicular from tangent point + radius
-  const normalA = normal(dirA)
-  const normalB = normal(dirB)
-  // Center is offset from tangent in the direction toward the inside of the angle
-  // Use the average normal direction to determine which side
-  const centerFromA: Point = {
-    x: tangentA.x + normalA.x * radius,
-    y: tangentA.y + normalA.y * radius,
-  }
-  const centerFromB: Point = {
-    x: tangentB.x + normalB.x * radius,
-    y: tangentB.y + normalB.y * radius,
-  }
+      // Tangent points = perpendicular feet from the center onto each line.
+      const tangentA = projectPointOnLine(center, a1, a2)
+      const tangentB = projectPointOnLine(center, b1, b2)
 
-  // Try both normal directions and pick the one where both agree
-  const centerCandidate1 = lineLineIntersection(tangentA, normalA, tangentB, normalB)
-  const normalA2 = { x: -normalA.x, y: -normalA.y }
-  const normalB2 = { x: -normalB.x, y: -normalB.y }
-  const centerCandidate2 = lineLineIntersection(tangentA, normalA2, tangentB, normalB2)
+      // Both feet must lie within the input segments (not clamped past an end).
+      if (pointToSegmentDistance(tangentA, a1, a2) > eps) continue
+      if (pointToSegmentDistance(tangentB, b1, b2) > eps) continue
 
-  let center: Point | null = null
-  if (centerCandidate1) {
-    center = centerCandidate1
-  } else if (centerCandidate2) {
-    center = centerCandidate2
-    // Flip tangent calculations
+      // Among qualifying corners prefer the one nearest the intersection.
+      if (!best || distance(center, intersection) < distance(best.center, intersection)) {
+        best = { center, tangentA, tangentB }
+      }
+    }
   }
 
-  if (!center) return null
+  if (!best) return null // radius too large, or no valid corner on these segments
 
   return {
-    center,
+    center: best.center,
     radius,
-    tangentA,
-    tangentB,
-    newEndA: tangentA,
-    newStartB: tangentB,
+    tangentA: best.tangentA,
+    tangentB: best.tangentB,
+    newEndA: best.tangentA,
+    newStartB: best.tangentB,
   }
 }
 
@@ -381,6 +367,73 @@ export function getElementGeometry(element: any): {
     case 'arc': {
       // Approximate arc as polyline segments
       const pts = arcToPolylinePoints(data.start, data.through, data.end, 32)
+      const segs: LineSegment[] = []
+      for (let i = 0; i < pts.length - 1; i++) {
+        segs.push({ start: pts[i]!, end: pts[i + 1]! })
+      }
+      return { type: 'arc', segments: segs, points: pts }
+    }
+    case 'ellipse': {
+      // Sample the ellipse boundary (center x,y; radii; rotation) into segments.
+      const cx = data.x
+      const cy = data.y
+      const cos = Math.cos(data.rotation || 0)
+      const sin = Math.sin(data.rotation || 0)
+      const N = 48
+      const pts: Point[] = []
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2
+        const ex = data.radiusX * Math.cos(a)
+        const ey = data.radiusY * Math.sin(a)
+        pts.push({ x: cx + ex * cos - ey * sin, y: cy + ex * sin + ey * cos })
+      }
+      const segs: LineSegment[] = []
+      for (let i = 0; i < N; i++) {
+        segs.push({ start: pts[i]!, end: pts[(i + 1) % N]! })
+      }
+      return { type: 'polyline', segments: segs, points: pts }
+    }
+    case 'arrow': {
+      const p = data.points
+      const s = { x: p[0][0], y: p[0][1] }
+      const e = { x: p[1][0], y: p[1][1] }
+      return { type: 'line', segments: [{ start: s, end: e }], points: [s, e] }
+    }
+    case 'dimension': {
+      const s = { x: data.start[0], y: data.start[1] }
+      const e = { x: data.end[0], y: data.end[1] }
+      return { type: 'line', segments: [{ start: s, end: e }], points: [s, e] }
+    }
+    case 'stroke': {
+      const pts: Point[] = data.points.map((p: number[]) => ({ x: p[0], y: p[1] }))
+      const segs: LineSegment[] = []
+      for (let i = 0; i < pts.length - 1; i++) {
+        segs.push({ start: pts[i]!, end: pts[i + 1]! })
+      }
+      return { type: 'polyline', segments: segs, points: pts }
+    }
+    case 'revision-cloud': {
+      const pts: Point[] = data.points.map((p: number[]) => ({ x: p[0], y: p[1] }))
+      const segs: LineSegment[] = []
+      for (let i = 0; i < pts.length - 1; i++) {
+        segs.push({ start: pts[i]!, end: pts[i + 1]! })
+      }
+      if (data.closed && pts.length > 2) {
+        segs.push({ start: pts[pts.length - 1]!, end: pts[0]! })
+      }
+      return { type: 'polyline', segments: segs, points: pts }
+    }
+    case 'fillet-arc': {
+      const cx = data.center[0]
+      const cy = data.center[1]
+      let sweep = data.endAngle - data.startAngle
+      if (sweep < 0) sweep += Math.PI * 2
+      const N = 32
+      const pts: Point[] = []
+      for (let i = 0; i <= N; i++) {
+        const a = data.startAngle + (sweep * i) / N
+        pts.push({ x: cx + data.radius * Math.cos(a), y: cy + data.radius * Math.sin(a) })
+      }
       const segs: LineSegment[] = []
       for (let i = 0; i < pts.length - 1; i++) {
         segs.push({ start: pts[i]!, end: pts[i + 1]! })

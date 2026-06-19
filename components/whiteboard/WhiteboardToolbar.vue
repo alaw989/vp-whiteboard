@@ -790,7 +790,7 @@ const drawTools = [
 ]
 
 const modifyTools = [
-  { id: 'offset' as DrawingTool, name: 'Offset', shortcut: 'O', icon: 'mdi:format-line-spacing' },
+  { id: 'offset' as DrawingTool, name: 'Offset', shortcut: 'OFF', icon: 'mdi:format-line-spacing' },
   { id: 'mirror' as DrawingTool, name: 'Mirror', shortcut: 'MI', icon: 'mdi:flip-horizontal' },
   { id: 'trim' as DrawingTool, name: 'Trim', shortcut: 'TR', icon: 'mdi:content-cut' },
   { id: 'extend' as DrawingTool, name: 'Extend', shortcut: 'EX', icon: 'mdi:arrow-expand-horizontal' },

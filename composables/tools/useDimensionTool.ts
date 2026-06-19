@@ -113,10 +113,15 @@ export function useDimensionTool(ctx: ToolContext): ToolHandler {
       }
     },
 
-    onKeyDown(event: KeyboardEvent) {
+    onKeyDown(event: KeyboardEvent): boolean {
       if (event.key === 'Escape') {
-        reset()
+        if (startPoint.value) {
+          reset()
+          return true
+        }
+        return false
       }
+      return false
     },
   }
 }

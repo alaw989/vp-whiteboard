@@ -14,6 +14,7 @@ export interface ToolContext {
   currentColor: string
   currentSize: number
   currentStampType?: string
+  filletRadius: Ref<number>
   elements: CanvasElement[]
   // Refs
   isDrawing: Ref<boolean>
@@ -75,7 +76,10 @@ export interface ToolHandler {
   onMouseDown?: (event: any, pos: PointerPosition) => void
   onMouseMove?: (event: any, pos: PointerPosition) => void
   onMouseUp?: (event: any, pos: PointerPosition) => void
-  onKeyDown?: (event: KeyboardEvent) => void
+  // Return true when the tool consumes the event (handled it). The canvas keydown
+  // listener uses this to stopImmediatePropagation so the page-level shortcut
+  // handler doesn't also act (e.g. switch tools, deselect).
+  onKeyDown?: (event: KeyboardEvent) => boolean | void
   activate?: () => void
   deactivate?: () => void
   // Optional state exposed for template rendering
@@ -88,7 +92,7 @@ export interface ToolHandlerRegistry {
   dispatchMouseDown: (tool: DrawingTool, event: any, pos: PointerPosition) => void
   dispatchMouseMove: (tool: DrawingTool, event: any, pos: PointerPosition) => void
   dispatchMouseUp: (tool: DrawingTool, event: any, pos: PointerPosition) => void
-  dispatchKeyDown: (tool: DrawingTool, event: KeyboardEvent) => void
+  dispatchKeyDown: (tool: DrawingTool, event: KeyboardEvent) => boolean
   activateTool: (tool: DrawingTool) => void
   deactivateTool: (tool: DrawingTool) => void
 }
@@ -116,8 +120,10 @@ export function useToolHandlers(): ToolHandlerRegistry {
     handlers.get(tool)?.onMouseUp?.(event, pos)
   }
 
-  function dispatchKeyDown(tool: DrawingTool, event: KeyboardEvent) {
-    handlers.get(tool)?.onKeyDown?.(event)
+  function dispatchKeyDown(tool: DrawingTool, event: KeyboardEvent): boolean {
+    const handler = handlers.get(tool)
+    if (!handler?.onKeyDown) return false
+    return !!handler.onKeyDown(event)
   }
 
   function activateTool(tool: DrawingTool) {

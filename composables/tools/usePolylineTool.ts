@@ -69,13 +69,15 @@ export function usePolylineTool(ctx: ToolContext): ToolHandler {
     onMouseUp() {
       // Polyline uses clicks, not drag — no action on mouseup
     },
-    onKeyDown(event: KeyboardEvent) {
-      if (!isDrawing.value) return
+    onKeyDown(event: KeyboardEvent): boolean {
+      if (!isDrawing.value) return false
 
       if (event.key === 'Enter') {
         finishPolyline()
+        return true
       } else if (event.key === 'Escape') {
         cancelPolyline()
+        return true
       } else if (event.key === 'Backspace' || event.key === 'Delete') {
         // Remove last vertex
         if (vertices.value.length > 1) {
@@ -84,6 +86,7 @@ export function usePolylineTool(ctx: ToolContext): ToolHandler {
         } else {
           cancelPolyline()
         }
+        return true
       } else if (event.key === 'c' || event.key === 'C') {
         // Close the polyline
         if (vertices.value.length >= 3) {
@@ -104,7 +107,9 @@ export function usePolylineTool(ctx: ToolContext): ToolHandler {
           ctx.emitElementAdd(element)
           reset()
         }
+        return true
       }
+      return false
     },
     deactivate() {
       // If polyline is in progress with enough points, finish it

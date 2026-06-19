@@ -142,12 +142,15 @@ export function useOffsetTool(ctx: ToolContext): ToolHandler {
       ctx.emitElementAdd(previewResult.value.offsetEl)
       previewResult.value = null
     },
-    onKeyDown(event: KeyboardEvent) {
+    onKeyDown(event: KeyboardEvent): boolean {
       if (event.key === 'Escape') {
         if (step.value === 'select') {
           reset()
+          return true
         }
+        return false
       }
+      return false
     },
     deactivate() {
       reset()

@@ -10,6 +10,7 @@ export interface CommandEngineOptions {
   togglePolarTracking?: () => void
   applyDirectDistance?: (distance: number) => boolean
   isDrawing?: () => boolean
+  setFilletRadiusIfActive?: (n: number) => boolean
   undo: () => void
   redo: () => void
 }
@@ -68,6 +69,11 @@ export function useCommandEngine(options: CommandEngineOptions) {
           return
         }
       }
+      // Bare number while the fillet tool is active sets the fillet radius.
+      if (options.setFilletRadiusIfActive?.(num)) {
+        output(`FILLET radius set to ${num}`)
+        return
+      }
       output(`Distance: ${num}`)
       return
     }
@@ -99,7 +105,7 @@ export function useCommandEngine(options: CommandEngineOptions) {
   register({ name: 'REDO', aliases: ['RE'], description: 'Redo', action: (eng) => { eng.redo(); eng.output('REDO') } })
   register({ name: 'GRID', aliases: ['G'], description: 'Toggle grid', action: (eng) => { eng.toggleGrid(); eng.output('GRID toggled') } })
   register({ name: 'GRIDSNAP', aliases: ['GS', 'SNAP'], description: 'Toggle grid snap', action: (eng) => { eng.toggleGridSnap(); eng.output('GRID SNAP toggled') } })
-  register({ name: 'ORTHO', aliases: ['O'], description: 'Toggle ortho mode', action: (eng) => { eng.toggleOrtho(); eng.output('ORTHO toggled') } })
+  register({ name: 'ORTHO', aliases: [], description: 'Toggle ortho mode (F8)', action: (eng) => { eng.toggleOrtho(); eng.output('ORTHO toggled') } })
   register({ name: 'OSNAP', aliases: ['OS'], description: 'Toggle object snaps', action: (eng) => { eng.toggleSnap(); eng.output('OSNAP toggled') } })
   register({ name: 'POLAR', aliases: ['POL'], description: 'Toggle polar tracking', action: (eng) => { if (eng.togglePolarTracking) { eng.togglePolarTracking() } else { eng.output('POLAR: Not available') } } })
 

@@ -81,13 +81,15 @@ export function useRevisionCloudTool(ctx: ToolContext): ToolHandler {
     onMouseUp() {
       // Revision cloud uses clicks, not drag — no action on mouseup
     },
-    onKeyDown(event: KeyboardEvent) {
-      if (!isDrawing.value) return
+    onKeyDown(event: KeyboardEvent): boolean {
+      if (!isDrawing.value) return false
 
       if (event.key === 'Enter') {
         finishCloud()
+        return true
       } else if (event.key === 'Escape') {
         cancelCloud()
+        return true
       } else if (event.key === 'Backspace' || event.key === 'Delete') {
         if (vertices.value.length > 1) {
           vertices.value.pop()
@@ -95,9 +97,12 @@ export function useRevisionCloudTool(ctx: ToolContext): ToolHandler {
         } else {
           cancelCloud()
         }
+        return true
       } else if (event.key === 'c' || event.key === 'C') {
         finishCloud()
+        return true
       }
+      return false
     },
     deactivate() {
       // Finish if enough vertices, otherwise discard

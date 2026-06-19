@@ -1429,6 +1429,10 @@ const panStartViewport = ref<{x: number, y: number} | null>(null)
 const isPanToolActive = ref(false)
 const currentSnapPoint = ref<{x: number, y: number, type?: string} | null>(null)
 
+// Fillet radius — configurable via the command line (e.g. type a number while
+// the fillet tool is active).
+const filletRadius = ref(20)
+
 // Polar tracking
 const polarTracking = usePolarTracking()
 const polarTrackingResult = ref<{ point: { x: number; y: number }; angle: number; snapped: boolean } | null>(null)
@@ -1493,6 +1497,7 @@ const toolContext: ToolContext = {
   layerRef,
   currentPressure,
   currentPointerType,
+  filletRadius,
   getPointerPos,
   getStagePointerPos,
   emitElementAdd: (el) => {
@@ -1775,6 +1780,18 @@ function handleKeyDown(event: KeyboardEvent) {
     return
   }
 
+  // Route to the active tool FIRST. Multi-step tools (polyline, arc, revision
+  // cloud, mirror, offset, trim, extend, fillet, dimension) handle Enter,
+  // Backspace, Escape and letter keys (e.g. polyline 'c' to close) here. This
+  // listener is registered before the page-level shortcut handler (child mounts
+  // before parent), so when a tool consumes the event we stopImmediatePropagation
+  // to keep the page handler from switching tools or firing global Escape/Delete.
+  if (toolRegistry.dispatchKeyDown(props.currentTool as any, event)) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    return
+  }
+
   // Delete/Backspace - remove selected element
   if ((event.key === 'Delete' || event.key === 'Backspace') && hasSelection.value) {
     // Don't delete if user is typing in an input
@@ -1859,10 +1876,8 @@ function handleMouseMove(event: any) {
   updateLocalCursor(pos.x, pos.y, props.currentTool as any)
   emit('cursor-update', pos.x, pos.y)
 
-  // Clear snap point for non-measurement tools
-  if (props.currentTool !== 'measure-distance') {
-    currentSnapPoint.value = null
-  }
+  // Clear the snap indicator each move; snapping tools re-set it in onMouseMove.
+  currentSnapPoint.value = null
 
   // Pan tool movement is handled in pointer handler
   if (props.currentTool === 'pan') return
@@ -3383,7 +3398,18 @@ watch(() => props.currentTool, (newTool, oldTool) => {
   }
 })
 
+// Fillet radius configuration — set via the command line while the fillet tool
+// is active (the command engine routes bare numeric input here).
+function setFilletRadiusIfActive(n: number): boolean {
+  if (props.currentTool === 'fillet') {
+    filletRadius.value = n
+    return true
+  }
+  return false
+}
+
 defineExpose({
+  setFilletRadiusIfActive,
   stageRef,
   exportAsImage,
   loadPDF,

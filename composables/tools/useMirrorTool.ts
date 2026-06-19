@@ -216,21 +216,27 @@ export function useMirrorTool(ctx: ToolContext): ToolHandler {
         updatePreview()
       }
     },
-    onKeyDown(event: KeyboardEvent) {
+    onKeyDown(event: KeyboardEvent): boolean {
       if (event.key === 'Escape') {
         if (step.value === 'axis-second') {
           axisSecond.value = null
           step.value = 'axis-first'
           previewElements.value = []
+          return true
         } else if (step.value === 'axis-first') {
           step.value = 'select'
-        } else {
+          return true
+        } else if (selectedIds.value.length > 0) {
           reset()
+          return true
         }
+        return false
       }
       if (event.key === 'Enter' && step.value === 'select' && selectedIds.value.length > 0) {
         step.value = 'axis-first'
+        return true
       }
+      return false
     },
     deactivate() {
       reset()

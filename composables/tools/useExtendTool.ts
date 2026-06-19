@@ -210,15 +210,19 @@ export function useExtendTool(ctx: ToolContext): ToolHandler {
 
       extendElement(el, boundary, pos)
     },
-    onKeyDown(event: KeyboardEvent) {
+    onKeyDown(event: KeyboardEvent): boolean {
       if (event.key === 'Escape') {
         if (step.value === 'extend') {
           boundaryId.value = null
           step.value = 'boundary'
-        } else {
+          return true
+        } else if (boundaryId.value) {
           reset()
+          return true
         }
+        return false
       }
+      return false
     },
     deactivate() {
       reset()

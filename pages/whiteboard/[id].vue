@@ -640,6 +640,10 @@ const {
     // defineExpose unwraps refs — isDrawing is a boolean, not a ref
     return !!canvas?.isDrawing
   },
+  setFilletRadiusIfActive: (n: number) => {
+    const canvas = canvasRef.value as any
+    return canvas?.setFilletRadiusIfActive?.(n) ?? false
+  },
 })
 
 // Cursor tracking state from WhiteboardCanvas's useCursors

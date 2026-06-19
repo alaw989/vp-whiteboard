@@ -14,12 +14,22 @@ export function useCircleTool(ctx: ToolContext): ToolHandler {
     state: { shapeStart, currentShapeEnd },
     onMouseDown(_event: any, pos: PointerPosition) {
       ctx.isDrawing.value = true
-      shapeStart.value = pos
-      currentShapeEnd.value = pos
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      const start = snap ? { x: snap.x, y: snap.y } : pos
+      shapeStart.value = start
+      currentShapeEnd.value = start
+      ctx.currentSnapPoint.value = snap || null
     },
     onMouseMove(_event: any, pos: PointerPosition) {
       if (!ctx.isDrawing.value) return
-      currentShapeEnd.value = pos
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      if (snap) {
+        currentShapeEnd.value = { x: snap.x, y: snap.y }
+        ctx.currentSnapPoint.value = snap
+      } else {
+        currentShapeEnd.value = pos
+        ctx.currentSnapPoint.value = null
+      }
     },
     onMouseUp(_event: any, _pos: PointerPosition) {
       if (!ctx.isDrawing.value || !shapeStart.value || !currentShapeEnd.value) return
