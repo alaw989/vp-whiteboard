@@ -1,0 +1,50 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch: # NOTE: inert until repo default branch = master (currently `main`, a stub)
+
+concurrency:
+  # Shared with deploy.yml so a develop build and a master build never overlap
+  # on the 3.9GB droplet (each build peaks ~2GB).
+  group: droplet-build
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Deploy staging via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT || 22 }}
+          script_stop: true
+          script: |
+            cd /var/www/vp-whiteboard-staging
+
+            # Pull latest code from develop (creates the local tracking branch on first run)
+            git fetch origin
+            git checkout develop
+            git reset --hard origin/develop
+
+            # .env is gitignored & stable: staging shares prod Supabase/auth, with staging
+            # URL/ports already set on disk. git reset does not touch it — no rewrite needed.
+
+            # Install dependencies
+            npm install
+
+            # Build (increased heap for small servers — matches prod)
+            NODE_OPTIONS="--max-old-space-size=2048" npm run build
+
+            # Restart staging PM2 processes
+            pm2 restart vp-whiteboard-staging
+            pm2 restart vp-ws-server-staging
+            pm2 save
+
+            echo "Staging deployment successful!"
