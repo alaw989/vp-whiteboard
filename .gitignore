@@ -37,6 +37,7 @@ skills-lock.json
 
 # Test / audit screenshots (root-level)
 audit-*.png
+client-*.png
 cmd-*.png
 layer-*.png
 line-*.png
@@ -46,6 +47,9 @@ rect-*.png
 shapes-*.png
 stamp-*.png
 verification-*.png
+
+# Local audit / coverage tooling scripts (root-level)
+audit-*.cjs
 
 # Temp dirs and user uploads
 supabase/.temp/
