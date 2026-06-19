@@ -64,7 +64,7 @@ pm2 save
 
 ### Notes
 
-- `workflow_dispatch` (manual trigger) is currently inert for both workflows because the repo's default branch is `main` (a legacy stub). Only `push` triggers a deploy. To enable manual runs, set the repo default branch to `master`.
+- `workflow_dispatch` (manual trigger) is available for both workflows — the repo's default branch is `master` (set 2026-06-19; previously `main`, a legacy stub, which had made manual dispatch inert). Both `push` and manual dispatch trigger a deploy.
 - The concurrency group protects CI runs from each other, but **not** from a manual build started over SSH — don't run a manual build on the droplet while a CI deploy is in flight.
 - The generic platform steps below (App Platform / Railway / from-scratch VPS) are kept as reference; the live system is the CI/CD setup described above.
 
