@@ -136,7 +136,7 @@
 
       <!-- Canvas Area -->
       <main class="flex-1 relative overflow-hidden pb-16 md:pb-0 flex flex-col">
-        <div class="flex-1 relative">
+        <div class="flex-1 relative min-h-0">
           <ClientOnly>
             <WhiteboardCanvas
               ref="canvasRef"

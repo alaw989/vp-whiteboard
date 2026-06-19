@@ -114,7 +114,7 @@ export function useRotateTool(ctx: ToolContext): ToolHandler {
 
       if (step.value === 'angle') {
         // Commit at the precise click point (don't trust the last move frame).
-        currentAngle.value = angleOf(basepoint.value, pos)
+        currentAngle.value = angleOf(basepoint.value!, pos)
         for (const el of rotateSelected(currentAngle.value)) {
           ctx.emitElementAdd(el)
         }

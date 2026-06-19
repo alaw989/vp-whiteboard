@@ -139,7 +139,7 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
 
       if (step.value === 'scale') {
         // Commit at the precise click point (don't trust the last move frame).
-        currentScale.value = distance(basepoint.value, pos) / referenceDist.value
+        currentScale.value = distance(basepoint.value!, pos) / referenceDist.value
         for (const el of scaleSelected(currentScale.value)) {
           ctx.emitElementAdd(el)
         }
