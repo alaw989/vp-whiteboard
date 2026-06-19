@@ -5,9 +5,16 @@ on:
     branches: [master]
   workflow_dispatch:
 
+concurrency:
+  # Shared with deploy-staging.yml so a master build and a develop build never
+  # overlap on the 3.9GB droplet (each build peaks ~2GB).
+  group: droplet-build
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Deploy to DigitalOcean via SSH
