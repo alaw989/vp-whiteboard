@@ -802,6 +802,14 @@
       </v-layer>
     </v-stage>
 
+    <!-- Rotate / Scale step indicator -->
+    <div
+      v-if="transformHud"
+      class="pointer-events-none fixed left-1/2 top-3 z-50 -translate-x-1/2 whitespace-nowrap rounded border border-gray-700 bg-gray-900/90 px-3 py-1.5 font-mono text-xs text-yellow-300 shadow-lg"
+    >
+      {{ transformHud }}
+    </div>
+
     <!-- Text annotation input dialog -->
     <div
       v-if="showAnnotationInput"
@@ -1845,6 +1853,20 @@ const transformReadout = computed(() => {
   return ''
 })
 
+// Step indicator for Rotate/Scale — makes the multi-step flow visible (these
+// tools otherwise render no selection highlight) and doubles as a diagnostic:
+// the selection count confirms whether a click registered, and the step name
+// confirms whether Enter advanced the state machine.
+const transformHud = computed(() => {
+  if (props.currentTool !== 'rotate' && props.currentTool !== 'scale') return ''
+  const which = props.currentTool === 'rotate' ? 'ROTATE' : 'SCALE'
+  const sel = (props.currentTool === 'rotate' ? rotateSelectedIds.value : scaleSelectedIds.value).length
+  const step = props.currentTool === 'rotate' ? rotateStep.value : scaleStep.value
+  if (step === 'select') return `${which} — click shapes to select (${sel} selected), then press Enter`
+  if (step === 'basepoint') return `${which} — click the base point (pivot)`
+  return `${which} — ${transformReadout.value} — click to commit  (Esc to back out)`
+})
+
 // Dimension tool state
 const dimensionToolState = dimensionTool.state
 
@@ -2027,6 +2049,16 @@ function updatePointerState(event: any) {
 
 // Mouse handlers — dispatch through tool registry
 function handleMouseDown(event: any) {
+  // Release focus from the command line (or any input/textarea) so tool keyboard
+  // steps reach the active tool: Enter to confirm a selection, 'c' to close a
+  // polyline, Backspace to undo a vertex, Escape to cancel. Without this,
+  // preventDefault() in handlePointerDown keeps the command input focused and
+  // the global keydown guard (which ignores keys while an input is focused)
+  // swallows the keystroke — so multi-step tools never advance past 'select'.
+  const active = document.activeElement as HTMLElement | null
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+    active.blur()
+  }
   const pos = getPointerPos(event)
   toolRegistry.dispatchMouseDown(props.currentTool as any, event, pos)
 }
