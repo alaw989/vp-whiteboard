@@ -5,6 +5,69 @@
 1. Node.js hosting (Digital Ocean App Platform, Railway, Render, or any VPS)
 2. Supabase account (free tier works)
 
+## Current Production Setup (CI/CD)
+
+Production and staging both run on a single DigitalOcean droplet (`165.245.141.179`) behind Nginx, each as a pair of PM2-managed processes (Nuxt app + standalone Yjs WebSocket relay). Deploys are **push-triggered via GitHub Actions** — there is no manual build step in normal operation.
+
+| Environment | URL | App port | WS port | PM2 processes | Source branch | Workflow |
+|---|---|---|---|---|---|---|
+| **Production** | `whiteboard.vp-associates.com` | 3000 | 3001 | `vp-whiteboard`, `vp-ws-server` | `master` | `.github/workflows/deploy.yml` |
+| **Staging** | `staging-whiteboard.vp-associates.com` | 3002 | 3003 | `vp-whiteboard-staging`, `vp-ws-server-staging` | `develop` | `.github/workflows/deploy-staging.yml` |
+
+### Branch model (GitFlow)
+
+- **`master`** → production. Pushing `master` triggers the prod workflow: SSH into the droplet, `git reset --hard origin/master`, rebuild, restart the prod PM2 processes.
+- **`develop`** → staging. Pushing `develop` triggers the staging workflow against the staging checkout/processes.
+- **Feature branches** (e.g. `fix/autocad-tools`) → merge into `develop` to ship to staging; merge `develop` into `master` to ship to production.
+
+```
+feature branch  →  develop (staging)  →  master (production)
+```
+
+### How to deploy
+
+Just push:
+
+```bash
+git push origin develop    # ships to staging
+git push origin master     # ships to production (after verifying staging)
+```
+
+Watch a run:
+
+```bash
+gh run list  --repo alaw989/vp-whiteboard --workflow "Deploy Staging" --limit 3
+gh run watch <run-id> --repo alaw989/vp-whiteboard --exit-status
+```
+
+### Concurrency guard
+
+Both workflows declare a shared GitHub Actions concurrency group `droplet-build` (`cancel-in-progress: false`). The droplet has ~3.9 GB RAM and each build peaks near 2 GB, so this group **serializes** prod and staging builds — a `master` build and a `develop` build queue rather than run simultaneously and OOM the box.
+
+### Secrets
+
+Both workflows reuse the same repo-level GitHub secrets for SSH access: `DO_HOST`, `DO_USER`, `DO_SSH_KEY`, `DO_PORT`. Production additionally injects `SITE_URL`, `WS_URL`, `AUTH_PASSWORD`, `AUTH_SECRET`, and the `SUPABASE_*` keys into prod's `.env` on each deploy. Staging reuses its existing on-disk `.env` (it shares prod's Supabase/auth, with staging URLs and ports 3002/3003), so **no additional secrets are required for staging**.
+
+### First-run bootstrap (one-time per environment)
+
+The workflows use `pm2 restart`, so a brand-new checkout needs the processes started once before the workflow can restart them:
+
+```bash
+ssh root@165.245.141.179
+cd /var/www/vp-whiteboard          # or vp-whiteboard-staging
+npm install
+NODE_OPTIONS="--max-old-space-size=2048" npm run build
+pm2 start .output/server/index.mjs --name vp-whiteboard          # …-staging for staging
+pm2 start server/ws-server.js       --name vp-ws-server          # …-staging for staging
+pm2 save
+```
+
+### Notes
+
+- `workflow_dispatch` (manual trigger) is currently inert for both workflows because the repo's default branch is `main` (a legacy stub). Only `push` triggers a deploy. To enable manual runs, set the repo default branch to `master`.
+- The concurrency group protects CI runs from each other, but **not** from a manual build started over SSH — don't run a manual build on the droplet while a CI deploy is in flight.
+- The generic platform steps below (App Platform / Railway / from-scratch VPS) are kept as reference; the live system is the CI/CD setup described above.
+
 ## Step 1: Set up Supabase
 
 1. Go to [supabase.com](https://supabase.com) and create a new project
