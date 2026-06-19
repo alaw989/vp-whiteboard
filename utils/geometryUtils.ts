@@ -1,4 +1,8 @@
 // Shared geometric calculations for modification tools
+import type {
+  CanvasElement,
+  PolylineElement,
+} from '~/types'
 
 export interface Point {
   x: number
@@ -193,6 +197,52 @@ export function mirrorSegment(seg: LineSegment, axisA: Point, axisB: Point): Lin
     start: mirrorPoint(seg.start, axisA, axisB),
     end: mirrorPoint(seg.end, axisA, axisB),
   }
+}
+
+// --- Affine transforms (rotate / scale) ---
+
+/**
+ * Rotate point `p` around `origin` by `angleRad` radians.
+ * Uses the standard rotation matrix; in screen coordinates (y-down) a positive
+ * angle appears clockwise. Consumed by the Rotate tool.
+ */
+export function rotatePointAroundOrigin(p: Point, origin: Point, angleRad: number): Point {
+  const cos = Math.cos(angleRad)
+  const sin = Math.sin(angleRad)
+  const dx = p.x - origin.x
+  const dy = p.y - origin.y
+  return {
+    x: origin.x + dx * cos - dy * sin,
+    y: origin.y + dx * sin + dy * cos,
+  }
+}
+
+/** Scale point `p` away from (or toward) `origin` by `factor`. Consumed by the Scale tool. */
+export function scalePointFromOrigin(p: Point, origin: Point, factor: number): Point {
+  return {
+    x: origin.x + (p.x - origin.x) * factor,
+    y: origin.y + (p.y - origin.y) * factor,
+  }
+}
+
+/** Arithmetic mean of a set of points (the centroid). Empty set → origin (0,0). */
+export function centroidOfPoints(points: Point[]): Point {
+  if (points.length === 0) return { x: 0, y: 0 }
+  let sx = 0
+  let sy = 0
+  for (const p of points) {
+    sx += p.x
+    sy += p.y
+  }
+  return { x: sx / points.length, y: sy / points.length }
+}
+
+/** True when `rad` is within ~0.57° of a multiple of 90°. */
+function isRightAngleRotation(rad: number): boolean {
+  const halfPi = Math.PI / 2
+  const eps = 0.01 // ~0.57°
+  const mod = ((rad % halfPi) + halfPi) % halfPi
+  return mod < eps || mod > halfPi - eps
 }
 
 // --- Arc / Circle ---
@@ -439,6 +489,110 @@ export function getElementGeometry(element: any): {
         segs.push({ start: pts[i]!, end: pts[i + 1]! })
       }
       return { type: 'arc', segments: segs, points: pts }
+    }
+    default:
+      return null
+  }
+}
+
+export interface TransformOptions {
+  /** Radians added to rotation-capable elements (ellipse). 0 for pure scale. */
+  rotationDelta?: number
+  /** Uniform scale applied to radii / stroke widths. 1 = unchanged. */
+  scaleFactor?: number
+}
+
+/**
+ * Apply an arbitrary point transform to an element's geometry, baking the result
+ * into element coordinates (mirror's approach — no per-type rotation fields).
+ *
+ * - Point-based shapes (line, polyline, arrow, stroke, revision-cloud, arc):
+ *   every defining point is run through `transformPoint`; stroke weights scale
+ *   by `scaleFactor`.
+ * - Circle: center transformed; radius scaled by `scaleFactor` (a circle is
+ *   rotation-invariant, so `rotationDelta` is irrelevant).
+ * - Ellipse: center transformed; radii scaled by `scaleFactor`; its `rotation`
+ *   field gets `rotationDelta` added (ellipses carry rotation, so it's faithful).
+ * - Rectangle:
+ *     * Pure scale, or a rotation that is a multiple of 90°, keeps the rectangle
+ *       axis-aligned (both preserve axis-alignment) — two opposite corners are
+ *       transformed and re-bounded.
+ *     * Any other rotation cannot stay axis-aligned, so the rectangle is returned
+ *       as a closed 4-vertex polyline (geometry preserved, type changed).
+ *
+ * `makeId` supplies a fresh id for the new element. Returns null for unsupported
+ * element types (text/stamp/dimension/fillet-arc — out of scope for these tools).
+ */
+export function transformElement(
+  element: CanvasElement,
+  transformPoint: (p: Point) => Point,
+  makeId: () => string,
+  opts: TransformOptions = {},
+): CanvasElement | null {
+  const scale = opts.scaleFactor ?? 1
+  const rot = opts.rotationDelta ?? 0
+  const tp = (pair: [number, number]): [number, number] => {
+    const q = transformPoint({ x: pair[0], y: pair[1] })
+    return [q.x, q.y]
+  }
+
+  const data = element.data as any
+
+  switch (element.type) {
+    case 'line':
+      return { ...element, id: makeId(), data: { ...data, start: tp(data.start), end: tp(data.end) } }
+    case 'polyline':
+      return { ...element, id: makeId(), data: { ...data, points: data.points.map(tp), size: data.size * scale } }
+    case 'arrow':
+      return { ...element, id: makeId(), data: { ...data, points: data.points.map(tp), strokeWidth: data.strokeWidth * scale, pointerLength: data.pointerLength * scale, pointerWidth: data.pointerWidth * scale } }
+    case 'stroke':
+      return {
+        ...element, id: makeId(),
+        data: {
+          ...data,
+          points: data.points.map((pt: [number, number, number]) => {
+            const q = transformPoint({ x: pt[0], y: pt[1] })
+            return [q.x, q.y, pt[2]] as [number, number, number]
+          }),
+          size: data.size * scale,
+        },
+      }
+    case 'revision-cloud':
+      return { ...element, id: makeId(), data: { ...data, points: data.points.map(tp), arcLength: data.arcLength * scale, size: data.size * scale } }
+    case 'arc':
+      return { ...element, id: makeId(), data: { ...data, start: tp(data.start), through: tp(data.through), end: tp(data.end), size: data.size * scale } }
+    case 'circle': {
+      const c = transformPoint({ x: data.cx, y: data.cy })
+      return { ...element, id: makeId(), data: { ...data, cx: c.x, cy: c.y, radius: data.radius * scale, strokeWidth: data.strokeWidth * scale } }
+    }
+    case 'ellipse': {
+      const c = transformPoint({ x: data.x, y: data.y })
+      // `data.rotation` is stored in degrees (Konva's convention — the select-tool
+      // transformer writes node.rotation() back in degrees), so convert the radian
+      // delta before adding.
+      return { ...element, id: makeId(), data: { ...data, x: c.x, y: c.y, radiusX: data.radiusX * scale, radiusY: data.radiusY * scale, rotation: data.rotation + (rot * 180 / Math.PI), strokeWidth: data.strokeWidth * scale } }
+    }
+    case 'rectangle': {
+      const tl = transformPoint({ x: data.x, y: data.y })
+      const br = transformPoint({ x: data.x + data.width, y: data.y + data.height })
+      if (rot === 0 || isRightAngleRotation(rot)) {
+        const minX = Math.min(tl.x, br.x)
+        const minY = Math.min(tl.y, br.y)
+        const maxX = Math.max(tl.x, br.x)
+        const maxY = Math.max(tl.y, br.y)
+        return { ...element, id: makeId(), data: { ...data, x: minX, y: minY, width: maxX - minX, height: maxY - minY, strokeWidth: data.strokeWidth * scale } }
+      }
+      // Non-right-angle rotation: the four corners no longer form an axis-aligned
+      // rect, so preserve the geometry exactly as a closed polyline.
+      const tr = transformPoint({ x: data.x + data.width, y: data.y })
+      const bl = transformPoint({ x: data.x, y: data.y + data.height })
+      const polyData: PolylineElement = {
+        points: [[tl.x, tl.y], [tr.x, tr.y], [br.x, br.y], [bl.x, bl.y]],
+        color: data.stroke,
+        size: data.strokeWidth * scale,
+        closed: true,
+      }
+      return { ...element, id: makeId(), type: 'polyline', data: polyData }
     }
     default:
       return null

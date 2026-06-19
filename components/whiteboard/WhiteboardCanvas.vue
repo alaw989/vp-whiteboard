@@ -489,6 +489,124 @@
             }"
           />
 
+          <!-- Rotate / Scale preview elements (shared style) -->
+          <template v-if="(currentTool === 'rotate' || currentTool === 'scale') && transformPreviewElements.length > 0">
+            <template v-for="tel in transformPreviewElements" :key="'transform-' + tel.id">
+              <v-line
+                v-if="tel.type === 'line'"
+                :config="{
+                  points: [...(tel.data as any).start, ...(tel.data as any).end],
+                  stroke: (tel.data as any).color,
+                  strokeWidth: (tel.data as any).size,
+                  dash: [6, 4],
+                  listening: false,
+                  opacity: 0.5,
+                }"
+              />
+              <v-line
+                v-if="tel.type === 'polyline'"
+                :config="{
+                  points: (tel.data as any).points.flat(),
+                  stroke: (tel.data as any).color,
+                  strokeWidth: (tel.data as any).size,
+                  dash: [6, 4],
+                  closed: (tel.data as any).closed,
+                  listening: false,
+                  opacity: 0.5,
+                }"
+              />
+              <v-line
+                v-if="tel.type === 'arrow'"
+                :config="{
+                  points: (tel.data as any).points.flat(),
+                  stroke: (tel.data as any).stroke,
+                  strokeWidth: (tel.data as any).strokeWidth,
+                  dash: [6, 4],
+                  listening: false,
+                  opacity: 0.5,
+                }"
+              />
+              <v-rect
+                v-if="tel.type === 'rectangle'"
+                :config="{
+                  x: (tel.data as any).x,
+                  y: (tel.data as any).y,
+                  width: (tel.data as any).width,
+                  height: (tel.data as any).height,
+                  stroke: (tel.data as any).stroke,
+                  strokeWidth: (tel.data as any).strokeWidth,
+                  dash: [6, 4],
+                  listening: false,
+                  opacity: 0.5,
+                }"
+              />
+              <v-circle
+                v-if="tel.type === 'circle'"
+                :config="{
+                  x: (tel.data as any).cx,
+                  y: (tel.data as any).cy,
+                  radius: (tel.data as any).radius,
+                  stroke: (tel.data as any).stroke,
+                  strokeWidth: (tel.data as any).strokeWidth,
+                  dash: [6, 4],
+                  listening: false,
+                  opacity: 0.5,
+                }"
+              />
+              <v-ellipse
+                v-if="tel.type === 'ellipse'"
+                :config="{
+                  x: (tel.data as any).x,
+                  y: (tel.data as any).y,
+                  radiusX: (tel.data as any).radiusX,
+                  radiusY: (tel.data as any).radiusY,
+                  rotation: (tel.data as any).rotation || 0,
+                  stroke: (tel.data as any).stroke,
+                  strokeWidth: (tel.data as any).strokeWidth,
+                  dash: [6, 4],
+                  listening: false,
+                  opacity: 0.5,
+                }"
+              />
+            </template>
+          </template>
+          <!-- Rotate / Scale base point + radius guide + readout -->
+          <v-line
+            v-if="(currentTool === 'rotate' || currentTool === 'scale') && transformBasepoint && transformGuideEnd"
+            :config="{
+              points: [transformBasepoint.x, transformBasepoint.y, transformGuideEnd.x, transformGuideEnd.y],
+              stroke: '#F59E0B',
+              strokeWidth: 1.5,
+              dash: [8, 4],
+              listening: false,
+            }"
+          />
+          <v-circle
+            v-if="(currentTool === 'rotate' || currentTool === 'scale') && transformBasepoint"
+            :config="{
+              x: transformBasepoint.x,
+              y: transformBasepoint.y,
+              radius: 5,
+              fill: '#F59E0B',
+              stroke: '#FFFFFF',
+              strokeWidth: 2,
+              listening: false,
+            }"
+          />
+          <v-text
+            v-if="(currentTool === 'rotate' || currentTool === 'scale') && transformGuideEnd && transformReadout"
+            :config="{
+              text: transformReadout,
+              x: transformGuideEnd.x + 10,
+              y: transformGuideEnd.y - 22,
+              fontSize: 14,
+              fontStyle: 'bold',
+              fill: '#F59E0B',
+              fontFamily: 'Arial, sans-serif',
+              listening: false,
+            }"
+          />
+
           <!-- Dimension tool preview -->
           <template v-if="currentTool === 'dimension' && dimensionToolState">
             <!-- First point marker -->
@@ -820,6 +938,8 @@ import { useTrimTool } from '~/composables/tools/useTrimTool'
 import { useExtendTool } from '~/composables/tools/useExtendTool'
 import { useFilletTool } from '~/composables/tools/useFilletTool'
 import { useMirrorTool } from '~/composables/tools/useMirrorTool'
+import { useRotateTool } from '~/composables/tools/useRotateTool'
+import { useScaleTool } from '~/composables/tools/useScaleTool'
 import { useDimensionTool } from '~/composables/tools/useDimensionTool'
 import { useGrid } from '~/composables/useGrid'
 import { revisionCloudPath } from '~/utils/geometryUtils'
@@ -1607,6 +1727,8 @@ const trimTool = useTrimTool(toolContext)
 const extendTool = useExtendTool(toolContext)
 const filletTool = useFilletTool(toolContext)
 const mirrorTool = useMirrorTool(toolContext)
+const rotateTool = useRotateTool(toolContext)
+const scaleTool = useScaleTool(toolContext)
 const dimensionTool = useDimensionTool(toolContext)
 
 // Register all tools
@@ -1632,6 +1754,8 @@ toolRegistry.register('trim', trimTool)
 toolRegistry.register('extend', extendTool)
 toolRegistry.register('fillet', filletTool)
 toolRegistry.register('mirror', mirrorTool)
+toolRegistry.register('rotate', rotateTool)
+toolRegistry.register('scale', scaleTool)
 toolRegistry.register('dimension', dimensionTool)
 
 // Expose tool state for template rendering
@@ -1682,6 +1806,44 @@ const mirrorAxisFirst = mirrorTool.state!.axisFirst
 const mirrorAxisSecond = mirrorTool.state!.axisSecond
 const mirrorPreviewElements = mirrorTool.state!.previewElements
 const mirrorStep = mirrorTool.state!.step
+const rotateSelectedIds = rotateTool.state!.selectedIds
+const rotateBasepoint = rotateTool.state!.basepoint
+const rotateCurrentCursor = rotateTool.state!.currentCursor
+const rotateCurrentAngle = rotateTool.state!.currentAngle
+const rotatePreviewElements = rotateTool.state!.previewElements
+const rotateStep = rotateTool.state!.step
+const scaleSelectedIds = scaleTool.state!.selectedIds
+const scaleBasepoint = scaleTool.state!.basepoint
+const scaleCurrentCursor = scaleTool.state!.currentCursor
+const scaleCurrentScale = scaleTool.state!.currentScale
+const scalePreviewElements = scaleTool.state!.previewElements
+const scaleStep = scaleTool.state!.step
+
+// Rotate / Scale share a preview style; pick the active tool's preview set.
+const transformPreviewElements = computed(() => {
+  if (props.currentTool === 'rotate') return rotatePreviewElements.value
+  if (props.currentTool === 'scale') return scalePreviewElements.value
+  return []
+})
+const transformBasepoint = computed(() => {
+  if (props.currentTool === 'rotate') return rotateBasepoint.value
+  if (props.currentTool === 'scale') return scaleBasepoint.value
+  return null
+})
+const transformGuideEnd = computed(() => {
+  if (props.currentTool === 'rotate') return rotateCurrentCursor.value
+  if (props.currentTool === 'scale') return scaleCurrentCursor.value
+  return null
+})
+const transformReadout = computed(() => {
+  if (props.currentTool === 'rotate') {
+    return `${Math.round((rotateCurrentAngle.value * 180) / Math.PI)}°`
+  }
+  if (props.currentTool === 'scale') {
+    return `${scaleCurrentScale.value.toFixed(2)}×`
+  }
+  return ''
+})
 
 // Dimension tool state
 const dimensionToolState = dimensionTool.state

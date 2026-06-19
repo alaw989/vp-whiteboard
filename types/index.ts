@@ -254,7 +254,7 @@ export interface SharedViewportState extends ViewportState {
 }
 
 // Drawing Tool Types
-export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser' | 'measure-distance' | 'measure-area' | 'polyline' | 'arc' | 'offset' | 'trim' | 'extend' | 'fillet' | 'mirror' | 'dimension' | 'revision-cloud'
+export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser' | 'measure-distance' | 'measure-area' | 'polyline' | 'arc' | 'offset' | 'trim' | 'extend' | 'fillet' | 'mirror' | 'rotate' | 'scale' | 'dimension' | 'revision-cloud'
 
 export interface ToolSettings {
   tool: DrawingTool

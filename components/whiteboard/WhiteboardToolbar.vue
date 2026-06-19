@@ -792,6 +792,8 @@ const drawTools = [
 const modifyTools = [
   { id: 'offset' as DrawingTool, name: 'Offset', shortcut: 'OFF', icon: 'mdi:format-line-spacing' },
   { id: 'mirror' as DrawingTool, name: 'Mirror', shortcut: 'MI', icon: 'mdi:flip-horizontal' },
+  { id: 'rotate' as DrawingTool, name: 'Rotate', shortcut: 'RO', icon: 'mdi:rotate-right' },
+  { id: 'scale' as DrawingTool, name: 'Scale', shortcut: 'SC', icon: 'mdi:arrow-expand' },
   { id: 'trim' as DrawingTool, name: 'Trim', shortcut: 'TR', icon: 'mdi:content-cut' },
   { id: 'extend' as DrawingTool, name: 'Extend', shortcut: 'EX', icon: 'mdi:arrow-expand-horizontal' },
   { id: 'fillet' as DrawingTool, name: 'Fillet', shortcut: 'F', icon: 'mdi:vector-radius' },
