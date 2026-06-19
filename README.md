@@ -66,7 +66,7 @@ A real-time collaborative whiteboard application for structural engineering proj
 - **Real-time Sync**: Yjs CRDT + y-websocket + Nitro WebSocket server
 - **Backend**: Supabase (PostgreSQL + Storage, Row Level Security)
 - **PDF**: jspdf (export), pdfjs-dist (rendering)
-- **Deployment**: DigitalOcean App Platform, PM2 (separate app + WebSocket processes)
+- **Deployment**: DigitalOcean droplet + Nginx + PM2; push-to-deploy via GitHub Actions (`master`→production, `develop`→staging). See [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## Prerequisites
 
@@ -145,44 +145,21 @@ The password is stored in `AUTH_PASSWORD` and cookies are signed with `AUTH_SECR
 
 ## Deployment
 
-### Digital Ocean App Platform
+The live app runs on a DigitalOcean droplet (Nginx reverse proxy + PM2) and deploys automatically via GitHub Actions — there is no manual build step in normal operation.
 
-1. Push your code to GitHub
-2. Create a new App in Digital Ocean
-3. Connect your GitHub repository
-4. Configure build settings:
-   - Build Command: `npm run build`
-   - Run Command: `npm start`
-5. Add environment variables from `.env` (including `AUTH_PASSWORD` and `AUTH_SECRET`)
-6. Enable WebSockets in app settings
-7. Deploy!
+| Environment | URL | Branch | Workflow |
+|---|---|---|---|
+| Production | `whiteboard.vp-associates.com` | `master` | `.github/workflows/deploy.yml` |
+| Staging | `staging-whiteboard.vp-associates.com` | `develop` | `.github/workflows/deploy-staging.yml` |
 
-### Other Node.js Hosts
+**Branch model:** feature branch → `develop` (staging) → `master` (production).
 
-The app works on any Node.js hosting that supports WebSockets:
-- Railway
-- Render
-- Fly.io
-- AWS EC2
-- VPS with Nginx reverse proxy
-
-### Nginx Configuration (for VPS)
-
-```nginx
-server {
-    listen 80;
-    server_name whiteboard.vp-associates.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
+```bash
+git push origin develop    # deploy to staging
+git push origin master     # deploy to production (after verifying staging)
 ```
+
+Each push SSHes into the droplet, rebuilds the app, and restarts the PM2 processes. Production and staging builds share a concurrency group (`droplet-build`) so they never run at the same time — the droplet can't fit two builds at once. Full details (topology, secrets, first-run bootstrap, from-scratch VPS steps) are in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Keyboard Shortcuts
 
