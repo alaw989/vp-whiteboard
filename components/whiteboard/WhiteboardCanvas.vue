@@ -782,6 +782,140 @@
               listening: false,
             }"
           />
+          <!-- Selection highlight for modify tools (rotate/scale/mirror) -->
+          <template v-for="el in transformSelectedElements" :key="'hl-' + el.id">
+            <v-line
+              v-if="el.type === 'line'"
+              :config="{
+                points: [...(el.data as any).start, ...(el.data as any).end],
+                stroke: '#06B6D4',
+                strokeWidth: 4,
+                dash: [8, 4],
+                listening: false,
+                lineCap: 'round',
+                lineJoin: 'round',
+                shadowColor: '#06B6D4',
+                shadowBlur: 10,
+                shadowOpacity: 0.5,
+              }"
+            />
+            <v-rect
+              v-else-if="el.type === 'rectangle'"
+              :config="{
+                x: (el.data as any).x,
+                y: (el.data as any).y,
+                width: (el.data as any).width,
+                height: (el.data as any).height,
+                stroke: '#06B6D4',
+                strokeWidth: 4,
+                dash: [8, 4],
+                listening: false,
+                fill: '#06B6D4',
+                fillOpacity: 0.1,
+                shadowColor: '#06B6D4',
+                shadowBlur: 10,
+                shadowOpacity: 0.5,
+              }"
+            />
+            <v-circle
+              v-else-if="el.type === 'circle'"
+              :config="{
+                x: (el.data as any).cx,
+                y: (el.data as any).cy,
+                radius: (el.data as any).radius,
+                stroke: '#06B6D4',
+                strokeWidth: 4,
+                dash: [8, 4],
+                listening: false,
+                fill: '#06B6D4',
+                fillOpacity: 0.1,
+                shadowColor: '#06B6D4',
+                shadowBlur: 10,
+                shadowOpacity: 0.5,
+              }"
+            />
+            <v-ellipse
+              v-else-if="el.type === 'ellipse'"
+              :config="{
+                x: (el.data as any).x,
+                y: (el.data as any).y,
+                radiusX: (el.data as any).radiusX,
+                radiusY: (el.data as any).radiusY,
+                rotation: (el.data as any).rotation || 0,
+                stroke: '#06B6D4',
+                strokeWidth: 4,
+                dash: [8, 4],
+                listening: false,
+                fill: '#06B6D4',
+                fillOpacity: 0.1,
+                shadowColor: '#06B6D4',
+                shadowBlur: 10,
+                shadowOpacity: 0.5,
+              }"
+            />
+            <v-line
+              v-else-if="el.type === 'polyline'"
+              :config="{
+                points: (el.data as any).points.flat(),
+                stroke: '#06B6D4',
+                strokeWidth: 4,
+                dash: [8, 4],
+                listening: false,
+                lineCap: 'round',
+                lineJoin: 'round',
+                closed: (el.data as any).closed || false,
+                shadowColor: '#06B6D4',
+                shadowBlur: 10,
+                shadowOpacity: 0.5,
+              }"
+            />
+            <v-line
+              v-else-if="el.type === 'arc'"
+              :config="{
+                points: getArcConfig(el).points,
+                stroke: '#06B6D4',
+                strokeWidth: 4,
+                dash: [8, 4],
+                listening: false,
+                lineCap: 'round',
+                lineJoin: 'round',
+                shadowColor: '#06B6D4',
+                shadowBlur: 10,
+                shadowOpacity: 0.5,
+              }"
+            />
+            <v-line
+              v-else-if="el.type === 'revision-cloud'"
+              :config="{
+                points: getRevisionCloudConfig(el).points,
+                stroke: '#06B6D4',
+                strokeWidth: 4,
+                dash: [8, 4],
+                listening: false,
+                lineCap: 'round',
+                lineJoin: 'round',
+                closed: true,
+                shadowColor: '#06B6D4',
+                shadowBlur: 10,
+                shadowOpacity: 0.5,
+              }"
+            />
+            <v-line
+              v-else-if="el.type === 'arrow'"
+              :config="{
+                points: (el.data as any).points.flat(),
+                stroke: '#06B6D4',
+                strokeWidth: 4,
+                dash: [8, 4],
+                listening: false,
+                lineCap: 'round',
+                lineJoin: 'round',
+                shadowColor: '#06B6D4',
+                shadowBlur: 10,
+                shadowOpacity: 0.5,
+              }"
+            />
+          </template>
         </v-group>
       </v-layer>
 
@@ -1865,6 +1999,19 @@ const transformHud = computed(() => {
   if (step === 'select') return `${which} — click shapes to select (${sel} selected), then press Enter`
   if (step === 'basepoint') return `${which} — click the base point (pivot)`
   return `${which} — ${transformReadout.value} — click to commit  (Esc to back out)`
+})
+
+// Selection highlight for modify tools (rotate/scale/mirror)
+const transformSelectedIds = computed(() => {
+  if (props.currentTool === 'rotate') return rotateSelectedIds.value
+  if (props.currentTool === 'scale') return scaleSelectedIds.value
+  if (props.currentTool === 'mirror') return mirrorSelectedIds.value
+  return []
+})
+
+const transformSelectedElements = computed(() => {
+  const ids = transformSelectedIds.value
+  return props.elements.filter((el: CanvasElement) => ids.includes(el.id))
 })
 
 // Dimension tool state

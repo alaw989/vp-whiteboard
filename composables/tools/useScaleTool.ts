@@ -52,6 +52,18 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
 
     for (const el of ctx.elements) {
       const geo = getElementGeometry(el)
+
+      // Handle circles: check if click is near perimeter or inside
+      if (geo?.circle) {
+        const toCenter = distance(pos, geo.circle.center)
+        const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
+        const d = Math.min(distToPerimeter, toCenter)
+        if (d < threshold * 2 && (!best || d < best.dist)) {
+          best = { element: el, dist: d }
+        }
+        continue
+      }
+
       if (!geo?.segments) continue
 
       for (const seg of geo.segments) {
@@ -118,7 +130,13 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
     onMouseDown(_event: any, pos: PointerPosition) {
       if (step.value === 'select') {
         const el = findElementAtPosition(pos)
-        if (!el) return
+        if (!el) {
+          // Empty click confirms selection if elements are selected
+          if (selectedIds.value.length > 0) {
+            step.value = 'basepoint'
+          }
+          return
+        }
         const idx = selectedIds.value.indexOf(el.id)
         if (idx >= 0) {
           selectedIds.value.splice(idx, 1)
