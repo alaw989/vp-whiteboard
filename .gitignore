@@ -54,3 +54,8 @@ audit-*.cjs
 # Temp dirs and user uploads
 supabase/.temp/
 public/uploads/
+
+# Ralph Wiggum (spec-driven loop) — generated at runtime, not source
+PROMPT_build.md
+PROMPT_plan.md
+IMPLEMENTATION_PLAN.md
