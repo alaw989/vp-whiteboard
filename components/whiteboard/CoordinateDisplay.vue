@@ -1,7 +1,7 @@
 <template>
-  <div class="coordinate-display absolute bottom-0 left-0 z-10 bg-gray-900/80 text-gray-300 font-mono text-xs px-3 py-1.5 flex items-center gap-4 pointer-events-none select-none">
-    <span>X: <span class="text-gray-100">{{ formattedX }}</span></span>
-    <span>Y: <span class="text-gray-100">{{ formattedY }}</span></span>
+  <div class="coordinate-display absolute bottom-0 left-0 z-10 bg-chrome/80 text-chrome-fg-muted font-mono text-xs px-3 py-1.5 flex items-center gap-4 pointer-events-none select-none">
+    <span>X: <span class="text-chrome-fg">{{ formattedX }}</span></span>
+    <span>Y: <span class="text-chrome-fg">{{ formattedY }}</span></span>
     <span v-if="distance !== null" class="text-cyan-400">
       Dist: {{ formattedDistance }} Angle: {{ formattedAngle }}°
     </span>

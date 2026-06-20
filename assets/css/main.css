@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-chrome: 23 23 23; /* neutral-900: #171717 */
+  --color-chrome-border: 38 38 38; /* neutral-800: #262626 */
+  --color-chrome-fg: 245 245 245; /* neutral-100: #f5f5f5 */
+  --color-chrome-fg-muted: 163 163 163; /* neutral-400: #a3a3a3 */
+}
+
 @layer base {
   body {
     @apply bg-neutral-50 text-neutral-900 font-sans antialiased;
@@ -62,6 +69,30 @@
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background: theme('colors.neutral.400');
+  }
+
+  .scrollbar-dark {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.neutral.600') theme('colors.neutral.900');
+  }
+
+  .scrollbar-dark::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-track {
+    background: theme('colors.neutral.900');
+    border-radius: 3px;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-thumb {
+    background: theme('colors.neutral.600');
+    border-radius: 3px;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.neutral.500');
   }
 }
 

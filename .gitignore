@@ -13,6 +13,10 @@ node_modules
 logs
 *.log
 
+# Ralph loop runtime state
+.circuit_breaker_state
+.response_analysis
+
 # Misc
 .DS_Store
 .fleet
@@ -46,7 +50,9 @@ phase2-*.png
 rect-*.png
 shapes-*.png
 stamp-*.png
+test-*.png
 verification-*.png
+verify-*.png
 
 # Local audit / coverage tooling scripts (root-level)
 audit-*.cjs
@@ -54,3 +60,8 @@ audit-*.cjs
 # Temp dirs and user uploads
 supabase/.temp/
 public/uploads/
+
+# Ralph Wiggum (spec-driven loop) — generated at runtime, not source
+PROMPT_build.md
+PROMPT_plan.md
+IMPLEMENTATION_PLAN.md
