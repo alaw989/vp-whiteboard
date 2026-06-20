@@ -1,6 +1,8 @@
 # Spec 001: Selection highlight for modify tools (rotate/scale/mirror)
 
-## Status: Draft
+## Status: COMPLETE
+
+Verified 2026-06-19 in-browser (localhost:3000): activate Rotate → click a rectangle edge → cyan (#06B6D4) dashed highlight + tint renders around it; Esc clears it. The Ralph loop could not self-verify this because its headless pointer clicks never registered a selection — the canvas's multi-pointer tracker (`handlePointerDown`) treats a 2nd synthetic pointer as two-finger pan, and Konva hit-tests element edges (8px band), not fill. Both are test-harness artifacts, not feature defects.
 
 ## Overview
 When using Rotate, Scale, or Mirror, clicking an element to select it gives **no visual feedback** — the user cannot tell their click registered (this was the original "nothing happened" complaint). The `transformHud` (commit f7337ee) shows a *count* but not *which* elements. Add a clear on-canvas highlight to selected elements during the select step.

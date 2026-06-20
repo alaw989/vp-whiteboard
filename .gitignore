@@ -46,7 +46,9 @@ phase2-*.png
 rect-*.png
 shapes-*.png
 stamp-*.png
+test-*.png
 verification-*.png
+verify-*.png
 
 # Local audit / coverage tooling scripts (root-level)
 audit-*.cjs
