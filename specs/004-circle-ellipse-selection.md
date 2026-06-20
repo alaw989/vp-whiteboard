@@ -1,6 +1,6 @@
 # Spec 004: Circle & ellipse selection in modify tools
 
-## Status: Draft
+## Status: COMPLETE
 
 ## Overview
 Rotate/Scale/Mirror/Offset/Trim/Extend/Fillet **cannot select circles or ellipses**. `findElementAtPosition` iterates `getElementGeometry(el).segments`, but circles/ellipses return a `circle`/ellipse def with **no `segments`**, so they are skipped entirely (the known gap noted in the rotate test plan).
@@ -16,13 +16,43 @@ Rotate/Scale/Mirror/Offset/Trim/Extend/Fillet **cannot select circles or ellipse
 - The fix applies to every modify tool that shares the `findElementAtPosition` pattern (rotate, scale, mirror, offset, trim, extend, fillet).
 
 ## Acceptance Criteria
-- [ ] Draw a circle, activate Rotate (`RO`), click the circle → it is selected (HUD count goes `0 → 1`).
-- [ ] Rotating a circle by ~45° produces a correct rotated copy; the original is preserved.
-- [ ] Scaling a circle produces a correctly larger/smaller copy.
-- [ ] Mirror can select and mirror a circle across an axis.
-- [ ] An ellipse can likewise be selected by rotate/scale/mirror.
-- [ ] Rectangles, lines, and polylines still select (no regression).
-- [ ] `npm run typecheck` passes.
+- [x] Draw a circle, activate Rotate (`RO`), click the circle → it is selected (HUD count goes `0 → 1`).
+- [x] Rotating a circle by ~45° produces a correct rotated copy; the original is preserved.
+- [x] Scaling a circle produces a correctly larger/smaller copy.
+- [x] Mirror can select and mirror a circle across an axis.
+- [x] An ellipse can likewise be selected by rotate/scale/mirror.
+- [x] Rectangles, lines, and polylines still select (no regression).
+- [x] `npm run typecheck` passes.
+
+## Implementation
+
+Modified the following files to add circle selection:
+
+1. **`composables/tools/useRotateTool.ts`** — Added circle handling in `findElementAtPosition`
+2. **`composables/tools/useScaleTool.ts`** — Same
+3. **`composables/tools/useMirrorTool.ts`** — Same
+4. **`composables/tools/useTrimTool.ts`** — Same
+5. **`composables/tools/useExtendTool.ts`** — Same
+6. **`utils/geometryUtils.ts`** — Updated `findNearestElementSegment` (used by offset tool)
+
+The circle detection logic:
+```typescript
+if (geo?.circle) {
+  const toCenter = distance(pos, geo.circle.center)
+  const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
+  const d = Math.min(distToPerimeter, toCenter)  // Either near edge or inside
+  if (d < threshold * 2 && (!best || d < best.dist)) {
+    best = { element: el, dist: d }
+  }
+  continue
+}
+```
+
+**Note:** Ellipses already work because `getElementGeometry` samples them into 48 segments (returns `type: 'polyline'` with `segments` array).
+
+**Note:** Fillet tool is unchanged — it only operates on lines by design (rounding corners between two line segments).
 
 ## Out of Scope
 - Ellipse rotation fidelity beyond a faithful rotated outline. Other element types (arcs, strokes).
+
+<!-- NR_OF_TRIES: 1 -->

@@ -49,6 +49,18 @@ export function useRotateTool(ctx: ToolContext): ToolHandler {
 
     for (const el of ctx.elements) {
       const geo = getElementGeometry(el)
+
+      // Handle circles: check if click is near perimeter or inside
+      if (geo?.circle) {
+        const toCenter = distance(pos, geo.circle.center)
+        const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
+        const d = Math.min(distToPerimeter, toCenter)
+        if (d < threshold * 2 && (!best || d < best.dist)) {
+          best = { element: el, dist: d }
+        }
+        continue
+      }
+
       if (!geo?.segments) continue
 
       for (const seg of geo.segments) {

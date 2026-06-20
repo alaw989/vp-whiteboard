@@ -653,6 +653,24 @@ export function findNearestElementSegment(
   for (const el of elements) {
     if (excludeIds.includes(el.id)) continue
     const geo = getElementGeometry(el)
+
+    // Handle circles: check if click is near perimeter or inside
+    if (geo?.circle) {
+      const toCenter = distance(pos, geo.circle.center)
+      const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
+      const d = Math.min(distToPerimeter, toCenter)
+      // For circles, use -1 as segmentIndex to indicate no segment
+      if (!best || d < best.distance) {
+        const angle = Math.atan2(pos.y - geo.circle.center.y, pos.x - geo.circle.center.x)
+        const nearestPoint = {
+          x: geo.circle.center.x + geo.circle.radius * Math.cos(angle),
+          y: geo.circle.center.y + geo.circle.radius * Math.sin(angle),
+        }
+        best = { element: el, segmentIndex: -1, distance: d, nearestPoint }
+      }
+      continue
+    }
+
     if (!geo?.segments) continue
 
     for (let i = 0; i < geo.segments.length; i++) {
