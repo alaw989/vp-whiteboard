@@ -180,7 +180,13 @@ export function useMirrorTool(ctx: ToolContext): ToolHandler {
     onMouseDown(_event: any, pos: PointerPosition) {
       if (step.value === 'select') {
         const el = findElementAtPosition(pos)
-        if (!el) return
+        if (!el) {
+          // Empty click confirms selection if elements are selected
+          if (selectedIds.value.length > 0) {
+            step.value = 'axis-first'
+          }
+          return
+        }
         const idx = selectedIds.value.indexOf(el.id)
         if (idx >= 0) {
           selectedIds.value.splice(idx, 1)

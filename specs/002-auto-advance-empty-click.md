@@ -1,6 +1,6 @@
 # Spec 002: Auto-advance selection on empty click (modify tools)
 
-## Status: Draft
+## Status: COMPLETE
 
 ## Overview
 Rotate/Scale/Mirror require pressing **Enter** to confirm a selection before placing the base point — a non-obvious, undocumented-in-the-UI step that feels broken (the user's literal complaint: "click a point on the rectangle and then click a point elsewhere but nothing happened"). Let an empty-canvas click confirm the selection instead.
@@ -16,12 +16,22 @@ Rotate/Scale/Mirror require pressing **Enter** to confirm a selection before pla
 - Enter remains a valid confirm (backwards-compatible).
 
 ## Acceptance Criteria
-- [ ] `RO` → click a rect → click empty canvas → tool advances to the basepoint step with **no Enter** required (HUD shows "click the base point").
-- [ ] `RO` → click empty canvas with nothing selected → nothing happens (no advance, no error).
-- [ ] `RO` → click rect A → click rect B (on the element) → both selected (multi-select unchanged).
-- [ ] Enter still confirms the selection (existing flow still works).
-- [ ] Identical behavior for Scale (`SC`) and Mirror (`MI`).
-- [ ] `npm run typecheck` passes.
+- [x] `RO` → click a rect → click empty canvas → tool advances to the basepoint step with **no Enter** required (HUD shows "click the base point").
+- [x] `RO` → click empty canvas with nothing selected → nothing happens (no advance, no error).
+- [x] `RO` → click rect A → click rect B (on the element) → both selected (multi-select unchanged).
+- [x] Enter still confirms the selection (existing flow still works).
+- [x] Identical behavior for Scale (`SC`) and Mirror (`MI`).
+- [x] `npm run typecheck` passes.
+
+## Implementation
+Modified three tool files:
+- `composables/tools/useRotateTool.ts` — empty click in `select` step advances to `basepoint` when elements selected
+- `composables/tools/useScaleTool.ts` — same behavior, advances to `basepoint`
+- `composables/tools/useMirrorTool.ts` — same behavior, advances to `axis-first`
+
+The change is minimal: when `findElementAtPosition(pos)` returns null and `selectedIds.length > 0`, set `step.value` to the next step instead of just returning.
 
 ## Out of Scope
 - Selection highlight (Spec 001). Pivot marker (Spec 003).
+
+<!-- NR_OF_TRIES: 1 -->
