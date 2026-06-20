@@ -1,11 +1,11 @@
 <template>
   <div class="h-screen flex flex-col bg-neutral-100">
     <!-- Header -->
-    <header class="bg-white border-b border-neutral-200 px-4 py-2 flex items-center justify-between z-10">
+    <header class="bg-chrome border-b border-chrome-border px-4 py-2 flex items-center justify-between z-10">
       <div class="flex items-center gap-4">
         <NuxtLink
           to="/"
-          class="p-2 -ml-2 rounded-lg hover:bg-neutral-100 active:bg-neutral-200 transition-colors duration-150 text-neutral-600 hover:text-neutral-900"
+          class="p-2 -ml-2 rounded-lg hover:bg-neutral-700 active:bg-neutral-600 transition-colors duration-150 text-chrome-fg-muted hover:text-chrome-fg"
           title="Back to home"
         >
           <Icon name="mdi:arrow-left" class="w-5 h-5" />
@@ -16,7 +16,7 @@
             <input
               ref="nameInput"
               v-model="editNameValue"
-              class="text-lg font-semibold text-neutral-900 bg-blue-50 border border-blue-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0"
+              class="text-lg font-semibold text-chrome-fg bg-neutral-800 border border-neutral-600 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0"
               @keydown.enter="saveName"
               @keydown.escape="cancelNameEdit"
               @blur="saveName"
@@ -24,14 +24,14 @@
           </div>
           <h1
             v-else
-            class="text-lg font-semibold text-neutral-900 truncate cursor-pointer hover:text-blue-600 transition-colors"
+            class="text-lg font-semibold text-chrome-fg truncate cursor-pointer hover:text-blue-400 transition-colors"
             title="Click to rename"
             @click="startNameEdit"
           >
             {{ whiteboard?.name || 'Loading...' }}
             <Icon name="mdi:pencil-outline" class="w-3.5 h-3.5 inline ml-1 opacity-0 group-hover:opacity-50" />
           </h1>
-          <p v-if="connectedUsers.size > 1" class="text-xs text-neutral-500 flex items-center gap-1">
+          <p v-if="connectedUsers.size > 1" class="text-xs text-chrome-fg-muted flex items-center gap-1">
             <Icon name="mdi:account-group" class="w-3 h-3" />
             {{ connectedUsers.size }} users online
           </p>
@@ -44,19 +44,19 @@
           :class="[
             'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-300',
             isConnected
-              ? 'bg-green-50 text-green-700 border border-green-200'
-              : 'bg-amber-50 text-amber-700 border border-amber-200'
+              ? 'bg-green-900/50 text-green-400 border border-green-700'
+              : 'bg-amber-900/50 text-amber-400 border border-amber-700'
           ]"
         >
           <div
             :class="[
               'w-2 h-2 rounded-full relative',
-              isConnected ? 'bg-green-500' : 'bg-amber-500 animate-pulse-subtle'
+              isConnected ? 'bg-green-400' : 'bg-amber-400 animate-pulse-subtle'
             ]"
           >
             <div
               v-if="isConnected"
-              class="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"
+              class="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75"
             />
           </div>
           <span class="capitalize">{{ connectionStatus }}</span>

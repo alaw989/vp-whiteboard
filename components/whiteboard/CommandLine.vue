@@ -1,19 +1,19 @@
 <template>
-  <div v-if="visible" class="command-line hidden md:flex flex-col bg-gray-900 text-gray-200 font-mono text-xs border-t border-gray-700">
+  <div v-if="visible" class="command-line hidden md:flex flex-col bg-chrome text-chrome-fg font-mono text-xs border-t border-chrome-border">
     <!-- Output area (last 5 lines) -->
     <div ref="outputRef" class="command-output overflow-y-auto px-2 py-1 max-h-24 min-h-[3rem]">
-      <div v-for="(line, i) in visibleLines" :key="i" class="whitespace-pre-wrap leading-4" :class="line.type === 'prompt' ? 'text-yellow-400' : line.type === 'error' ? 'text-red-400' : 'text-gray-300'">
+      <div v-for="(line, i) in visibleLines" :key="i" class="whitespace-pre-wrap leading-4" :class="line.type === 'prompt' ? 'text-yellow-400' : line.type === 'error' ? 'text-red-400' : 'text-chrome-fg-muted'">
         {{ line.text }}
       </div>
     </div>
     <!-- Input area -->
-    <div class="flex items-center border-t border-gray-700 px-2 py-1">
+    <div class="flex items-center border-t border-chrome-border px-2 py-1">
       <span class="text-green-400 mr-1">Cmd:</span>
       <input
         ref="inputRef"
         v-model="inputValue"
         type="text"
-        class="flex-1 bg-transparent outline-none text-gray-200 placeholder-gray-600"
+        class="flex-1 bg-transparent outline-none text-chrome-fg placeholder-chrome-fg-muted"
         :placeholder="promptPlaceholder"
         @keydown.enter="submitCommand"
         @keydown.escape="cancelCommand"
@@ -23,15 +23,15 @@
       />
     </div>
     <!-- Autocomplete dropdown -->
-    <div v-if="completions.length > 0 && showCompletions" class="border-t border-gray-700 bg-gray-800 max-h-32 overflow-y-auto">
+    <div v-if="completions.length > 0 && showCompletions" class="border-t border-chrome-border bg-neutral-800 max-h-32 overflow-y-auto">
       <div
         v-for="cmd in completions"
         :key="cmd.name"
-        class="px-3 py-1 cursor-pointer hover:bg-gray-700 flex justify-between"
+        class="px-3 py-1 cursor-pointer hover:bg-neutral-700 flex justify-between"
         @click="selectCompletion(cmd)"
       >
         <span class="text-cyan-400">{{ cmd.name }}</span>
-        <span class="text-gray-500">{{ cmd.aliases.join(', ') }}</span>
+        <span class="text-chrome-fg-muted">{{ cmd.aliases.join(', ') }}</span>
       </div>
     </div>
   </div>

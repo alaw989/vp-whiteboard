@@ -47,4 +47,4 @@ Goal: every piece of editor chrome shares ONE dark color, enforced by a single d
 - Accent-color standardization (blue-600 vs blue-100 active states, green mode toggles, amber vs yellow warnings) — candidate for a future Spec 006.
 - Canvas workspace darkening.
 
-<!-- NR_OF_TRIES: 0 -->
+<!-- NR_OF_TRIES: 1 -->

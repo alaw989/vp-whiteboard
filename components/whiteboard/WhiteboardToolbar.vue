@@ -1,7 +1,7 @@
 <template>
   <!-- Desktop Sidebar Toolbar (with wrapper for proper positioning) -->
-  <div class="hidden md:flex flex flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen flex-shrink-0 bg-neutral-900 border-r border-neutral-800" style="width: 8.5rem;" role="toolbar" aria-label="Whiteboard tools">
-    <div class="toolbar flex flex-col gap-2 p-2 rounded-lg shadow-sm border border-neutral-800 overflow-y-auto w-full scrollbar-thin" role="group" aria-label="Drawing tools and actions">
+  <div class="hidden md:flex flex flex-col items-center py-4 gap-2 overflow-y-auto max-h-screen flex-shrink-0 bg-chrome border-r border-chrome-border" style="width: 8.5rem;" role="toolbar" aria-label="Whiteboard tools">
+    <div class="toolbar flex flex-col gap-2 p-2 rounded-lg shadow-sm border border-chrome-border overflow-y-auto w-full scrollbar-dark" role="group" aria-label="Drawing tools and actions">
     <!-- NAV group -->
     <div class="flex flex-col gap-1">
       <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Nav</h4>

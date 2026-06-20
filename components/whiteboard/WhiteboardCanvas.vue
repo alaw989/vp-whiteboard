@@ -939,7 +939,7 @@
     <!-- Rotate / Scale step indicator -->
     <div
       v-if="transformHud"
-      class="pointer-events-none fixed left-1/2 top-3 z-50 -translate-x-1/2 whitespace-nowrap rounded border border-gray-700 bg-gray-900/90 px-3 py-1.5 font-mono text-xs text-yellow-300 shadow-lg"
+      class="pointer-events-none fixed left-1/2 top-3 z-50 -translate-x-1/2 whitespace-nowrap rounded border border-chrome-border bg-chrome/90 px-3 py-1.5 font-mono text-xs text-yellow-300 shadow-lg"
     >
       {{ transformHud }}
     </div>
