@@ -89,3 +89,15 @@ get_first_incomplete_root_spec() {
 
     printf '%s\n' "$first"
 }
+
+# Print the Verify: shell command for a spec (empty string if the spec has none).
+# A spec may carry a line like:
+#     Verify: npm test -- geometryUtils
+# The loop runs this command and treats exit 0 as authoritative acceptance — a
+# deterministic replacement for the agent's screenshot self-judgment.
+get_spec_verify_command() {
+    local spec_file="$1"
+    [ -f "$spec_file" ] || return 0
+    grep -m1 -E '^[[:space:]]*(\*\*)?Verify(\*\*)?:[[:space:]]+' "$spec_file" 2>/dev/null \
+        | sed -E 's/^[[:space:]]*(\*\*)?Verify(\*\*)?:[[:space:]]+//' || true
+}
