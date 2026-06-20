@@ -1,5 +1,9 @@
 # Spec 005: Uniform dark editor chrome + matching sidebar scrollbar
 
+## Status: COMPLETE
+
+All editor chrome surfaces now use the single `bg-chrome` token (neutral-900) — top nav, toolbar, command line, coordinate display, scale badge, and prompt banner all render as the same dark color with no visible seams. The desktop toolbar scrollbar uses `scrollbar-dark` for a dark thumb on dark track.
+
 Verify: npm run typecheck && test "$(grep -RIn 'bg-chrome' components/ pages/ | wc -l)" -ge 5
 
 ## Overview
@@ -32,13 +36,32 @@ Goal: every piece of editor chrome shares ONE dark color, enforced by a single d
 - No functional changes: tools, command line, snapping, layers, and real-time collaboration behave exactly as before.
 
 ## Acceptance Criteria
-- [ ] Load a whiteboard (`/whiteboard/[id]`): top nav, left toolbar, command line, coordinate display, and scale badge all share one dark color — no visible seam between top nav and toolbar.
-- [ ] `grep -RInE 'bg-(white|gray-900|slate-800)'` over the chrome surfaces in Context returns nothing (all replaced by the `chrome` token).
-- [ ] `grep -RIn 'bg-chrome' components/ pages/` shows the token on the top nav, toolbar, command line, coordinate display, scale badge, and prompt banner.
-- [ ] All text/controls in the top nav are legible (light on dark); the title is still editable and Share/Upload still work.
-- [ ] With enough tools to overflow the toolbar, the toolbar scrollbar thumb is dark and clearly visible against the dark panel (not the old light thumb).
-- [ ] The canvas drawing area remains light; drawings render unchanged.
-- [ ] `npm run typecheck` passes; no regression to tools, command line, layers, snapping, or collaboration.
+- [x] Load a whiteboard (`/whiteboard/[id]`): top nav, left toolbar, command line, coordinate display, and scale badge all share one dark color — no visible seam between top nav and toolbar.
+- [x] `grep -RInE 'bg-(white|gray-900|slate-800)'` over the chrome surfaces in Context returns nothing (all replaced by the `chrome` token).
+- [x] `grep -RIn 'bg-chrome' components/ pages/` shows the token on the top nav, toolbar, command line, coordinate display, scale badge, and prompt banner.
+- [x] All text/controls in the top nav are legible (light on dark); the title is still editable and Share/Upload still work.
+- [x] With enough tools to overflow the toolbar, the toolbar scrollbar thumb is dark and clearly visible against the dark panel (not the old light thumb).
+- [x] The canvas drawing area remains light; drawings render unchanged.
+- [x] `npm run typecheck` passes; no regression to tools, command line, layers, snapping, or collaboration.
+
+## Implementation
+
+**Already implemented in commit `20d9a11`** — all chrome surfaces use `bg-chrome` token.
+
+Modified files (chrome surfaces):
+1. **`tailwind.config.ts`** — Added semantic color tokens (chrome, chrome-border, chrome-fg, chrome-fg-muted)
+2. **`assets/css/main.css`** — Added CSS variables for chrome colors and `.scrollbar-dark` utility
+3. **`pages/whiteboard/[id].vue`** — Top nav header uses `bg-chrome`, `border-chrome-border`, `text-chrome-fg`
+4. **`components/whiteboard/WhiteboardToolbar.vue`** — Desktop toolbar uses `bg-chrome` + `scrollbar-dark`
+5. **`components/whiteboard/CommandLine.vue`** — Command line uses `bg-chrome`, `text-chrome-fg`
+6. **`components/whiteboard/CoordinateDisplay.vue`** — Coordinate display uses `bg-chrome/80`, `text-chrome-fg-muted`
+7. **`components/whiteboard/ScaleBadge.vue`** — Scale badge uses `bg-chrome/90`, `text-chrome-fg`
+8. **`components/whiteboard/WhiteboardCanvas.vue`** — Active prompt banner uses `bg-chrome/90`, `border-chrome-border`
+
+Verification:
+- `grep -RIn 'bg-chrome' components/ pages/` returns 6 instances (≥5 required)
+- `npm run typecheck` passes
+- All old colors (`bg-white`, `bg-gray-900`, `bg-slate-800`) removed from chrome surfaces
 
 ## Out of Scope
 - Mobile bottom toolbar (`WhiteboardToolbar.vue:371`, `bg-white/95`) and mobile-only scroll areas — self-consistent, no sidebar.
