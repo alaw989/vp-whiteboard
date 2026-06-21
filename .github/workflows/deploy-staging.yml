@@ -60,7 +60,7 @@ jobs:
               NUXT_PUBLIC_LARAVEL_URL=https://staging-whiteboard.vp-associates.com \
               NUXT_PUBLIC_SITE_URL=https://staging-whiteboard.vp-associates.com \
               NUXT_PUBLIC_WS_URL=wss://staging-whiteboard.vp-associates.com \
-              pm2 start frontend/.output/server/index.mjs \
+              pm2 start .output/server/index.mjs \
                 --name vp-whiteboard-staging \
                 --cwd /var/www/vp-whiteboard-staging/frontend
 
@@ -69,7 +69,7 @@ jobs:
             WS_PORT=3003 \
               LARAVEL_URL=https://staging-whiteboard.vp-associates.com \
               SESSION_COOKIE=laravel-session \
-              pm2 start frontend/server/ws-server.js \
+              pm2 start server/ws-server.js \
                 --name vp-ws-server-staging \
                 --cwd /var/www/vp-whiteboard-staging/frontend
 
