@@ -46,9 +46,21 @@ function parseCookies(cookieHeader) {
 async function fetchJson(url, cookieHeader, timeoutMs) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  // Sanctum's stateful guard only authenticates the session cookie on requests
+  // whose Origin/Referer matches SANCTUM_STATEFUL_DOMAINS. Browsers send these
+  // automatically; the relay must too, or /api/user returns 401 and every
+  // connection is rejected (causing an infinite reconnect loop that resets the
+  // Yjs doc and wipes just-added layers).
+  let origin = LARAVEL_URL
+  try { origin = new URL(LARAVEL_URL).origin } catch {}
   try {
     const res = await fetch(url, {
-      headers: { cookie: cookieHeader || '', accept: 'application/json' },
+      headers: {
+        cookie: cookieHeader || '',
+        accept: 'application/json',
+        origin,
+        referer: `${LARAVEL_URL}/`,
+      },
       signal: controller.signal,
     })
     return {
