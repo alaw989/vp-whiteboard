@@ -38,6 +38,15 @@ export function useLineTool(ctx: ToolContext): ToolHandler {
       const start = lineStart.value
       const end = currentLineEnd.value
 
+      // Skip zero-length lines from stray clicks (no drag)
+      const dx = end.x - start.x
+      const dy = end.y - start.y
+      if (dx * dx + dy * dy < 1) {
+        reset()
+        ctx.isDrawing.value = false
+        return
+      }
+
       const element: CanvasElement = {
         id: `${ctx.userId}-${Date.now()}`,
         type: 'line',
