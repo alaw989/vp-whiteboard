@@ -3,25 +3,33 @@
  * Yjs WebSocket Server for VP Whiteboard
  *
  * Simple WebSocket relay server for Yjs CRDT synchronization.
- * Run this alongside the Nuxt dev server for real-time collaboration.
+ * Run this alongside the Nuxt/Laravel stack for real-time collaboration.
  *
  * Usage:
- *   node server/ws-server.js
+ *   WS_PORT=3003 LARAVEL_URL=https://staging-whiteboard.vp-associates.com node server/ws-server.js
  *
  * The server:
- * - Listens on port 3001 (configurable via WS_PORT env var)
- * - Relays Yjs sync messages between clients in the same room
- * - Enables real-time collaboration across browsers
+ * - Listens on port 3003 (configurable via WS_PORT env var)
+ * - Authenticates each connection by forwarding the browser's laravel_session
+ *   cookie to Laravel's auth:sanctum /api/user endpoint (cached briefly).
+ * - Relays Yjs sync messages between clients in the same room.
+ *
+ * NOTE: anonymous share-link viewers (no session) are currently rejected.
+ * If share-link real-time collaboration is needed, add a ?token= path that
+ * validates via Laravel's public /api/sessions/{shareToken} route.
  */
 
 import { WebSocketServer } from 'ws'
 import { createServer } from 'http'
-import { createHmac, timingSafeEqual } from 'crypto'
 
 const PORT = process.env.WS_PORT || 3001
 const HOST = process.env.WS_HOST || '0.0.0.0'
-const AUTH_PASSWORD = process.env.AUTH_PASSWORD || ''
-const AUTH_SECRET = process.env.AUTH_SECRET || ''
+const LARAVEL_URL = process.env.LARAVEL_URL || 'http://localhost:8000'
+const AUTH_TIMEOUT_MS = parseInt(process.env.WS_AUTH_TIMEOUT_MS || '3000', 10)
+
+// Cache session→verdict briefly so repeat connections don't hit Laravel each time.
+const authCache = new Map() // laravel_session value -> { ok, exp }
+const AUTH_CACHE_TTL_MS = 60_000
 
 function parseCookies(cookieHeader) {
   const cookies = {}
@@ -33,32 +41,33 @@ function parseCookies(cookieHeader) {
   return cookies
 }
 
-function isAuthed(cookies, roomId) {
-  if (!AUTH_PASSWORD || !AUTH_SECRET) return true
+async function isAuthed(cookieHeader) {
+  if (!cookieHeader) return false
+  const session = parseCookies(cookieHeader)['laravel_session']
+  if (!session) return false
 
-  // Check auth token
-  const token = cookies['vp-auth-token']
-  if (token) {
-    const expected = createHmac('sha256', AUTH_SECRET).update(AUTH_PASSWORD).digest('hex')
-    if (token.length === expected.length) {
-      try {
-        if (timingSafeEqual(Buffer.from(token), Buffer.from(expected))) return true
-      } catch {}
-    }
+  const now = Date.now()
+  const cached = authCache.get(session)
+  if (cached && cached.exp > now) return cached.ok
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS)
+  let ok = false
+  try {
+    const res = await fetch(`${LARAVEL_URL}/api/user`, {
+      headers: { cookie: cookieHeader, accept: 'application/json' },
+      signal: controller.signal,
+    })
+    ok = res.status === 200
+  } catch (e) {
+    // Laravel unreachable / timeout → fail closed (deny).
+    console.log(`[Yjs WS] ⚠️ Auth check failed: ${e.message}`)
+    ok = false
+  } finally {
+    clearTimeout(timer)
   }
-
-  // Check share token
-  const shareToken = cookies['vp-share-access']
-  if (shareToken && roomId) {
-    const expected = createHmac('sha256', AUTH_SECRET).update(`share:${roomId}`).digest('hex')
-    if (shareToken.length === expected.length) {
-      try {
-        if (timingSafeEqual(Buffer.from(shareToken), Buffer.from(expected))) return true
-      } catch {}
-    }
-  }
-
-  return false
+  authCache.set(session, { ok, exp: now + AUTH_CACHE_TTL_MS })
+  return ok
 }
 
 // Create HTTP server for WebSocket upgrade
@@ -89,7 +98,7 @@ function getRoom(roomId) {
 /**
  * Handle WebSocket connection
  */
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
   totalConnections++
 
   // Extract room ID from URL path
@@ -101,9 +110,9 @@ wss.on('connection', (ws, req) => {
   const match = pathname.match(/(?:whiteboard:)?([^/]+)$/)
   const roomId = match && match[1] ? match[1] : 'default'
 
-  // Validate auth
-  const cookies = parseCookies(req.headers.cookie)
-  if (!isAuthed(cookies, roomId)) {
+  // Validate auth against Laravel (Sanctum session cookie)
+  const authed = await isAuthed(req.headers.cookie)
+  if (!authed) {
     console.log(`[Yjs WS] 🚫 Rejected unauthenticated connection to room=${roomId}`)
     ws.close(4001, 'Authentication required')
     return
