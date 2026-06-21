@@ -1,5 +1,11 @@
 # VP Associates Collaborative Whiteboard
 
+> **Ralph Wiggum (spec-driven autonomous coding loop) is set up here.** The single
+> source of truth for loop-mode behavior, branch safety, and spec conventions is
+> `.specify/memory/constitution.md` — read it before running the loop or touching
+> `specs/`. Start with `./scripts/ralph-loop.sh`; **never run the loop on
+> `master`/`develop`/`main`** (they auto-deploy) — use a `feat/*` branch only.
+
 ## Operations & current state
 - **Staging** (`staging-whiteboard.vp-associates.com`) runs the migrated **Laravel** backend on branch `develop`. **Production** (`whiteboard.vp-associates.com`) is still the old Nuxt+Supabase app on `master` (not yet migrated).
 - **Deploy staging by pushing to `develop`** — `.github/workflows/deploy-staging.yml` builds + deploys over SSH (composer → migrate → storage:link → frontend build → PM2). **Do not hand-deploy over SSH**; SSH is read-only for diagnosis. Watch a run: `gh run watch <id> --exit-status`.

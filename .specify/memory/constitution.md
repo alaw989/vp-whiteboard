@@ -29,10 +29,14 @@
 
 ## Technical Stack
 
-Nuxt 3 · Vue 3 (Composition API, `<script setup>`) · TypeScript · Tailwind CSS ·
-Konva.js + vue-konva · Yjs / y-websocket (real-time CRDT) · Supabase (Postgres +
-Storage, RLS) · jspdf / pdfjs-dist · Vitest / Playwright. Dual-server: Nuxt HTTP
-:3000 + WebSocket :3001. Deploy: DigitalOcean / PM2.
+**Backend:** Laravel 12 (PHP 8.2+) + MySQL + Breeze (Sanctum SPA-cookie auth) — repo root,
+`:8000` dev / PHP-FPM prod. Commands: `php artisan …`, `composer …`, `php artisan test`.
+**Frontend:** Nuxt 3 · Vue 3 (Composition API, `<script setup>`) · TypeScript · Tailwind CSS ·
+Konva.js + vue-konva · Yjs over a standalone WebSocket relay (`frontend/server/ws-server.js`,
+real-time CRDT) · jspdf / pdfjs-dist · Vitest / Playwright. Nuxt lives in `frontend/`, `:3000`;
+npm/vitest/vue-tsc run from there (`cd frontend && …`).
+**Deploy:** DigitalOcean droplet (nginx + PHP-FPM + PM2), GitHub Actions. Prod is still the old
+Nuxt+Supabase app on `master`; `develop`/staging runs the migrated Laravel stack.
 
 **Branch model: `master` = prod (auto-deploys), `develop` = staging (auto-deploys).**
 
@@ -59,8 +63,8 @@ Git Autonomy (auto-merge to deploy branches): **DISABLED.**
 ## Pre-commit Checks (non-negotiable)
 
 Before signaling `<promise>DONE</promise>` on any spec:
-- `npm run typecheck` passes (vue-tsc — Nuxt `build` does NOT typecheck).
-- Existing tests still pass (`npm run test` / Playwright where relevant).
+- `cd frontend && npm run typecheck` passes (vue-tsc — Nuxt `build` does NOT typecheck). **Always `cd frontend` first:** there is no root `package.json` (Laravel root), and the loop `eval`s each spec's `Verify:` line from the repo root.
+- Existing tests still pass (`cd frontend && npm test` / Playwright where relevant); Laravel via `php artisan test` from the repo root.
 - No regressions to real-time sync, canvas rendering, auth, or the AutoCAD tools.
 
 ---
@@ -69,7 +73,7 @@ Before signaling `<promise>DONE</promise>` on any spec:
 
 Prefer a **runnable check** over screenshot self-judgment. If a spec's acceptance can
 be expressed as a command, add a `Verify: <cmd>` line to the spec (e.g.
-`Verify: npm test -- geometryUtils`). The loop runs that command each iteration and
+`Verify: cd frontend && npm test -- geometryUtils`). The loop runs that command each iteration and
 treats exit 0 as authoritative — it will reject `<promise>DONE</promise>` if `Verify:`
 fails. Specs without a `Verify:` line fall back to the agent's judgment, which is
 unreliable for interactive features.
@@ -123,7 +127,7 @@ Check history before starting work on any spec.
 
 ## Completion Signal
 
-All acceptance criteria verified, `npm run typecheck` passes, tests pass, changes
+All acceptance criteria verified, `cd frontend && npm run typecheck` passes, tests pass, changes
 committed to the **feature branch** and pushed → output `<promise>DONE</promise>`.
 Never output this until truly complete.
 
