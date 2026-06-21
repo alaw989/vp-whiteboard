@@ -76,8 +76,8 @@ const server = createServer((req, res) => {
   res.end('VP Whiteboard Yjs WebSocket Server')
 })
 
-// Create WebSocket server
-const wss = new WebSocketServer({ server, noServer: false })
+// Create WebSocket server (allow large Yjs sync payloads for big canvases)
+const wss = new WebSocketServer({ server, noServer: false, maxPayload: 256 * 1024 * 1024 })
 
 // Store connections per room
 const rooms = new Map()
