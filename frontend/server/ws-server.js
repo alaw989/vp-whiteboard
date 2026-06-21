@@ -14,9 +14,11 @@
  *   cookie to Laravel's auth:sanctum /api/user endpoint (cached briefly).
  * - Relays Yjs sync messages between clients in the same room.
  *
- * NOTE: anonymous share-link viewers (no session) are currently rejected.
- * If share-link real-time collaboration is needed, add a ?token= path that
- * validates via Laravel's public /api/sessions/{shareToken} route.
+ * NOTE: anonymous share-link viewers are accepted when they carry a valid
+ * vp_share_token cookie (set by the /s/:token route) that resolves — via
+ * Laravel's public /api/sessions/{token} — to the whiteboard being opened.
+ * The token is scoped to that room, so a share viewer for board A cannot
+ * reach board B.
  */
 
 import { WebSocketServer } from 'ws'
@@ -41,33 +43,60 @@ function parseCookies(cookieHeader) {
   return cookies
 }
 
-async function isAuthed(cookieHeader) {
-  if (!cookieHeader) return false
-  const session = parseCookies(cookieHeader)['laravel_session']
-  if (!session) return false
-
-  const now = Date.now()
-  const cached = authCache.get(session)
-  if (cached && cached.exp > now) return cached.ok
-
+async function fetchJson(url, cookieHeader, timeoutMs) {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS)
-  let ok = false
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetch(`${LARAVEL_URL}/api/user`, {
-      headers: { cookie: cookieHeader, accept: 'application/json' },
+    const res = await fetch(url, {
+      headers: { cookie: cookieHeader || '', accept: 'application/json' },
       signal: controller.signal,
     })
-    ok = res.status === 200
+    return {
+      status: res.status,
+      data: res.status === 200 ? await res.json().catch(() => null) : null,
+    }
   } catch (e) {
     // Laravel unreachable / timeout → fail closed (deny).
     console.log(`[Yjs WS] ⚠️ Auth check failed: ${e.message}`)
-    ok = false
+    return { status: 0, data: null }
   } finally {
     clearTimeout(timer)
   }
-  authCache.set(session, { ok, exp: now + AUTH_CACHE_TTL_MS })
-  return ok
+}
+
+// Accept a connection if the caller is EITHER a logged-in user (valid Sanctum
+// session) OR a share-link viewer whose vp_share_token resolves (via Laravel) to
+// THIS room's whiteboard. Verdicts are cached briefly per credential.
+async function isAuthed(cookieHeader, roomId) {
+  if (!cookieHeader) return false
+  const cookies = parseCookies(cookieHeader)
+  const now = Date.now()
+
+  // 1. Logged-in user (Sanctum session cookie)
+  const session = cookies['laravel_session']
+  if (session) {
+    const cached = authCache.get('sess:' + session)
+    if (cached && cached.exp > now) return cached.ok
+    const { status } = await fetchJson(`${LARAVEL_URL}/api/user`, cookieHeader, AUTH_TIMEOUT_MS)
+    const ok = status === 200
+    authCache.set('sess:' + session, { ok, exp: now + AUTH_CACHE_TTL_MS })
+    if (ok) return true
+  }
+
+  // 2. Share-link viewer (token must resolve to this room's whiteboard id)
+  const shareToken = cookies['vp_share_token']
+  if (shareToken) {
+    const key = 'share:' + shareToken + ':' + roomId
+    const cached = authCache.get(key)
+    if (cached && cached.exp > now) return cached.ok
+    const url = `${LARAVEL_URL}/api/sessions/${encodeURIComponent(shareToken)}`
+    const { status, data } = await fetchJson(url, cookieHeader, AUTH_TIMEOUT_MS)
+    const ok = status === 200 && data && data.success && data.data && data.data.id === roomId
+    authCache.set(key, { ok, exp: now + AUTH_CACHE_TTL_MS })
+    if (ok) return true
+  }
+
+  return false
 }
 
 // Create HTTP server for WebSocket upgrade
@@ -110,8 +139,8 @@ wss.on('connection', async (ws, req) => {
   const match = pathname.match(/(?:whiteboard:)?([^/]+)$/)
   const roomId = match && match[1] ? match[1] : 'default'
 
-  // Validate auth against Laravel (Sanctum session cookie)
-  const authed = await isAuthed(req.headers.cookie)
+  // Validate auth against Laravel (Sanctum session OR scoped share token)
+  const authed = await isAuthed(req.headers.cookie, roomId)
   if (!authed) {
     console.log(`[Yjs WS] 🚫 Rejected unauthenticated connection to room=${roomId}`)
     ws.close(4001, 'Authentication required')
