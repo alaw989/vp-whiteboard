@@ -94,12 +94,22 @@ export function useFileUpload() {
       const config = useRuntimeConfig()
       const laravelUrl = (config.public.laravelUrl as string) || 'http://localhost:8000'
 
+      // XSRF token: ensureCsrf() set the XSRF-TOKEN cookie; mirror it into the
+      // X-XSRF-TOKEN header that Laravel's CSRF middleware verifies. The cookie
+      // alone is not enough — without this header, stateful POSTs get HTTP 419.
+      const xsrfMatch = import.meta.client
+        ? document.cookie.match(/XSRF-TOKEN=([^;]+)/)
+        : null
+
       // Use raw $fetch for upload progress support (Nitro types don't include onUploadProgress)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const fetchOpts: any = {
         method: 'POST',
         body: formData,
         credentials: 'include',
+        headers: xsrfMatch && xsrfMatch[1]
+          ? { 'X-XSRF-TOKEN': decodeURIComponent(xsrfMatch[1]) }
+          : {},
         onUploadProgress: (progressEvent: { loaded: number; total?: number }) => {
           if (options.onProgress && progressEvent.total) {
             const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
