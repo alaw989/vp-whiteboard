@@ -28,6 +28,10 @@ const PORT = process.env.WS_PORT || 3001
 const HOST = process.env.WS_HOST || '0.0.0.0'
 const LARAVEL_URL = process.env.LARAVEL_URL || 'http://localhost:8000'
 const AUTH_TIMEOUT_MS = parseInt(process.env.WS_AUTH_TIMEOUT_MS || '3000', 10)
+// Laravel's session cookie name = Str::slug(APP_NAME).'-session', so it varies
+// (e.g. APP_NAME=Laravel → "laravel-session", not the default "laravel_session").
+// Accept the configured name plus the common variants.
+const SESSION_COOKIE = process.env.SESSION_COOKIE || 'laravel_session'
 
 // Cache session→verdict briefly so repeat connections don't hit Laravel each time.
 const authCache = new Map() // laravel_session value -> { ok, exp }
@@ -85,7 +89,7 @@ async function isAuthed(cookieHeader, roomId) {
   const now = Date.now()
 
   // 1. Logged-in user (Sanctum session cookie)
-  const session = cookies['laravel_session']
+  const session = cookies[SESSION_COOKIE] || cookies['laravel-session'] || cookies['laravel_session']
   if (session) {
     const cached = authCache.get('sess:' + session)
     if (cached && cached.exp > now) return cached.ok
