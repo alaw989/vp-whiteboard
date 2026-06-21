@@ -1,36 +1,50 @@
 # VP Associates Collaborative Whiteboard
 
+## Operations & current state
+- **Staging** (`staging-whiteboard.vp-associates.com`) runs the migrated **Laravel** backend on branch `develop`. **Production** (`whiteboard.vp-associates.com`) is still the old Nuxt+Supabase app on `master` (not yet migrated).
+- **Deploy staging by pushing to `develop`** — `.github/workflows/deploy-staging.yml` builds + deploys over SSH (composer → migrate → storage:link → frontend build → PM2). **Do not hand-deploy over SSH**; SSH is read-only for diagnosis. Watch a run: `gh run watch <id> --exit-status`.
+- **Full detail:** `STAGING-LARAVEL-MIGRATION.md` (state, architecture, 12-item gotcha catalog, open items), `PRODUCTION-DEPLOY.md` (prod runbook), `DEVELOPMENT.md` (fresh-machine setup).
+- **Top gotchas** (full list in the migration doc): the WS relay must send `Origin`/`Referer` + use the real session-cookie name (`laravel-session`, = `Str::slug(APP_NAME).'-session'`); the `public/storage` symlink is gitignored (recreated by `artisan storage:link`); nginx routes `/api/*`→Laravel but `/api/_nuxt_icon/*`→Nuxt; every mutation must go through the `$api` helper (CSRF) or it 419s; `.env` must be readable by `www-data`.
+
 ## Tech Stack
-- **Framework**: Nuxt 3, Vue 3 (Composition API), TypeScript, Tailwind CSS
+- **Frontend**: Nuxt 3, Vue 3 (Composition API), TypeScript, Tailwind CSS — lives in `frontend/`
 - **Canvas**: Konva.js + vue-konva
 - **Drawing**: perfect-freehand for smooth strokes
-- **Real-time**: Yjs CRDT + y-websocket + Nitro WebSocket server
-- **Backend**: Supabase (PostgreSQL + Storage, Row Level Security)
+- **Real-time**: Yjs CRDT + standalone WebSocket relay (`frontend/server/ws-server.js`)
+- **Backend**: Laravel 12 (PHP 8.2+) + MySQL + Laravel Breeze (Sanctum SPA-cookie auth)
 - **PDF**: jspdf (export), pdfjs-dist (rendering)
 - **Testing**: Vitest (unit), Playwright (E2E)
-- **Deploy**: DigitalOcean App Platform, PM2 (separate app + WebSocket processes)
+- **Deploy**: DigitalOcean droplet, nginx + PHP-FPM + PM2, GitHub Actions CI
 
 ## Commands
+Laravel commands run from the **repo root**; Nuxt/WS commands from **`frontend/`**.
 ```bash
-npm run dev                # Nuxt dev server only
-npm run dev:ws             # WebSocket server only
-npm run dev:all            # Both servers concurrently
-npm run build              # Production build
-npm run start              # Start Nuxt server
-npm run start:ws           # Start WebSocket server
-npm run start:all          # Start both servers
-npm run typecheck          # TypeScript type checking
+# --- Laravel (repo root) ---
+composer install              # install PHP dependencies
+php artisan key:generate      # generate APP_KEY
+php artisan migrate           # run DB migrations
+php artisan storage:link      # create the public/storage symlink (uploads)
+php artisan serve             # Laravel dev server on :8000
+
+# --- Nuxt + WS (frontend/) ---
+cd frontend
+npm install
+npm run dev                   # Nuxt dev server (:3000)
+npm run dev:ws                # Yjs WS relay (:3001)
+npm run dev:all               # both concurrently
+npm run build                 # production build
+npm run typecheck             # vue-tsc type check
 ```
 
 ## Architecture
-- Dual-server: Nuxt HTTP server (port 3000) + separate WebSocket server (port 3001)
-- CRDT-based real-time sync via Yjs — conflict-free collaboration
-- Canvas state stored as JSONB in PostgreSQL, auto-saves every 30 seconds
-- Viewport culling for performance with 500+ elements
-- Tool system: each tool is a composable in `composables/tools/` implementing a `ToolHandler` interface
-- Tool dispatch: `composables/useToolHandlers.ts` routes mouse/keyboard events to the active tool
-- Core composables: `useCollaborativeCanvas` (Yjs), `useWhiteboardStorage` (Supabase)
-- CAD composables: `useOrthoMode`, `usePolarTracking`, `useSnapping`, `useGrid`, `useLayers`, `useCommandEngine`, `useCommandRegistry`
+- **Dual app**: Laravel API (repo root, `:8000` dev / PHP-FPM prod) + Nuxt SPA (`frontend/`, `:3000`). Nuxt calls Laravel via the `$api` helper (`frontend/plugins/api.client.ts`), which rewrites `/api/*` → `${laravelUrl}/api/*` with `credentials: 'include'` + CSRF.
+- **Real-time**: Yjs CRDT over a standalone WebSocket relay — conflict-free collaboration. Drawing elements, layers, and scale live in the Yjs doc.
+- **Persistence**: canvas state stored as JSON in MySQL (`whiteboards.canvas_state`), auto-saved every 30s via PATCH `/api/whiteboards/:id`.
+- **Auth**: Laravel Breeze (email+password accounts) + Sanctum SPA-cookie auth — replaces the old shared `AUTH_PASSWORD`.
+- Viewport culling for performance with 500+ elements.
+- Tool system: each tool is a composable in `frontend/composables/tools/` implementing a `ToolHandler` interface.
+- Tool dispatch: `frontend/composables/useToolHandlers.ts` routes mouse/keyboard events to the active tool.
+- Core composables: `useCollaborativeCanvas` (Yjs), `useDocumentLayer` (PDF/image layers). CAD: `useOrthoMode`, `usePolarTracking`, `useSnapping`, `useGrid`, `useLayers`, `useCommandEngine`, `useCommandRegistry`.
 
 ## Pages
 - `/` — Whiteboard list
@@ -39,12 +53,15 @@ npm run typecheck          # TypeScript type checking
 - `/s/[id]` — Shared short link
 
 ## Environment
-Copy `.env.example` to `.env`. Required: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `NUXT_PUBLIC_SUPABASE_URL`, `NUXT_PUBLIC_SUPABASE_ANON_KEY`. Optional: `WS_PORT` (default 3001), `NUXT_PUBLIC_WS_URL`, `NUXT_PUBLIC_SITE_URL`.
+Two `.env` files (both gitignored — copy from the matching `.env.example`):
+- **Root `.env`** (Laravel): `APP_URL`, `DB_CONNECTION`/`DB_HOST`/`DB_PORT`/`DB_DATABASE`/`DB_USERNAME`/`DB_PASSWORD` (sqlite works for local dev; mysql for staging/prod), `SESSION_DOMAIN`, `SANCTUM_STATEFUL_DOMAINS`, `FRONTEND_URL`. Run `php artisan key:generate`.
+- **`frontend/.env`** (Nuxt): `NUXT_PUBLIC_LARAVEL_URL` (e.g. `http://localhost:8000`), `NUXT_PUBLIC_SITE_URL` (`http://localhost:3000`), `NUXT_PUBLIC_WS_URL` (`ws://localhost:3001`).
+Credentials never go in the repo. Staging/prod `.env` lives on the droplet; CI uses GitHub secrets.
 
 ## Conventions
 - Vue 3 Composition API (`<script setup>`) — no Options API
-- Components in `components/whiteboard/`, composables in `composables/`
-- Each drawing tool is a composable in `composables/tools/` — not a Vue component
+- The Nuxt app lives under `frontend/`: components in `frontend/components/whiteboard/`, composables in `frontend/composables/`
+- Each drawing tool is a composable in `frontend/composables/tools/` — not a Vue component
 - Tailwind for UI styling, Konva for canvas rendering
 - Touch support: pointer events with pressure sensitivity, two-finger pan
 - Accessibility: full keyboard shortcuts, screen reader support, ARIA labels
