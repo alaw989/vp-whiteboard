@@ -66,3 +66,6 @@ public/uploads/
 PROMPT_build.md
 PROMPT_plan.md
 IMPLEMENTATION_PLAN.md
+
+# Laravel storage symlink (env-specific; created per-env by php artisan storage:link)
+public/storage
