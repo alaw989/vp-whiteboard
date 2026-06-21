@@ -19,7 +19,7 @@
 # 2. specs/ folder - pick highest priority incomplete spec
 #
 # Safety (hardened):
-# - DEFAULT iteration cap (25) so the loop can NEVER run unbounded.
+# - DEFAULT iteration cap (10) so the loop can NEVER run unbounded.
 #   Override per-run with a number arg, MAX_ITERATIONS env, or --unlimited.
 # - Branch guard: refuses to run on master/develop/main (they auto-deploy).
 # - Circuit breaker + per-spec NR_OF_TRIES halt the loop when it stops making
@@ -45,7 +45,7 @@ LOG_DIR="$PROJECT_DIR/logs"
 CONSTITUTION="$PROJECT_DIR/.specify/memory/constitution.md"
 
 # Configuration
-MAX_ITERATIONS="${MAX_ITERATIONS:-25}"   # default cap; 0 = unlimited (requires --unlimited)
+MAX_ITERATIONS="${MAX_ITERATIONS:-10}"   # default cap; 0 = unlimited (requires --unlimited)
 MODE="build"
 CLAUDE_CMD="${CLAUDE_CMD:-claude}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-7}"
@@ -101,7 +101,7 @@ Based on Geoffrey Huntley's Ralph Wiggum methodology + SpecKit specs.
 https://github.com/ghuntley/how-to-ralph-wiggum
 
 Usage:
-  ./scripts/ralph-loop.sh              # Build mode, default cap (25 iterations)
+  ./scripts/ralph-loop.sh              # Build mode, default cap (10 iterations)
   ./scripts/ralph-loop.sh 20           # Build mode, max 20 iterations
   ./scripts/ralph-loop.sh --unlimited  # Build mode, NO cap (dangerous)
   ./scripts/ralph-loop.sh plan         # Planning mode (creates IMPLEMENTATION_PLAN.md)
@@ -113,7 +113,7 @@ Modes:
   plan             Create IMPLEMENTATION_PLAN.md from specs (OPTIONAL)
 
 Safety:
-  - Default iteration cap is 25. The loop ALWAYS stops (cap, circuit breaker,
+  - Default iteration cap is 10. The loop ALWAYS stops (cap, circuit breaker,
     or per-spec NR_OF_TRIES). Use --unlimited to remove the cap.
   - Refuses to run on master/develop/main. Override with --allow-deploy-branch
     (you almost certainly do not want this).

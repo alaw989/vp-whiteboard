@@ -67,6 +67,14 @@ Before signaling `<promise>DONE</promise>` on any spec:
 - Existing tests still pass (`cd frontend && npm test` / Playwright where relevant); Laravel via `php artisan test` from the repo root.
 - No regressions to real-time sync, canvas rendering, auth, or the AutoCAD tools.
 
+**Rigorous per-iteration verification — do ALL of these, never shortcut:**
+1. **Run the spec's `Verify:` command yourself** and confirm exit 0 — don't trust memory; the loop re-runs it independently and rejects `<promise>DONE</promise>` on non-zero.
+2. **Run the FULL relevant suite, not just the new test:** `cd frontend && npm run typecheck && npm test` (frontend specs) or `php artisan test` (Laravel specs). A passing new test alongside a failing existing one is a FAIL.
+3. **Re-read your full diff this iteration** (`git diff` + `git status`): confirm no scope outside the spec's Requirements, no leftover `console.log`/debug code, no commented-out blocks or unused imports, no accidental edits to unrelated files.
+4. **Walk every Acceptance Criteria checkbox individually** and confirm each is genuinely met — not "should work." If a criterion is only checkable in a browser, say so explicitly and leave its box unchecked (human verifies post-merge) rather than assuming.
+5. **For interactive/canvas behavior, assert underlying logic/state with a Vitest** (see Canvas-interaction traps below) — never judge correctness by screenshot.
+6. **If ANY check fails or is uncertain, do NOT output `<promise>DONE</promise>`.** Fix it, or stop and surface the blocker honestly. Partial ≠ done.
+
 ---
 
 ## Verification
