@@ -5,12 +5,19 @@ on:
     branches: [master]
   workflow_dispatch:
 
+concurrency:
+  # Shared with deploy-staging.yml so a production build and a staging build never
+  # overlap on the droplet (each build peaks ~2GB).
+  group: droplet-build
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - name: Deploy to DigitalOcean via SSH
+      - name: Deploy production via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DO_HOST }}
@@ -18,46 +25,61 @@ jobs:
           key: ${{ secrets.DO_SSH_KEY }}
           port: ${{ secrets.DO_PORT || 22 }}
           script_stop: true
-          envs: SITE_URL,WS_URL,AUTH_PASSWORD,AUTH_SECRET,SUPABASE_URL,SUPABASE_ANON_KEY,NUXT_PUBLIC_SUPABASE_URL,NUXT_PUBLIC_SUPABASE_ANON_KEY
           script: |
+            set -e
             cd /var/www/vp-whiteboard
 
-            # Pull latest code
+            # --- Latest code ---
             git fetch origin
+            git checkout master
             git reset --hard origin/master
 
-            # Create .env file with production values
-            cat > .env << EOF
-            NUXT_PUBLIC_SITE_URL=$SITE_URL
-            NUXT_PUBLIC_WS_URL=$WS_URL
-            AUTH_PASSWORD=$AUTH_PASSWORD
-            AUTH_SECRET=$AUTH_SECRET
-            SUPABASE_URL=$SUPABASE_URL
-            SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
-            NUXT_PUBLIC_SUPABASE_URL=$NUXT_PUBLIC_SUPABASE_URL
-            NUXT_PUBLIC_SUPABASE_ANON_KEY=$NUXT_PUBLIC_SUPABASE_ANON_KEY
-            EOF
+            # --- Laravel (repo root) ---
+            # .env is gitignored and persists on disk (DB creds, APP_KEY, etc.).
+            # Fail loudly rather than silently booting with no config.
+            if [ ! -f .env ]; then echo "ERROR: /var/www/vp-whiteboard/.env missing"; exit 1; fi
+            php /usr/local/bin/composer-phar install --no-dev --optimize-autoloader --no-interaction
+            php artisan config:clear
+            php artisan migrate --force
+            php artisan storage:link 2>/dev/null || true   # recreate the public/storage symlink if missing
 
-            # Install dependencies
-            npm install
+            # Seed production auth accounts if SEED_USERS_JSON is set (Spec 008)
+            if [ -n "$SEED_USERS_JSON" ]; then
+              php artisan db:seed --class=UserSeeder
+            fi
 
-            # Build the application (with increased heap for small servers)
+            chown -R www-data:www-data storage bootstrap/cache
+            chown www-data:www-data .env && chmod 640 .env   # FPM must read .env
+
+            # --- Nuxt frontend (frontend/) ---
+            cd frontend
+            npm install --no-audit --no-fund
             NODE_OPTIONS="--max-old-space-size=2048" npm run build
 
-            # Restart PM2 processes
-            pm2 restart vp-whiteboard
-            pm2 restart vp-ws-server
+            # --- PM2: re-create both processes with correct paths + env ---
+            # (delete+start, not restart, so a drifted saved config never wins)
+            cd /var/www/vp-whiteboard
+            pm2 delete vp-whiteboard 2>/dev/null || true
+            pm2 delete vp-ws-server 2>/dev/null || true
 
-            # Save PM2 config
+            PORT=3000 \
+              NUXT_PUBLIC_LARAVEL_URL=https://whiteboard.vp-associates.com \
+              NUXT_PUBLIC_SITE_URL=https://whiteboard.vp-associates.com \
+              NUXT_PUBLIC_WS_URL=wss://whiteboard.vp-associates.com \
+              APP_ENV=production \
+              pm2 start .output/server/index.mjs \
+                --name vp-whiteboard \
+                --cwd /var/www/vp-whiteboard/frontend
+
+            # SESSION_COOKIE must match Laravel's Str::slug(APP_NAME).'-session'
+            # (APP_NAME=Laravel => "laravel-session").
+            WS_PORT=3001 \
+              LARAVEL_URL=https://whiteboard.vp-associates.com \
+              SESSION_COOKIE=laravel-session \
+              pm2 start server/ws-server.js \
+                --name vp-ws-server \
+                --cwd /var/www/vp-whiteboard/frontend
+
             pm2 save
 
-            echo "Deployment successful!"
-        env:
-          SITE_URL: ${{ secrets.SITE_URL }}
-          WS_URL: ${{ secrets.WS_URL }}
-          AUTH_PASSWORD: ${{ secrets.AUTH_PASSWORD }}
-          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          NUXT_PUBLIC_SUPABASE_URL: ${{ secrets.NUXT_PUBLIC_SUPABASE_URL }}
-          NUXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NUXT_PUBLIC_SUPABASE_ANON_KEY }}
+            echo "Production deployment successful!"

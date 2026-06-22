@@ -1,6 +1,6 @@
 # Spec 009: Rewrite production deploy.yml for the Laravel+frontend stack
 
-## Status: Draft
+## Status: COMPLETE
 
 Verify: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/deploy.yml'))" && grep -q "artisan migrate" .github/workflows/deploy.yml && ! grep -qi "SUPABASE\|AUTH_PASSWORD" .github/workflows/deploy.yml
 
@@ -88,4 +88,4 @@ the migrated stack correctly.
 - Production data migration (Supabase → MySQL) — separate item in STAGING-LARAVEL-MIGRATION.md.
 - Setting the real `SEED_USERS_JSON` value — droplet/CI secret, not in git.
 
-<!-- NR_OF_TRIES: 0 -->
+<!-- NR_OF_TRIES: 1 -->

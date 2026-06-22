@@ -6,3 +6,7 @@
 - Spec 003: Pivot marker + angle guide — Already implemented in commit 2327eaa (Tier 2 Rotate & Scale tools); verified and marked complete
 - Spec 004: Circle & ellipse selection — Added circle selection to Rotate/Scale/Mirror/Trim/Extend tools and findNearestElementSegment utility (completed on first try)
 
+## 2026-06-21
+- Spec 008: Seed production auth accounts — Wired UserSeeder into DatabaseSeeder (only when SEED_USERS_JSON configured), added config/users.php, added UserSeederTest.php with 6 passing tests, tracked UserSeeder.php in git (87a92c31)
+- Spec 009: Rewrite production deploy workflow — Rewrote `.github/workflows/deploy.yml` to mirror `deploy-staging.yml` with Laravel+frontend structure, pointed at production paths/URLs, dropped Supabase/legacy-auth refs, added conditional UserSeeder seeding (completed on first try)
+
