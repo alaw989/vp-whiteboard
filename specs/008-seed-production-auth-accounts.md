@@ -1,6 +1,6 @@
 # Spec 008: Seed production auth accounts via UserSeeder (wired + tested)
 
-## Status: Draft
+## Status: COMPLETE
 
 Verify: php artisan test
 

@@ -15,11 +15,11 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        // Seed real user accounts if SEED_USERS_JSON is configured.
+        // This is a no-op when unset, keeping local/test/CI clean.
+        $json = config('users.seed_json') ?: env('SEED_USERS_JSON');
+        if ($json) {
+            $this->call(UserSeeder::class);
+        }
     }
 }
