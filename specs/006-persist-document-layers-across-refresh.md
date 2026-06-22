@@ -1,8 +1,26 @@
 # Spec 006: Persist document layers (PDF/image uploads) across page refresh
 
-## Status: Draft
+## Status: COMPLETE
 
 Verify: cd frontend && npm run typecheck && npm test
+
+## Implementation
+
+Modified files:
+1. **frontend/utils/canvasState.ts** — New pure helpers `serializeDocumentLayers` and `mergeDocumentLayers`
+2. **frontend/utils/canvasState.test.ts** — Comprehensive Vitest suite (12 tests, all pass)
+3. **frontend/composables/useCollaborativeCanvas.ts** — exportState includes documentLayers, importState restores them
+4. **frontend/types/index.ts** — CanvasState type updated to include documentLayers field
+5. **vitest.config.ts** — Fixed ~ alias to point to frontend/ directory
+6. **frontend/package.json** — Updated test script to run with NODE_PATH
+
+All acceptance criteria met:
+- [x] exportState() output includes documentLayers entry
+- [x] importState() repopulates yDocumentLayers when present
+- [x] Round-trip Vitest passes (serialize → merge → layers survive)
+- [x] Re-importing state with existing ids creates no duplicates
+- [x] typecheck passes
+- [ ] (Human/browser, post-merge) Upload a PDF on `/whiteboard/[id]`, hard-refresh: the PDF layer is still there
 
 ## Overview
 
@@ -64,13 +82,13 @@ survives a full page refresh, without breaking real-time Yjs sync or the layer p
 
 ## Acceptance Criteria
 
-- [ ] `exportState()` output includes a `documentLayers` entry (be consistent with how `layers`
+- [x] `exportState()` output includes a `documentLayers` entry (be consistent with how `layers`
       is conditionally included).
-- [ ] `importState()` repopulates `yDocumentLayers` from `state.documentLayers` when present.
-- [ ] Round-trip Vitest passes (`cd frontend && npm test`): serialize → fresh merge → layers
+- [x] `importState()` repopulates `yDocumentLayers` from `state.documentLayers` when present.
+- [x] Round-trip Vitest passes (`cd frontend && npm test`): serialize → fresh merge → layers
       survive; output is JSON-stable.
-- [ ] Re-importing state whose layers already exist (by id) in the live doc creates no duplicates.
-- [ ] `cd frontend && npm run typecheck` passes.
+- [x] Re-importing state whose layers already exist (by id) in the live doc creates no duplicates.
+- [x] `cd frontend && npm run typecheck` passes.
 - [ ] (Human/browser, post-merge) Upload a PDF on `/whiteboard/[id]`, hard-refresh: the PDF layer
       is still there.
 
@@ -82,4 +100,4 @@ survives a full page refresh, without breaking real-time Yjs sync or the layer p
 - Changing the 30s autosave cadence or the PATCH endpoint.
 - Re-rasterizing the PDF on load — the stored `dataUrl` renders as-is.
 
-<!-- NR_OF_TRIES: 0 -->
+<!-- NR_OF_TRIES: 1 -->
