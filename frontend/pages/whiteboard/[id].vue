@@ -62,6 +62,24 @@
           <span class="capitalize">{{ connectionStatus }}</span>
         </div>
 
+        <!-- Autosave Status -->
+        <button
+          v-if="autosave.hasError.value"
+          @click="autosave.retry()"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium bg-red-900/50 text-red-400 border border-red-700 hover:bg-red-900/70 transition-colors"
+          title="Retry save"
+        >
+          <Icon name="mdi:alert" class="w-4 h-4" />
+          <span>Save failed — retry</span>
+        </button>
+        <div
+          v-else-if="autosave.status.value === 'saved'"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-chrome-fg-muted"
+        >
+          <Icon name="mdi:check" class="w-3.5 h-3.5" />
+          <span>Saved</span>
+        </div>
+
         <!-- Share Button -->
         <button
           @click="showShareModal = true"
@@ -354,6 +372,7 @@ import LayerPanel from '~/components/whiteboard/LayerPanel.vue'
 import { toastSuccess, toastError } from '~/composables/useToast'
 import { useCommandEngine } from '~/composables/useCommandEngine'
 import { useLayers } from '~/composables/useLayers'
+import { useAutosave } from '~/composables/useAutosave'
 
 // Canvas instance type combining composable return with exposed methods
 type CanvasInstanceType = ReturnType<typeof useCollaborativeCanvas> & {
@@ -732,25 +751,26 @@ watchEffect(() => {
   }
 })
 
-// Auto-save canvas state periodically (client-side only to avoid SSR error)
-const saveInterval = ref<ReturnType<typeof setInterval> | null>(null)
-
-onMounted(() => {
-  saveInterval.value = setInterval(() => {
+// Auto-save canvas state with status tracking
+const autosave = useAutosave(
+  () => whiteboardId,
+  () => {
     const instance = canvasInstance.value
-    if (instance && (instance.isConnected as any).value) {
-      const state = instance.exportState()
-      $api(`/api/whiteboards/${whiteboardId}`, {
-        method: 'PATCH',
-        body: { canvas_state: state },
-      })
-    }
-  }, 30000)
-})
+    return instance ? JSON.stringify(instance.exportState()) : ''
+  },
+  () => {
+    const instance = canvasInstance.value
+    return instance ? (instance.isConnected as any).value : false
+  },
+  (id, state) => $api(`/api/whiteboards/${id}`, {
+    method: 'PATCH',
+    body: { canvas_state: state },
+  })
+)
 
 onUnmounted(() => {
-  if (saveInterval.value !== null) clearInterval(saveInterval.value)
   if (canvasInstance.value) canvasInstance.value.cleanup()
+  autosave.stop()
 })
 
 // Tool handlers

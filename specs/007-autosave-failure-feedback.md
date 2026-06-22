@@ -1,6 +1,6 @@
 # Spec 007: Autosave failure feedback (no more silent save failures)
 
-## Status: Draft
+## Status: COMPLETE
 
 Verify: cd frontend && npm run typecheck && npm test
 
@@ -71,4 +71,4 @@ visual indicator is left for browser verification.
 - Changing the autosave cadence (stay 30s) or the PATCH payload.
 - A manual "Save now" button (candidate for a later spec).
 
-<!-- NR_OF_TRIES: 0 -->
+<!-- NR_OF_TRIES: 1 -->
