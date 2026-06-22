@@ -88,4 +88,4 @@ the migrated stack correctly.
 - Production data migration (Supabase → MySQL) — separate item in STAGING-LARAVEL-MIGRATION.md.
 - Setting the real `SEED_USERS_JSON` value — droplet/CI secret, not in git.
 
-<!-- NR_OF_TRIES: 1 -->
+<!-- NR_OF_TRIES: 0 -->
