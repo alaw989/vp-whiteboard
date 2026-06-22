@@ -436,6 +436,11 @@ ITERATION=0
 EXIT_REASON=""
 
 while true; do
+    # Re-anchor to repo root every iteration. A Verify: command may legitimately
+    # `cd` (e.g. `cd frontend && npm test`); belt-and-suspenders with the subshell
+    # around verify, this keeps relative `specs/` + `PROMPT_*` lookups correct.
+    cd "$PROJECT_DIR" || { echo -e "${RED}ERROR: could not cd to $PROJECT_DIR${NC}"; exit "$EXIT_ERROR"; }
+
     # Check max iterations
     if [ "$MAX_ITERATIONS" -gt 0 ] && [ "$ITERATION" -ge "$MAX_ITERATIONS" ]; then
         echo -e "${GREEN}Reached cap: $MAX_ITERATIONS iterations${NC}"
@@ -480,7 +485,7 @@ while true; do
     # Run Claude with prompt via stdin, capture output
     CLAUDE_OUTPUT=""
     CLAUDE_OK=false
-    if CLAUDE_OUTPUT=$(cat "$PROMPT_FILE" | "$CLAUDE_CMD" $CLAUDE_FLAGS 2>&1 | tee "$LOG_FILE"); then
+    if CLAUDE_OUTPUT=$(cat "$PROJECT_DIR/$PROMPT_FILE" | "$CLAUDE_CMD" $CLAUDE_FLAGS 2>&1 | tee "$LOG_FILE"); then
         CLAUDE_OK=true
     fi
 
@@ -519,7 +524,10 @@ while true; do
     if [ -n "$VERIFY_CMD" ]; then
         VERIFY_RAN=true
         echo -e "${CYAN}▶ Verify: $VERIFY_CMD${NC}"
-        if eval "$VERIFY_CMD" >>"$LOG_FILE" 2>&1; then
+        # Run Verify in a SUBHELL so a command that legitimately `cd`s (e.g.
+        # `cd frontend && npm test`) cannot leak into the loop's cwd — that leak
+        # breaks the next iteration's relative `PROMPT_*` and `specs/` lookups.
+        if ( eval "$VERIFY_CMD" ) >>"$LOG_FILE" 2>&1; then
             VERIFY_PASS=true
             echo -e "${GREEN}✓ Verify passed${NC}"
         else
