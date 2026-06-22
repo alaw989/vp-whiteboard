@@ -1,5 +1,6 @@
 import * as Y from 'yjs'
 import type { CanvasElement, UserPresence, DrawingTool, ViewportState, SharedViewportState } from '~/types'
+import { serializeDocumentLayers, mergeDocumentLayers } from '~/utils/canvasState'
 
 /**
  * Exponential backoff configuration for WebSocket reconnection
@@ -486,24 +487,30 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     return yElements.toArray()
   }
 
-  // Export canvas state (includes layers if present)
+  // Export canvas state (includes layers if present, plus document layers)
   function exportState() {
     const layers = yMeta.get('layers')
+    const documentLayers = serializeDocumentLayers(yDocumentLayers)
     return {
       version: yMeta.get('version') || 1,
       elements: getElements(),
       ...(layers ? { layers } : {}),
+      ...(documentLayers.length > 0 ? { documentLayers } : {}),
     }
   }
 
   // Import canvas state (for initial load, preserves existing layers if state has none)
-  function importState(state: { version: number; elements: CanvasElement[]; layers?: any[] }) {
+  function importState(state: { version: number; elements: CanvasElement[]; layers?: any[]; documentLayers?: any[] }) {
     ydoc.transact(() => {
       yElements.delete(0, yElements.length)
       yElements.insert(0, state.elements)
       yMeta.set('version', state.version)
       if (state.layers) {
         yMeta.set('layers', state.layers)
+      }
+      // Restore document layers if present (idempotent - skips existing ids)
+      if (state.documentLayers && state.documentLayers.length > 0) {
+        mergeDocumentLayers(yDocumentLayers, state.documentLayers)
       }
     }, 'import')
   }

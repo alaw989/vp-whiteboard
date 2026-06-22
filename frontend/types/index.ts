@@ -43,6 +43,8 @@ export interface FileMetadata {
 export interface CanvasState {
   version: number
   elements: CanvasElement[]
+  layers?: LayerDefinition[]  // Layer panel layers (from useLayers)
+  documentLayers?: DocumentLayer[]  // PDF/image document layers
   viewport?: ViewportState
 }
 
