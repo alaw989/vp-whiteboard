@@ -157,6 +157,7 @@ export function useDocumentLayer(options?: UseDocumentLayerOptions) {
         type: 'pdf',
         fileId: file.id,
         src: dataUrl,
+        fileUrl: file.url,
         x: 0,
         y: 0,
         width: viewport.width,
