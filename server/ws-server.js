@@ -61,10 +61,13 @@ function isAuthed(cookies, roomId) {
   return false
 }
 
-// Create HTTP server for WebSocket upgrade
+// Plain HTTP to this relay is always a misroute (the app lives on the Nuxt port).
+// Return 404 — not 200 — so a misconfigured proxy surfaces as an obvious error
+// instead of rendering a misleading gray page. WebSocket upgrades never reach
+// this handler: the `ws` server (noServer:false) owns the 'upgrade' event.
 const server = createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' })
-  res.end('VP Whiteboard Yjs WebSocket Server')
+  res.writeHead(404, { 'Content-Type': 'text/plain' })
+  res.end('Not Found')
 })
 
 // Create WebSocket server
