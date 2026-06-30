@@ -79,6 +79,32 @@ function createExponentialBackoff(config: ReconnectConfig) {
   }
 }
 
+/**
+ * Base64 helpers for shipping Yjs binary payloads (state vectors, updates)
+ * inside JSON envelopes over the WebSocket (text-as-binary) transport.
+ *
+ * `fromCharCode` is chunked at 0x8000 so large updates (e.g. a board with
+ * uploaded PDFs) don't blow the call stack the way a single
+ * `String.fromCharCode(...hugeArray)` would.
+ */
+function toB64(bytes: Uint8Array): string {
+  let binary = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
+function fromB64(b64: string): Uint8Array {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
 export function useCollaborativeCanvas(whiteboardId: string, userId: string, userName: string) {
   const config = useRuntimeConfig()
   const wsUrl = config.public.wsUrl as string
@@ -122,8 +148,8 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         connectionStatus.value = 'connected'
         isConnected.value = true
 
-        // Request initial sync state from server
-        sendSyncMessage()
+        // Request initial sync from peers (broadcast our Yjs state vector)
+        sendSyncStep1()
 
         // Clear any pending reconnect
         if (reconnectTimeout) {
@@ -182,38 +208,55 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   }
 
   /**
-   * Send sync step 1 message to request initial state
+   * Send sync-step1: broadcast our Yjs state vector so peers can compute the
+   * diff they hold and reply with sync-step2. Called on WS open, and again on
+   * receiving a peer's sync-step1 (the counter-request that makes sync
+   * bidirectional — without it a newcomer's local state would never reach the
+   * already-connected peer).
    */
-  function sendSyncMessage() {
+  function sendSyncStep1() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return
-
-    // Send simple state request
-    ws.send(JSON.stringify({ type: 'sync-request' }))
+    const sv = Y.encodeStateVector(ydoc)
+    ws.send(JSON.stringify({ type: 'sync-step1', sv: toB64(sv) }))
   }
 
   /**
    * Handle incoming Yjs message
    */
   async function handleIncomingMessage(data: Uint8Array) {
+    // JSON envelope (sync handshake) — the relay normalizes all frames to
+    // binary, so JSON arrives as UTF-8 bytes and is recoverable via TextDecoder.
     try {
-      // Try to parse as JSON first (simple protocol for state sync)
       const text = new TextDecoder().decode(data)
       const message = JSON.parse(text)
 
-      if (message.type === 'sync-request') {
-        // Send current state
-        const state = exportState()
-        ws?.send(JSON.stringify({ type: 'sync-state', state }))
-      } else if (message.type === 'sync-state' && message.state) {
-        // Apply received state
-        importState(message.state)
+      if (message.type === 'sync-step1') {
+        // Peer wants the diff it's missing. Reply with sync-step2 if non-empty.
+        const theirSV = fromB64(message.sv)
+        const update = Y.encodeStateAsUpdate(ydoc, theirSV)
+        if (update.length > 1 && ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'sync-step2', update: toB64(update) }))
+        }
+        // Counter-request so THIS peer also learns the newcomer's state. Safe:
+        // once both peers are synced the diffs are empty and this goes quiet.
+        sendSyncStep1()
+        return
       }
-      return
-    } catch (e) {
-      // Not JSON - treat as binary Yjs update
+
+      if (message.type === 'sync-step2') {
+        // Merge the peer's diff. No origin arg → origin is null, which (unlike
+        // the local userId) does NOT trip the dirty-flag observers, so a freshly
+        // bootstrapped board is never written back as empty.
+        Y.applyUpdate(ydoc, fromB64(message.update))
+        return
+      }
+
+      // Unknown JSON type: fall through to applyUpdate (defensive).
+    } catch {
+      // Not JSON — treat as a raw binary Yjs update (live edits).
     }
 
-    // Apply binary Yjs update (CRDT sync)
+    // Apply binary Yjs update (CRDT merge — additive, never clears)
     try {
       Y.applyUpdate(ydoc, data)
     } catch (e) {
@@ -401,30 +444,18 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   // Initialize elements ref with current state
   elements.value = yElements.toArray()
 
-  // Load from localStorage for persistence
   let stopGarbageCollection: (() => void) | null = null
 
+  // The database is the single source of truth on load (importState is called
+  // from pages/whiteboard/[id].vue once the GET resolves). We deliberately do
+  // NOT re-seed from localStorage: a stale localStorage snapshot (which goes
+  // stale for large PDFs once exportState exceeds the ~5MB localStorage cap)
+  // would race the DB load and overwrite the freshly-restored document layers.
   onMounted(() => {
-    const savedState = localStorage.getItem(`whiteboard:${whiteboardId}`)
-    if (savedState && yElements.length === 0) {
-      try {
-        const state = JSON.parse(savedState)
-        importState(state)
-      } catch (e) {
-        console.error('Failed to load saved state:', e)
-      }
-    }
-
     // Start garbage collection on mount (10-minute default)
     // This prevents unbounded memory growth during long sessions
     stopGarbageCollection = startGarbageCollection()
   })
-
-  // Save to localStorage when elements change
-  watch(() => yElements.toArray(), (elements) => {
-    const state = exportState()
-    localStorage.setItem(`whiteboard:${whiteboardId}`, JSON.stringify(state))
-  }, { deep: true })
 
   // Update local cursor position
   function updateCursor(x: number, y: number, tool?: DrawingTool) {
