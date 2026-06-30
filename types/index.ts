@@ -334,6 +334,10 @@ export interface DocumentLayer {
   visible: boolean
   pageNumber?: number
   totalPages?: number
+  /** Storage URL of the source file (PDF). Enables a future re-render-on-load
+   * migration without a data migration; currently the rendered PNG `src` is
+   * what gets persisted and reloaded. */
+  fileUrl?: string
 }
 
 export interface DocumentLayerState {

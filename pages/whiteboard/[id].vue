@@ -514,24 +514,54 @@ watchEffect(() => {
   }
 })
 
-// Auto-save canvas state periodically (client-side only to avoid SSR error)
+// Auto-save canvas state (client-side only to avoid SSR error).
+// The dirty flag (origin-gated inside useCollaborativeCanvas) is the sole
+// guard: it flips true only on LOCAL edits, so an idle reload never writes
+// back an empty doc, and edits persist even when the WebSocket is down.
+// canvasInstance is a ref(), so Vue reactifies its value and auto-unwraps the
+// composable's nested refs — read instance.isDirty as a boolean (NOT .value).
 const saveInterval = ref<ReturnType<typeof setInterval> | null>(null)
+let flushOnHidden: (() => void) | null = null
+
+function flushSave() {
+  const instance = canvasInstance.value
+  // unref() is correct whether or not Vue auto-unwrapped the composable's ref
+  // (canvasInstance is a ref(), so it normally is — but this is the persistence
+  // path, so don't rely on that subtlety).
+  if (!instance || !unref(instance.isDirty)) return
+  const state = instance.exportState()
+  $fetch(`/api/whiteboard/${whiteboardId}`, {
+    method: 'PATCH',
+    body: { canvas_state: state },
+  })
+    .then(() => {
+      if (canvasInstance.value) canvasInstance.value.markSaved()
+    })
+    .catch(() => {
+      // Leave isDirty set so the next flush retries.
+    })
+}
 
 onMounted(() => {
-  saveInterval.value = setInterval(() => {
-    const instance = canvasInstance.value
-    if (instance && (instance.isConnected as any).value) {
-      const state = instance.exportState()
-      $fetch(`/api/whiteboard/${whiteboardId}`, {
-        method: 'PATCH',
-        body: { canvas_state: state },
-      })
-    }
-  }, 30000)
+  // Periodic flush — only writes when there are unsaved edits.
+  saveInterval.value = setInterval(flushSave, 30000)
+
+  // Flush on tab hide / unload to capture edits made after the last tick.
+  // visibilitychange is the reliable path; beforeunload is best-effort (the
+  // async PATCH may not finish before the page closes). Neither may throw.
+  flushOnHidden = () => {
+    if (document.visibilityState === 'hidden') flushSave()
+  }
+  window.addEventListener('beforeunload', flushSave)
+  document.addEventListener('visibilitychange', flushOnHidden)
 })
 
 onUnmounted(() => {
+  // Flush BEFORE cleanup(), which destroys the underlying Yjs doc.
+  flushSave()
   if (saveInterval.value !== null) clearInterval(saveInterval.value)
+  window.removeEventListener('beforeunload', flushSave)
+  if (flushOnHidden) document.removeEventListener('visibilitychange', flushOnHidden)
   if (canvasInstance.value) canvasInstance.value.cleanup()
 })
 

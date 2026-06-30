@@ -273,6 +273,9 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
 
   // Local state
   const isConnected = ref(false)
+  // Autosave dirty flag — true only when there are unsaved LOCAL edits (see the
+  // origin-gated observers below). Consumers flush via exportState()/markSaved().
+  const isDirty = ref(false)
   const connectionStatus = ref<'connecting' | 'connected' | 'disconnected'>('disconnected')
   const currentUser = ref({ id: userId, name: userName, color: getUserColor(userId) })
   const connectedUsers = ref<Map<string, UserPresence>>(new Map())
@@ -486,20 +489,35 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     return yElements.toArray()
   }
 
-  // Export canvas state
+  // Export canvas state (includes document layers if present)
   function exportState() {
+    const documentLayers = getDocumentLayers()
     return {
       version: yMeta.get('version') || 1,
       elements: getElements(),
+      // Persist shared PDF/image layers so they survive a reload. Omitted when
+      // empty to keep the stored canvas_state shape clean.
+      ...(documentLayers.length ? { documentLayers } : {}),
     }
   }
 
+  // Mark the document as saved (resets the autosave dirty flag)
+  function markSaved() {
+    isDirty.value = false
+  }
+
   // Import canvas state (for initial load)
-  function importState(state: { version: number; elements: CanvasElement[] }) {
+  function importState(state: { version: number; elements: CanvasElement[]; documentLayers?: any[] }) {
     ydoc.transact(() => {
       yElements.delete(0, yElements.length)
       yElements.insert(0, state.elements)
       yMeta.set('version', state.version)
+      // Restore shared document layers (PDFs/images). Runs under the 'import'
+      // origin so the dirty-flag observers below do not treat this as an edit.
+      yDocumentLayers.clear()
+      for (const layer of state.documentLayers || []) {
+        if (layer?.id) yDocumentLayers.set(layer.id, layer)
+      }
     }, 'import')
   }
 
@@ -590,6 +608,23 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   yDocumentLayers.observe(() => {
     const update = Y.encodeStateAsUpdate(ydoc)
     sendBinary(update)
+  })
+
+  // ---- Dirty-flag tracking for autosave ----
+  // Mark dirty only for LOCAL user edits (origin === userId). Loads
+  // (origin 'import'), compaction, and remote peer updates (origin = a peer's
+  // userId) do NOT mark dirty. This prevents the empty-doc-overwrite race — a
+  // freshly loaded board being written back as {elements:[]} — and avoids
+  // wasteful save-on-load. clearCanvas() uses origin userId, so an intentional
+  // clear still marks dirty and saves.
+  yElements.observe((event) => {
+    if (event.transaction.origin === userId) isDirty.value = true
+  })
+  yMeta.observe((event) => {
+    if (event.transaction.origin === userId) isDirty.value = true
+  })
+  yDocumentLayers.observe((event) => {
+    if (event.transaction.origin === userId) isDirty.value = true
   })
 
   /**
@@ -704,6 +739,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   return {
     // State
     isConnected,
+    isDirty,
     connectionStatus,
     currentUser,
     connectedUsers,
@@ -722,6 +758,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     redo,
     exportState,
     importState,
+    markSaved,
     cleanup,
 
     // Active stroke methods for real-time broadcasting
