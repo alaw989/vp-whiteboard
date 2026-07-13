@@ -13,11 +13,11 @@ Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
     return $request->user();
 });
 
-// Whiteboard CRUD (auth required for management)
+// Whiteboard CRUD (show is public for share links; mutations require auth)
+Route::get('/whiteboards/{id}', [WhiteboardController::class, 'show']);
 Route::middleware(['auth:sanctum'])->prefix('whiteboards')->group(function () {
     Route::get('/', [WhiteboardController::class, 'index']);
     Route::post('/', [WhiteboardController::class, 'store']);
-    Route::get('/{id}', [WhiteboardController::class, 'show']);
     Route::patch('/{id}', [WhiteboardController::class, 'update']);
     Route::put('/{id}', [WhiteboardController::class, 'update']);
     Route::delete('/{id}', [WhiteboardController::class, 'destroy']);
