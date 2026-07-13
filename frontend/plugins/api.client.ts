@@ -60,6 +60,11 @@ export default defineNuxtPlugin(() => {
     return await $fetch.raw<T>(fullUrl as never, {
       ...options,
       credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        'x-requested-with': 'XMLHttpRequest',
+        ...((options.headers || {}) as Record<string, string>),
+      },
     } as never).then(r => r._data as T)
   }
 
