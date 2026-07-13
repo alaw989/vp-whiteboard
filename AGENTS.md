@@ -42,3 +42,10 @@
 - `frontend/components/whiteboard/ColorWheelPicker.vue`: Canvas-based hue/saturation wheel (104px), replaces 9-swatch grid
 - Click/drag/touch to pick; hex text input; recent colors row
 - Explicitly imported in `WhiteboardToolbar.vue`
+
+### Problem: Share links show 404 after brief page flash
+
+**Root cause:** `GET /api/whiteboards/{id}` required `auth:sanctum`, but share-link users aren't logged in. The 401 caused the frontend `onMounted` to throw a fatal 404 error, showing the page briefly before the error replaced it.
+
+**Fix:**
+- `routes/api.php`: Moved `GET /whiteboards/{id}` out of the `auth:sanctum` middleware group — public reads are safe (UUIDs are unguessable). Mutations (create, update, delete) remain auth-protected.
