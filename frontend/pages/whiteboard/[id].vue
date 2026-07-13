@@ -837,7 +837,7 @@ function handleUploadError(error: any) {
 }
 
 function handleStampTypeChange(stampType: StampType) {
-  // Automatically switch to stamp tool when stamp type changes
+  currentStampType.value = stampType
   setTool('stamp')
 }
 

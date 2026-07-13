@@ -982,6 +982,7 @@
       <template v-for="[clientId, cursorState] in remoteCursors" :key="clientId">
         <WhiteboardCursorPointer
           v-if="cursorState?.cursor"
+          :viewport="viewport"
           :presence="{
             id: cursorState.user.id,
             name: cursorState.user.name,
@@ -1254,6 +1255,7 @@ const stageHeight = ref(1500)
 // Layer image cache to prevent reloading - use plain Map (non-reactive)
 // to avoid triggering re-renders when cache is updated
 const layerImageCache = new Map<string, HTMLImageElement>()
+const elementImageCache = new Map<string, HTMLImageElement>()
 
 function getLayerImage(src: string): HTMLImageElement | null {
   if (layerImageCache.has(src)) {
@@ -2594,11 +2596,18 @@ function handlePointerCancel(event: any) {
   }
 }
 
-// Element config helpers
+// Cache for stroke outlines keyed by element ID to avoid redundant getStroke() calls
+const strokeOutlineCache = new Map<string, { version: number; outline: number[][] }>()
+
 function getStrokeConfig(element: CanvasElement) {
   const data = element.data as StrokeElement
 
-  // Use perfect-freehand to render smooth stroke as filled polygon
+  // Check cache — getStroke is expensive for large point arrays
+  const cached = strokeOutlineCache.get(element.id)
+  if (cached && cached.version === element.timestamp) {
+    return buildStrokeConfig(cached.outline, data)
+  }
+
   const outline = getStroke(data.points, {
     size: data.size,
     thinning: data.tool === 'highlighter' ? 0 : 0.5,
@@ -2606,20 +2615,22 @@ function getStrokeConfig(element: CanvasElement) {
     streamline: 0.5,
   })
 
-  const flatPoints = outline.flatMap(p => [p[0], p[1]])
+  strokeOutlineCache.set(element.id, { version: element.timestamp, outline })
+  return buildStrokeConfig(outline, data)
+}
 
+function buildStrokeConfig(outline: number[][], data: StrokeElement) {
+  const flatPoints = outline.flatMap(p => [p[0], p[1]])
   return {
     points: flatPoints,
     stroke: data.color,
-    strokeWidth: 1,  // Outline is filled, so stroke width doesn't matter
+    strokeWidth: 1,
     fill: data.color,
     globalAlpha: data.tool === 'highlighter' ? 0.5 : 1,
     lineCap: 'round',
     lineJoin: 'round',
     closed: true,
     draggable: true,
-    // Disable pixel-perfect hit detection to avoid getImageData errors
-    // when viewport is panned/zoomed to extreme positions
     hitStrokeWidth: 0,
   }
 }
@@ -3019,9 +3030,16 @@ function calculateArcParams(
 
 function getImageConfig(element: CanvasElement) {
   const data = element.data as ImageElement
-  const image = new Image()
-  image.crossOrigin = 'anonymous'
-  image.src = data.src
+
+  // Cache Image objects by src so we don't create + load a new one on every render
+  let image = elementImageCache.get(data.src)
+  if (!image) {
+    image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.src = data.src
+    elementImageCache.set(data.src, image)
+  }
+
   return {
     x: data.x,
     y: data.y,
@@ -3029,7 +3047,7 @@ function getImageConfig(element: CanvasElement) {
     width: data.width,
     height: data.height,
     draggable: true,
-    hitStrokeWidth: 0,  // Disable pixel-perfect hit detection
+    hitStrokeWidth: 0,
   }
 }
 

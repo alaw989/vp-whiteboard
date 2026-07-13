@@ -341,45 +341,44 @@ export function useMeasurements(options: UseMeasurementsOptions) {
 
     const data = element.data as MeasurementDistanceElement
 
-    if (endpoint === 'start') {
-      data.start = newPoint
-    } else {
-      data.end = newPoint
+    // Build replacement data — do NOT mutate the Yjs-backed object in place
+    const updatedStart = endpoint === 'start' ? newPoint : data.start
+    const updatedEnd = endpoint === 'end' ? newPoint : data.end
+    const pixelDist = calculateDistance(updatedStart, updatedEnd)
+
+    const updatedElement: CanvasElement = {
+      ...element,
+      data: {
+        ...data,
+        start: updatedStart,
+        end: updatedEnd,
+        value: pixelDist / currentPixelsPerInch,
+      },
     }
 
-    // Recalculate value with current scale
-    const pixelDist = calculateDistance(data.start, data.end)
-    data.value = pixelDist / currentPixelsPerInch
-
-    // Update in yElements
+    // Replace via Yjs transaction so CRDT convergence is maintained
     const index = yElements.toArray().findIndex((el: CanvasElement) => el.id === elementId)
     if (index !== -1) {
       yElements.delete(index, 1)
-      yElements.insert([element], index)
+      yElements.insert([updatedElement], index)
     }
   }
 
-  /**
-   * Update measurement value directly
-   * Used when user manually edits the measurement value
-   */
   function updateMeasurementValue(elementId: string, newValue: number): void {
     const element = elementsArray().find(el => el.id === elementId)
     if (!element) return
 
-    if (element.type === 'measurement-distance') {
-      const data = element.data as MeasurementDistanceElement
-      data.value = newValue
-    } else if (element.type === 'measurement-area') {
-      const data = element.data as MeasurementAreaElement
-      data.value = newValue
+    // Build replacement element without mutating the Yjs-backed object
+    const updatedElement: CanvasElement = {
+      ...element,
+      data: { ...element.data as any, value: newValue },
     }
 
-    // Update in yElements
+    // Replace via Yjs transaction so CRDT convergence is maintained
     const index = yElements.toArray().findIndex((el: CanvasElement) => el.id === elementId)
     if (index !== -1) {
       yElements.delete(index, 1)
-      yElements.insert([element], index)
+      yElements.insert([updatedElement], index)
     }
   }
 

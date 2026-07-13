@@ -89,6 +89,15 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   // WebSocket connection (native, no external provider library)
   let ws: WebSocket | null = null
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null
+
+  // Exponential backoff for reconnect (created once so attempt counter persists)
+  const reconnectBackoff = createExponentialBackoff({
+    baseDelay: 1000,
+    maxDelay: 30000,
+    maxAttempts: 100,
+    jitter: true,
+  })
 
   // Minimal wsProvider-like object for compatibility with useCursors
   const wsProvider = {
@@ -121,6 +130,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         console.log('[Yjs WS] ✅ Connected to room:', whiteboardId)
         connectionStatus.value = 'connected'
         isConnected.value = true
+        reconnectBackoff.reset()
 
         // Request initial sync state from server
         sendSyncMessage()
@@ -130,6 +140,14 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
           clearTimeout(reconnectTimeout)
           reconnectTimeout = null
         }
+
+        // Keepalive heartbeat — so the WS relay can detect silent disconnects
+        if (heartbeatInterval) clearInterval(heartbeatInterval)
+        heartbeatInterval = setInterval(() => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }))
+          }
+        }, 25000)
       }
 
       ws.onclose = () => {
@@ -165,20 +183,14 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   function scheduleReconnect() {
     if (reconnectTimeout) return
 
-    const backoff = createExponentialBackoff({
-      baseDelay: 1000,
-      maxDelay: 30000,
-      maxAttempts: 100,
-      jitter: true,
-    })
+    const delay = reconnectBackoff.nextDelay()
+    console.log(`[Yjs WS] Reconnecting in ${(delay / 1000).toFixed(1)}s...`)
+    connectionStatus.value = 'connecting'
 
     reconnectTimeout = setTimeout(() => {
-      const delay = backoff.nextDelay()
-      console.log(`[Yjs WS] Reconnecting in ${(delay / 1000).toFixed(1)}s...`)
-      connectionStatus.value = 'connecting'
       initWebSocket()
       reconnectTimeout = null
-    }, 2000) // Initial 2s delay
+    }, delay)
   }
 
   /**
@@ -207,6 +219,11 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       } else if (message.type === 'sync-state' && message.state) {
         // Apply received state
         importState(message.state)
+      } else if (message.type === 'ping') {
+        // Server heartbeat — respond immediately so the relay knows we're alive
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'pong' }))
+        }
       }
       return
     } catch (e) {
@@ -241,6 +258,10 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout)
       reconnectTimeout = null
+    }
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval)
+      heartbeatInterval = null
     }
   }
 

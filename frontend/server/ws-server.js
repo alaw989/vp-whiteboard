@@ -180,31 +180,79 @@ wss.on('connection', async (ws, req) => {
   ws.roomId = roomId
   ws.userId = userId
   ws.userName = userName
+  ws.lastPong = Date.now()
 
-  // Log when we receive messages
+  // Notify the new user about their connection
+  sendJson(ws, {
+    type: 'connected',
+    roomId,
+    userId,
+    userCount: room.size,
+    instantRetry: true,
+  })
+
+  // Notify others in the room that someone joined
+  broadcastToRoom(roomId, {
+    type: 'user-joined',
+    userId,
+    userName,
+    timestamp: Date.now(),
+  }, ws)
+
+  // Handle incoming messages
   ws.on('message', (data) => {
-    // Get fresh room reference to ensure we relay to ALL current clients
-    const currentRoom = getRoom(ws.roomId || roomId)
-    const msgSize = data.byteLength || data.length || 0
-    console.log(`[Yjs WS] 📨 Message: room=${ws.roomId || roomId}, size=${msgSize} bytes, room clients=${currentRoom.size}`)
+    // Try to parse as JSON for control messages (ping, presence)
+    let text
+    if (typeof data === 'string' || data instanceof Buffer) {
+      text = typeof data === 'string' ? data : data.toString('utf8')
+    } else {
+      text = Buffer.from(data).toString('utf8')
+    }
 
-    // Relay binary message to all other clients in the room
+    let json
+    try { json = JSON.parse(text) } catch { /* not JSON — binary Yjs message */ }
+    if (json && json.type) {
+      if (json.type === 'ping') {
+        ws.lastPong = Date.now()
+        sendJson(ws, { type: 'pong' })
+        return
+      }
+
+      // Forward other JSON messages (presence, cursor, etc.) to the room
+      broadcastToRoom(ws.roomId || roomId, json, ws)
+      return
+    }
+
+    // Binary message — relay to all other clients in the room (Yjs sync)
+    const currentRoom = getRoom(ws.roomId || roomId)
+    const rawBuffer = typeof data === 'string' ? Buffer.from(data, 'utf8') : data
+    const msgSize = rawBuffer.byteLength || rawBuffer.length || 0
+
     let relayed = 0
     currentRoom.forEach((client) => {
-      if (client !== ws && client.readyState === ws.OPEN) {
-        client.send(data)
+      if (client !== ws && client.readyState === 1) {
+        client.send(rawBuffer)
         relayed++
       }
     })
-    console.log(`[Yjs WS] 📤 Relayed to ${relayed} other clients`)
+    if (msgSize > 0) {
+      console.log(`[Yjs WS] 📨 Binary: room=${ws.roomId || roomId}, size=${msgSize}B, relayed to ${relayed}`)
+    }
   })
 
-  // Log connection state
+  // Handle disconnect
   ws.on('close', () => {
     totalConnections--
     const currentRoom = getRoom(ws.roomId || roomId)
     currentRoom.delete(ws)
     console.log(`[Yjs WS] ❌ Disconnection: room=${ws.roomId || roomId}, user=${userName} (${userId}), room now has ${currentRoom.size} clients`)
+
+    // Notify others that user left
+    broadcastToRoom(ws.roomId || roomId, {
+      type: 'user-left',
+      userId,
+      timestamp: Date.now(),
+    })
 
     // Clean up empty rooms after delay
     if (currentRoom.size === 0) {
@@ -224,6 +272,36 @@ wss.on('connection', async (ws, req) => {
     currentRoom.delete(ws)
   })
 })
+
+// Helper: send JSON to a single client
+function sendJson(ws, msg) {
+  if (ws.readyState === 1) ws.send(JSON.stringify(msg))
+}
+
+// Helper: broadcast JSON to all peers in a room
+function broadcastToRoom(roomId, msg, exclude) {
+  const room = getRoom(roomId)
+  const payload = JSON.stringify(msg)
+  room.forEach((client) => {
+    if (client !== exclude && client.readyState === 1) client.send(payload)
+  })
+}
+
+// Server-side heartbeat — ping every 30s, disconnect clients unresponsive for 60s
+const HEARTBEAT_INTERVAL = 30000
+const HEARTBEAT_TIMEOUT = 60000
+setInterval(() => {
+  const now = Date.now()
+  wss.clients.forEach((ws) => {
+    if (ws.readyState !== 1) return
+    if (now - ws.lastPong > HEARTBEAT_TIMEOUT) {
+      console.log(`[Yjs WS] 💔 Heartbeat timeout: room=${ws.roomId || '?'}, user=${ws.userName || '?'}`)
+      ws.terminate()
+      return
+    }
+    sendJson(ws, { type: 'ping' })
+  })
+}, HEARTBEAT_INTERVAL)
 
 // Start the server
 server.listen(PORT, HOST, () => {
