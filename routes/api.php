@@ -30,6 +30,9 @@ Route::middleware(['auth:sanctum'])->prefix('files')->group(function () {
     Route::delete('/{id}', [WhiteboardFileController::class, 'destroy']);
 });
 
+// Public file serving (CORS handled by middleware)
+Route::get('/files/{id}/serve', [WhiteboardFileController::class, 'serve']);
+
 // Session/share links (public — no auth required, uses share_token)
 Route::prefix('sessions')->group(function () {
     Route::post('/', [SessionController::class, 'store']);

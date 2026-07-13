@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "nuxt dev",
-    "dev:ws": "node server/ws-server.js",
+    "dev:ws": "LARAVEL_URL=http://localhost:8002 node server/ws-server.js",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:ws\"",
     "build": "nuxt build",
     "generate": "nuxt generate",

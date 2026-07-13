@@ -354,6 +354,7 @@ import LayerPanel from '~/components/whiteboard/LayerPanel.vue'
 import { toastSuccess, toastError } from '~/composables/useToast'
 import { useCommandEngine } from '~/composables/useCommandEngine'
 import { useLayers } from '~/composables/useLayers'
+import { usePDFRendering } from '~/composables/usePDFRendering'
 
 // Canvas instance type combining composable return with exposed methods
 type CanvasInstanceType = ReturnType<typeof useCollaborativeCanvas> & {
@@ -377,25 +378,26 @@ const canvasRef = ref<{ stageRef?: { getNode: () => any } } | null>(null)
 // Fetch whiteboard data
 const { $api } = useNuxtApp()
 const whiteboardData = ref<ApiResponse<Whiteboard> | null>(null)
-const fetchError = ref<unknown>(null)
-
-try {
-  whiteboardData.value = await $api<ApiResponse<Whiteboard>>(`/api/whiteboards/${whiteboardId}`)
-} catch (e) {
-  fetchError.value = e
-}
-
+const whiteboardLoading = ref(true)
 const whiteboard = computed(() => whiteboardData.value?.data)
 
-// Handle error state
-if (fetchError.value || (!whiteboardData.value?.success && !whiteboardData.value?.data)) {
-  throw createError({
-    statusCode: 404,
-    statusMessage: 'Whiteboard not found',
-    message: 'The whiteboard you are looking for does not exist or has been deleted.',
-    fatal: true,
-  })
-}
+onMounted(async () => {
+  try {
+    whiteboardData.value = await $api<ApiResponse<Whiteboard>>(`/api/whiteboards/${whiteboardId}`)
+    if (!whiteboardData.value?.success && !whiteboardData.value?.data) {
+      throw createError({ statusCode: 404, statusMessage: 'Whiteboard not found' })
+    }
+  } catch (e) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Whiteboard not found',
+      message: 'The whiteboard you are looking for does not exist or has been deleted.',
+      fatal: true,
+    })
+  } finally {
+    whiteboardLoading.value = false
+  }
+})
 
 // Share URL
 const shareUrl = computed(() => {
@@ -671,11 +673,6 @@ onMounted(() => {
     currentUser.name
   )
 
-  // Load saved canvas state after instance is initialized
-  if (whiteboard.value?.canvas_state && canvasInstance.value) {
-    canvasInstance.value.importState(whiteboard.value.canvas_state)
-  }
-
   // Initialize scale composable with yMeta from canvas instance
   nextTick(() => {
     if (canvasInstance.value) {
@@ -714,6 +711,47 @@ onMounted(() => {
   onUnmounted(() => clearInterval(syncInterval))
 })
 
+// Watch for whiteboard data loaded — import canvas state and re-render PDF layers
+watch(whiteboardData, (data) => {
+  if (!canvasInstance.value) return
+  if (data?.data?.canvas_state) {
+    canvasInstance.value.importState(data.data.canvas_state)
+  }
+
+  // Re-render PDF document layers that need rendering
+  const allLayers = canvasInstance.value.getDocumentLayers()
+  const pendingLayers = allLayers.filter((l: any) => l.needsRender)
+  if (allLayers.length) console.log('[pdf-render] document layers loaded:', allLayers.length, 'pending:', pendingLayers.length)
+  if (pendingLayers.length === 0) return
+
+  const { loadPDFDocument, renderPageToImage, cleanupPDFDocument } = usePDFRendering()
+  pendingLayers.forEach(async (layer: any) => {
+    try {
+      const fileId = layer.fileId
+      const config = useRuntimeConfig()
+      const laravelUrl = (config.public.laravelUrl as string) || 'http://localhost:8000'
+      const serveUrl = `${laravelUrl}/api/files/${fileId}/serve`
+      const fileResponse = await fetch(serveUrl)
+      if (!fileResponse.ok) return
+      const arrayBuffer = await fileResponse.arrayBuffer()
+      const pdfDocument = await loadPDFDocument(arrayBuffer)
+      const pageNum = layer.pageNumber || 1
+      const page = await pdfDocument.getPage(pageNum)
+      const dataUrl = await renderPageToImage(page, { scale: 1.5 })
+      const viewport = page.getViewport({ scale: 1.5 })
+      canvasInstance.value?.updateDocumentLayer(layer.id, {
+        src: dataUrl,
+        width: viewport.width,
+        height: viewport.height,
+        needsRender: false,
+      })
+      cleanupPDFDocument(pdfDocument)
+    } catch (e) {
+      console.warn('[pdf-render] failed to re-render layer', layer.id, e)
+    }
+  })
+})
+
 // Watch for cursor tracking updates from WhiteboardCanvas component
 watchEffect(() => {
   const canvasComponent = canvasRef.value
@@ -735,21 +773,36 @@ watchEffect(() => {
 // Auto-save canvas state periodically (client-side only to avoid SSR error)
 const saveInterval = ref<ReturnType<typeof setInterval> | null>(null)
 
+async function saveCanvasState() {
+  const instance = canvasInstance.value
+  if (!instance) return
+  try {
+    const state = instance.exportState()
+    await $api(`/api/whiteboards/${whiteboardId}`, {
+      method: 'PATCH',
+      body: { canvas_state: state },
+    })
+  } catch (e) {
+    console.warn('[auto-save] failed to persist canvas state:', e)
+  }
+}
+
 onMounted(() => {
-  saveInterval.value = setInterval(() => {
-    const instance = canvasInstance.value
-    if (instance && (instance.isConnected as any).value) {
-      const state = instance.exportState()
-      $api(`/api/whiteboards/${whiteboardId}`, {
-        method: 'PATCH',
-        body: { canvas_state: state },
-      })
-    }
-  }, 30000)
+  saveInterval.value = setInterval(saveCanvasState, 30000)
 })
 
 onUnmounted(() => {
   if (saveInterval.value !== null) clearInterval(saveInterval.value)
+
+  // Capture state synchronously before Yjs doc is destroyed
+  const state = canvasInstance.value?.exportState()
+  if (state) {
+    $api(`/api/whiteboards/${whiteboardId}`, {
+      method: 'PATCH',
+      body: { canvas_state: state },
+    }).catch(() => {})
+  }
+
   if (canvasInstance.value) canvasInstance.value.cleanup()
 })
 
@@ -794,36 +847,29 @@ async function handleUploadSuccess(result: UploadResult) {
   const fileType = result.fileRecord?.file_type || ''
   const canvas = canvasRef.value as any
 
-  console.log('Upload success:', result)
-  console.log('Canvas ref:', canvas)
-  console.log('File type:', fileType)
-
   if (!canvas) {
     console.error('Canvas not available')
     showUploadModal.value = false
     return
   }
 
+  const laravelUrl = (useRuntimeConfig().public.laravelUrl as string) || 'http://localhost:8000'
+  const serveUrl = `${laravelUrl}/api/files/${result.fileId}/serve`
+
   try {
     if (fileType === 'application/pdf') {
-      console.log('Adding PDF layer...')
-      // For PDFs, fetch the file and render it
-      const response = await fetch(result.url)
+      const response = await fetch(serveUrl)
       const arrayBuffer = await response.arrayBuffer()
-      const layer = await canvas.addPDFLayer(
-        { id: result.fileId, url: result.url, name: result.fileName },
+      await canvas.addPDFLayer(
+        { id: result.fileId, url: serveUrl, name: result.fileName },
         arrayBuffer
       )
-      console.log('PDF layer added:', layer)
     } else if (fileType.startsWith('image/')) {
-      console.log('Adding image layer...')
-      // For images, add as image layer
-      const layer = await canvas.addImageLayer({
+      await canvas.addImageLayer({
         id: result.fileId,
-        url: result.url,
+        url: serveUrl,
         name: result.fileName,
       })
-      console.log('Image layer added:', layer)
     }
   } catch (error) {
     console.error('Failed to add file to canvas:', error)

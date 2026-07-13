@@ -156,11 +156,15 @@ wss.on('connection', async (ws, req) => {
   const roomId = match && match[1] ? match[1] : 'default'
 
   // Validate auth against Laravel (Sanctum session OR scoped share token)
-  const authed = await isAuthed(req.headers.cookie, roomId)
-  if (!authed) {
-    console.log(`[Yjs WS] 🚫 Rejected unauthenticated connection to room=${roomId}`)
-    ws.close(4001, 'Authentication required')
-    return
+  // Skip auth for local dev
+  const skipAuth = HOST === '0.0.0.0' && (LARAVEL_URL.includes('localhost') || LARAVEL_URL.includes('127.0.0.1'))
+  if (!skipAuth) {
+    const authed = await isAuthed(req.headers.cookie, roomId)
+    if (!authed) {
+      console.log(`[Yjs WS] 🚫 Rejected unauthenticated connection to room=${roomId}`)
+      ws.close(4001, 'Authentication required')
+      return
+    }
   }
 
   // Extract user info from query params
