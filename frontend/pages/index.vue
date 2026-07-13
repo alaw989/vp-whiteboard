@@ -218,7 +218,7 @@ async function refresh() {
   }
 }
 
-await refresh()
+onMounted(() => { refresh() })
 
 // Menu state
 const menuOpenId = ref<string | null>(null)

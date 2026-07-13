@@ -14,6 +14,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
   try {
     await $fetch(`${laravelUrl}/api/user`, { credentials: 'include' })
   } catch {
-    return navigateTo(`/login?redirect=${encodeURIComponent(to.fullPath)}`, { redirectCode: 302 })
+    return navigateTo(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
   }
 })

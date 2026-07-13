@@ -152,35 +152,28 @@
     <div class="h-px bg-neutral-800" />
 
     <!-- Color Picker -->
-    <div class="flex flex-col gap-1">
-      <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide px-1">Color</h4>
-
-      <div class="grid grid-cols-3 gap-1" role="group" aria-label="Color palette">
-        <button
-          v-for="color in colors"
-          :key="color"
-          :title="color"
-          :aria-label="`Color ${color}${currentColor === color ? ', selected' : ''}`"
-          :aria-pressed="currentColor === color"
-          :class="[
-            'w-7 h-7 rounded-md transition-all duration-150 ring-1',
-            currentColor === color
-              ? 'ring-2 ring-blue-500 scale-110 shadow-sm'
-              : 'ring-neutral-700 hover:scale-110 hover:shadow-sm active:scale-95'
-          ]"
-          :style="{ backgroundColor: color }"
-          @click="$emit('select-color', color)"
-        />
+    <div class="flex flex-col gap-1.5 items-center">
+      <div class="flex items-center justify-between w-full px-1">
+        <h4 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">Color</h4>
+        <span class="text-[10px] font-mono text-neutral-400 tabular-nums">{{ currentColor.toUpperCase() }}</span>
       </div>
 
-      <!-- Custom color input -->
-      <div class="bg-neutral-800 p-1 rounded">
-        <input
-          type="color"
-          :value="currentColor"
-          aria-label="Custom color picker"
-          class="w-full h-6 rounded cursor-pointer transition-transform hover:scale-105"
-          @input="$emit('select-color', ($event.target as HTMLInputElement).value)"
+      <ColorWheelPicker
+        :model-value="currentColor"
+        @update:model-value="onSelectColor"
+      />
+
+      <!-- Recent colors -->
+      <div v-if="recentColors.length > 0" class="flex gap-[3px] flex-wrap px-1">
+        <span class="text-[9px] text-neutral-600 uppercase tracking-wide mr-0.5 self-center">Recent</span>
+        <button
+          v-for="color in recentColors"
+          :key="color"
+          :title="color"
+          :aria-label="`Recent color ${color}`"
+          class="w-3.5 h-3.5 rounded-[3px] ring-1 ring-neutral-700 hover:ring-neutral-500 transition-all active:scale-90"
+          :style="{ backgroundColor: color }"
+          @click="onSelectColor(color)"
         />
       </div>
     </div>
@@ -530,24 +523,30 @@
 
       <!-- Color Section -->
       <div class="p-4 border-b border-neutral-200">
-        <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Color</h4>
-        <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Color</h4>
+          <span class="text-[11px] font-mono text-neutral-400 tabular-nums">{{ currentColor.toUpperCase() }}</span>
+        </div>
+
+        <div class="flex justify-center mb-3">
+          <div class="scale-[1.4] origin-center">
+            <ColorWheelPicker
+              :model-value="currentColor"
+              @update:model-value="handleMobileColorSelect"
+            />
+          </div>
+        </div>
+
+        <!-- Recent colors -->
+        <div v-if="recentColors.length > 0" class="flex gap-1.5 flex-wrap justify-center">
+          <span class="text-[10px] text-neutral-400 uppercase tracking-wide mr-1 self-center">Recent</span>
           <button
-            v-for="color in colors"
+            v-for="color in recentColors"
             :key="color"
             :title="color"
-            :class="[
-              'w-11 h-11 rounded-md transition-all duration-150 flex-shrink-0 active:scale-95',
-              currentColor === color ? 'ring-2 ring-offset-1 ring-blue-500 shadow-sm scale-105' : 'hover:scale-110'
-            ]"
+            class="w-5 h-5 rounded-[4px] ring-1 ring-neutral-200 hover:ring-neutral-400 transition-all active:scale-90"
             :style="{ backgroundColor: color }"
             @click="handleMobileColorSelect(color)"
-          />
-          <input
-            type="color"
-            :value="currentColor"
-            class="w-11 h-11 rounded cursor-pointer flex-shrink-0 transition-transform hover:scale-105"
-            @input="handleMobileColorSelect(($event.target as HTMLInputElement).value)"
           />
         </div>
       </div>
@@ -643,7 +642,8 @@
 <script setup lang="ts">
 import type { DrawingTool, LayerDefinition } from '~/types'
 import type { StampType } from '~/composables/tools/useStampTool'
-import { COLORS, TOOL_SIZES } from '~/types'
+import { COLORS, TOOL_SIZES, isLightColor, getRecentColors, addRecentColor } from '~/types'
+import ColorWheelPicker from '~/components/whiteboard/ColorWheelPicker.vue'
 
 const props = defineProps<{
   currentTool: DrawingTool
@@ -678,6 +678,19 @@ const emit = defineEmits<{
   'toggle-snap': []
 }>()
 
+// Recent colors state (persisted to localStorage)
+const recentColors = ref<string[]>([])
+
+onMounted(() => {
+  recentColors.value = getRecentColors()
+})
+
+function onSelectColor(color: string) {
+  addRecentColor(color)
+  recentColors.value = getRecentColors()
+  emit('select-color', color)
+}
+
 // Mobile state
 const toolbarExpanded = ref(false)
 
@@ -699,10 +712,11 @@ function handleMobileToolSelect(tool: DrawingTool) {
   })
 }
 
-// Mobile color selection handler - auto-collapse after selection
+// Mobile color selection handler
 function handleMobileColorSelect(color: string) {
+  addRecentColor(color)
+  recentColors.value = getRecentColors()
   emit('select-color', color)
-  // Keep expanded for color changes (user may want to try multiple)
 }
 
 // Quick color access from collapsed state

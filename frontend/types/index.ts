@@ -44,6 +44,7 @@ export interface CanvasState {
   version: number
   elements: CanvasElement[]
   viewport?: ViewportState
+  documentLayers?: DocumentLayer[]
 }
 
 export interface LayerDefinition {
@@ -320,18 +321,49 @@ export interface UploadResult {
   }
 }
 
-// Color Palette
+// Color Palette — organized by family for the professional color picker
 export const COLORS = [
-  '#000000', // Black
-  '#374151', // Gray 700
-  '#6B7280', // Gray 500
-  '#EF4444', // Red 500
-  '#F59E0B', // Amber 500
-  '#10B981', // Emerald 500
-  '#3B82F6', // Blue 500
-  '#8B5CF6', // Violet 500
-  '#EC4899', // Pink 500
+  // Neutrals
+  '#000000', '#374151', '#6B7280',
+  // Warm
+  '#EF4444', '#F59E0B', '#84CC16',
+  // Cool
+  '#10B981', '#14B8A6', '#3B82F6',
+  // Purples / Pink
+  '#6366F1', '#8B5CF6', '#EC4899',
 ] as const
+
+// Light/dark threshold helper for the color palette UI
+export function isLightColor(hex: string): boolean {
+  const c = hex.replace('#', '')
+  const r = parseInt(c.substring(0, 2), 16)
+  const g = parseInt(c.substring(2, 4), 16)
+  const b = parseInt(c.substring(4, 6), 16)
+  return (r * 0.299 + g * 0.587 + b * 0.114) > 160
+}
+
+const RECENT_COLORS_KEY = 'whiteboard-recent-colors'
+const MAX_RECENT = 6
+
+export function getRecentColors(): string[] {
+  if (import.meta.client) {
+    try {
+      const raw = localStorage.getItem(RECENT_COLORS_KEY)
+      return raw ? JSON.parse(raw) : []
+    } catch { /* ignore */ }
+  }
+  return []
+}
+
+export function addRecentColor(color: string) {
+  if (import.meta.client) {
+    try {
+      const recent = getRecentColors().filter(c => c !== color)
+      recent.unshift(color)
+      localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(recent.slice(0, MAX_RECENT)))
+    } catch { /* ignore */ }
+  }
+}
 
 export const TOOL_SIZES = [1, 2, 4, 8, 12, 16, 24, 32] as const
 

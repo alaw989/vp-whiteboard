@@ -507,24 +507,45 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     return yElements.toArray()
   }
 
-  // Export canvas state (includes layers if present)
+  // Export canvas state (includes layers and document layers if present)
   function exportState() {
     const layers = yMeta.get('layers')
+    const rawDocumentLayers = Array.from(yDocumentLayers.values())
+    const documentLayers = rawDocumentLayers.map((l: any) => {
+      if (l.type === 'pdf') {
+        const { src, ...rest } = l
+        return { ...rest, needsRender: true }
+      }
+      return l
+    })
+
     return {
       version: yMeta.get('version') || 1,
       elements: getElements(),
       ...(layers ? { layers } : {}),
+      ...(documentLayers.length ? { documentLayers } : {}),
     }
   }
 
   // Import canvas state (for initial load, preserves existing layers if state has none)
-  function importState(state: { version: number; elements: CanvasElement[]; layers?: any[] }) {
+  function importState(state: {
+    version: number
+    elements: CanvasElement[]
+    layers?: any[]
+    documentLayers?: any[]
+  }) {
     ydoc.transact(() => {
       yElements.delete(0, yElements.length)
       yElements.insert(0, state.elements)
       yMeta.set('version', state.version)
       if (state.layers) {
         yMeta.set('layers', state.layers)
+      }
+      if (state.documentLayers) {
+        yDocumentLayers.clear()
+        for (const layer of state.documentLayers) {
+          yDocumentLayers.set(layer.id, layer)
+        }
       }
     }, 'import')
   }

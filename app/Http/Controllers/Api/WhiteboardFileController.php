@@ -56,7 +56,7 @@ class WhiteboardFileController extends Controller
             'metadata' => [],
         ]);
 
-        $url = Storage::disk('public')->url($storagePath);
+        $serveUrl = url('/api/files/' . $whiteboardFile->id . '/serve');
 
         return response()->json([
             'success' => true,
@@ -64,10 +64,29 @@ class WhiteboardFileController extends Controller
                 'fileId' => $whiteboardFile->id,
                 'fileName' => $fileName,
                 'storagePath' => $storagePath,
-                'url' => $url,
+                'url' => $serveUrl,
                 'fileRecord' => $whiteboardFile,
             ],
         ], 201);
+    }
+
+    public function serve(string $id): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $file = WhiteboardFile::find($id);
+        if (!$file || !$file->storage_path) {
+            abort(404);
+        }
+
+        $path = Storage::disk('public')->path($file->storage_path);
+        if (!file_exists($path)) {
+            abort(404);
+        }
+
+        return response()->file($path, [
+            'Access-Control-Allow-Origin' => env('FRONTEND_URL', 'http://localhost:3000'),
+            'Access-Control-Allow-Credentials' => 'true',
+            'Content-Type' => $file->file_type,
+        ]);
     }
 
     public function destroy(string $id): JsonResponse
