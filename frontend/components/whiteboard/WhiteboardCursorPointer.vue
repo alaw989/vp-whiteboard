@@ -17,21 +17,28 @@
 </template>
 
 <script setup lang="ts">
-import type { UserPresence } from '~/types'
+import type { UserPresence, ViewportState } from '~/types'
 
 const props = defineProps<{
   presence: UserPresence
+  viewport?: ViewportState
 }>()
 
-// Position style - using raw canvas coordinates
-const cursorStyle = computed(() => ({
-  position: 'absolute' as const,
-  left: `${props.presence.cursor?.x || 0}px`,
-  top: `${props.presence.cursor?.y || 0}px`,
-  zIndex: 1000,
-  pointerEvents: 'none' as const, // Don't interfere with canvas clicks
-  transition: 'left 0.1s ease-out, top 0.1s ease-out',
-}))
+// Position style — remote cursor coords are canvas-space; transform to screen
+// space using the local viewport so they align with the rendered canvas.
+const cursorStyle = computed(() => {
+  const vp = props.viewport || { x: 0, y: 0, zoom: 1 }
+  const canvasX = props.presence.cursor?.x || 0
+  const canvasY = props.presence.cursor?.y || 0
+  return {
+    position: 'absolute' as const,
+    left: `${canvasX * vp.zoom + vp.x}px`,
+    top: `${canvasY * vp.zoom + vp.y}px`,
+    zIndex: 1000,
+    pointerEvents: 'none' as const,
+    transition: 'left 0.1s ease-out, top 0.1s ease-out',
+  }
+})
 
 // Pointer triangle style
 const pointerStyle = computed(() => ({

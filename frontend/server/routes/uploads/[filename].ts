@@ -13,7 +13,17 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const filePath = path.join(UPLOAD_DIR, filename)
+  const resolvedPath = path.resolve(UPLOAD_DIR, filename)
+
+  // Prevent path traversal — verify the resolved path stays within UPLOAD_DIR
+  if (!resolvedPath.startsWith(UPLOAD_DIR)) {
+    throw createError({
+      statusCode: 403,
+      message: 'Forbidden',
+    })
+  }
+
+  const filePath = resolvedPath
 
   try {
     // Check if file exists

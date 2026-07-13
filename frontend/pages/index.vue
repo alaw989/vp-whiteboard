@@ -209,7 +209,10 @@ async function refresh() {
     const res = await $api<ApiResponse<Whiteboard[]>>('/api/whiteboards')
     whiteboards.value = res.success ? (res.data || []) : []
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Failed to load'
+    // Auth errors are handled by the global middleware — don't flash an error
+    if ((e as any)?.response?.status !== 401) {
+      error.value = e instanceof Error ? e.message : 'Failed to load'
+    }
   } finally {
     pending.value = false
   }
