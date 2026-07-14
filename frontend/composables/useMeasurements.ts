@@ -6,10 +6,11 @@ export interface UseMeasurementsOptions {
   userId: string
   userName: string
   pixelsPerInch: Ref<number>
+  measurementUnit?: Ref<'inches' | 'feet'>
 }
 
 export function useMeasurements(options: UseMeasurementsOptions) {
-  const { yElements, userId, userName, pixelsPerInch } = options
+  const { yElements, userId, userName, pixelsPerInch, measurementUnit } = options
 
   // Helper to get current elements array from yElements
   function elementsArray(): CanvasElement[] {
@@ -61,6 +62,7 @@ export function useMeasurements(options: UseMeasurementsOptions) {
     const inches = pixelDistance / pixelsPerInch.value
 
     // Create measurement element
+    const unit = measurementUnit?.value || 'inches'
     const element: CanvasElement = {
       id: `${userId}-${Date.now()}`,
       type: 'measurement-distance',
@@ -71,9 +73,9 @@ export function useMeasurements(options: UseMeasurementsOptions) {
         start,
         end,
         pixelsPerInch: pixelsPerInch.value,
-        unit: 'inches',
+        unit,
         precision: 4,
-        value: inches,
+        value: unit === 'feet' ? +(inches / 12).toFixed(4) : inches,
       } as MeasurementDistanceElement,
     }
 
@@ -180,6 +182,48 @@ export function useMeasurements(options: UseMeasurementsOptions) {
   }
 
   /**
+   * Calculate the area of a closed polyline using the Shoelace formula
+   */
+  function calculatePolylineArea(element: CanvasElement, pixelsPerInch: number): number | null {
+    const data = element.data as any
+    const pts = data.points as [number, number][]
+    if (!data.closed || pts.length < 3) return null
+
+    let area = 0
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length
+      const pi = pts[i]!
+      const pj = pts[j]!
+      area += pi[0] * pj[1]
+      area -= pj[0] * pi[1]
+    }
+    const pxArea = Math.abs(area) / 2
+    const inchesPerPx = 1 / pixelsPerInch
+    return pxArea * inchesPerPx * inchesPerPx
+  }
+
+  /**
+   * Calculate the area of a revision cloud (approximate as closed polyline)
+   */
+  function calculateRevisionCloudArea(element: CanvasElement, pixelsPerInch: number): number | null {
+    const data = element.data as any
+    const pts = data.points as [number, number][]
+    if (pts.length < 3) return null
+
+    let area = 0
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length
+      const pi = pts[i]!
+      const pj = pts[j]!
+      area += pi[0] * pj[1]
+      area -= pj[0] * pi[1]
+    }
+    const pxArea = Math.abs(area) / 2
+    const inchesPerPx = 1 / pixelsPerInch
+    return pxArea * inchesPerPx * inchesPerPx
+  }
+
+  /**
    * Calculate area for any supported shape element
    * Returns null for unsupported element types
    */
@@ -191,6 +235,10 @@ export function useMeasurements(options: UseMeasurementsOptions) {
         return calculateCircleArea(element, pixelsPerInch)
       case 'ellipse':
         return calculateEllipseArea(element, pixelsPerInch)
+      case 'polyline':
+        return calculatePolylineArea(element, pixelsPerInch)
+      case 'revision-cloud':
+        return calculateRevisionCloudArea(element, pixelsPerInch)
       default:
         return null  // Unsupported type
     }

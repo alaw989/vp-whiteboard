@@ -209,13 +209,15 @@ export function useMirrorTool(ctx: ToolContext): ToolHandler {
       }
 
       if (step.value === 'axis-first') {
-        axisFirst.value = pos
+        const snap1 = ctx.findSnapPoint(pos, ctx.elements)
+        axisFirst.value = snap1 ? { x: snap1.x, y: snap1.y } : pos
         step.value = 'axis-second'
         return
       }
 
       if (step.value === 'axis-second') {
-        axisSecond.value = pos
+        const snap2 = ctx.findSnapPoint(pos, ctx.elements)
+        axisSecond.value = snap2 ? { x: snap2.x, y: snap2.y } : pos
         // Create mirrored copies
         for (const id of selectedIds.value) {
           const el = ctx.elements.find(e => e.id === id)

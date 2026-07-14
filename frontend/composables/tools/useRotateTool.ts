@@ -125,7 +125,8 @@ export function useRotateTool(ctx: ToolContext): ToolHandler {
       }
 
       if (step.value === 'basepoint') {
-        basepoint.value = pos
+        const snap = ctx.findSnapPoint(pos, ctx.elements)
+        basepoint.value = snap ? { x: snap.x, y: snap.y } : pos
         step.value = 'angle'
         return
       }
@@ -133,8 +134,12 @@ export function useRotateTool(ctx: ToolContext): ToolHandler {
       if (step.value === 'angle') {
         // Commit at the precise click point (don't trust the last move frame).
         currentAngle.value = angleOf(basepoint.value!, pos)
+        const originals = [...selectedIds.value]
         for (const el of rotateSelected(currentAngle.value)) {
           ctx.emitElementAdd(el)
+        }
+        for (const id of originals) {
+          ctx.emitElementDelete(id)
         }
         reset()
         return

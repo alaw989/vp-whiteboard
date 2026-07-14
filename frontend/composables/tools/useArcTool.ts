@@ -2,7 +2,6 @@ import type { CanvasElement, ArcElement } from '~/types'
 import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandlers'
 
 export function useArcTool(ctx: ToolContext): ToolHandler {
-  // Three-click arc: start, through, end
   const clickPoints = ref<[number, number][]>([])
   const currentCursor = ref<PointerPosition | null>(null)
   const isDrawing = ref(false)
@@ -21,7 +20,22 @@ export function useArcTool(ctx: ToolContext): ToolHandler {
 
     const [start, through, end] = clickPoints.value as [[number, number], [number, number], [number, number]]
 
-    const element: CanvasElement = {
+    // Discard if start and end are the same (zero-length)
+    const sx = end[0] - start[0]
+    const sy = end[1] - start[1]
+    if (sx * sx + sy * sy < 1) {
+      reset()
+      return
+    }
+
+    // Discard if points are collinear (degenerate arc)
+    const cross = (through[0] - start[0]) * (end[1] - start[1]) - (through[1] - start[1]) * (end[0] - start[0])
+    if (Math.abs(cross) < 1) {
+      reset()
+      return
+    }
+
+    ctx.emitElementAdd({
       id: `${ctx.userId}-${Date.now()}`,
       type: 'arc',
       userId: ctx.userId,
@@ -34,8 +48,7 @@ export function useArcTool(ctx: ToolContext): ToolHandler {
         color: ctx.currentColor,
         size: ctx.currentSize,
       } as ArcElement,
-    }
-    ctx.emitElementAdd(element)
+    })
     reset()
   }
 
@@ -46,7 +59,9 @@ export function useArcTool(ctx: ToolContext): ToolHandler {
         reset()
       }
 
-      clickPoints.value.push([pos.x, pos.y])
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      const pt: [number, number] = snap ? [snap.x, snap.y] : [pos.x, pos.y]
+      clickPoints.value.push(pt)
       isDrawing.value = true
 
       if (clickPoints.value.length === 3) {
@@ -62,7 +77,6 @@ export function useArcTool(ctx: ToolContext): ToolHandler {
     },
     onKeyDown(event: KeyboardEvent): boolean {
       if (!isDrawing.value) return false
-
       if (event.key === 'Escape') {
         reset()
         return true

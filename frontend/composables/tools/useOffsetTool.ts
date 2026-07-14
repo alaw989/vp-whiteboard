@@ -116,6 +116,8 @@ export function useOffsetTool(ctx: ToolContext): ToolHandler {
     onMouseMove(_event: any, pos: PointerPosition) {
       if (step.value !== 'select') return
 
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      ctx.currentSnapPoint.value = snap || null
       const nearest = findNearestElementSegment(pos, ctx.elements)
       if (!nearest || !isOffsetableType(nearest.element)) {
         previewResult.value = null

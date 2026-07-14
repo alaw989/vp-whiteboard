@@ -104,10 +104,14 @@ export function useFilletTool(ctx: ToolContext): ToolHandler {
       reset()
     },
     onMouseMove(_event: any, pos: PointerPosition) {
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      ctx.currentSnapPoint.value = snap || null
       const el = findLineAtPosition(pos)
       highlightId.value = el?.id ?? null
     },
     onMouseDown(_event: any, pos: PointerPosition) {
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      ctx.currentSnapPoint.value = snap || null
       const el = findLineAtPosition(pos)
       if (!el) return
 

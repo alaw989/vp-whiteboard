@@ -19,6 +19,39 @@ export function useTrimTool(ctx: ToolContext): ToolHandler {
     highlightId.value = null
   }
 
+  function findElementsAtPosition(pos: PointerPosition, max: number = 1): CanvasElement[] {
+    const threshold = 8 / ctx.viewport.value.zoom
+    const results: { element: CanvasElement; dist: number }[] = []
+
+    for (const el of ctx.elements) {
+      const geo = getElementGeometry(el)
+
+      if (geo?.circle) {
+        const toCenter = distance(pos, geo.circle.center)
+        const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
+        const d = Math.min(distToPerimeter, toCenter)
+        if (d < threshold * 2) {
+          results.push({ element: el, dist: d })
+        }
+        continue
+      }
+
+      if (!geo?.segments) continue
+
+      for (const seg of geo.segments) {
+        const near = nearestPointOnSegment(seg.start, seg.end, pos)
+        const d = distance(pos, near)
+        if (d < threshold) {
+          results.push({ element: el, dist: d })
+          break // only one entry per element
+        }
+      }
+    }
+
+    results.sort((a, b) => a.dist - b.dist)
+    return results.slice(0, max).map(r => r.element)
+  }
+
   function findElementAtPosition(pos: PointerPosition): CanvasElement | null {
     const threshold = 8 / ctx.viewport.value.zoom
     let best: { element: CanvasElement; dist: number } | null = null
@@ -213,28 +246,37 @@ export function useTrimTool(ctx: ToolContext): ToolHandler {
       reset()
     },
     onMouseMove(_event: any, pos: PointerPosition) {
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      ctx.currentSnapPoint.value = snap || null
       const el = findElementAtPosition(pos)
       highlightId.value = el?.id ?? null
     },
     onMouseDown(_event: any, pos: PointerPosition) {
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      ctx.currentSnapPoint.value = snap || null
       const el = findElementAtPosition(pos)
       if (!el) return
 
       if (step.value === 'cutting-edge') {
-        // Select the cutting edge
         cuttingEdgeId.value = el.id
         step.value = 'trim'
         highlightId.value = null
         return
       }
 
-      // Trim mode — trim this element at the cutting edge
-      if (el.id === cuttingEdgeId.value) return
+      // Trim mode — trim this element at the cutting edge.
+      // If the click lands on the cutting edge again, find the NEXT nearest element.
+      let targetEl = el
+      if (el.id === cuttingEdgeId.value) {
+        const allEls = findElementsAtPosition(pos, 2)
+        targetEl = allEls.find(e => e.id !== cuttingEdgeId.value) || el
+        if (targetEl.id === cuttingEdgeId.value) return
+      }
 
       const cuttingEdge = ctx.elements.find(e => e.id === cuttingEdgeId.value)
       if (!cuttingEdge) return
 
-      trimElement(el, cuttingEdge, pos)
+      trimElement(targetEl, cuttingEdge, pos)
     },
     onKeyDown(event: KeyboardEvent): boolean {
       if (event.key === 'Escape') {

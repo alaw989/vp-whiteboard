@@ -62,7 +62,16 @@ export interface ToolContext {
   measureArea: (elementId: string, color: string) => void
   // Selection
   selectedId: Ref<string | null>
-  selectElementAtPosition: (x: number, y: number) => void
+  selectElementAtPosition: (x: number, y: number, shiftKey?: boolean) => boolean
+  isRubberBanding: Ref<boolean>
+  selectionRect: Ref<{ x: number; y: number; width: number; height: number } | null>
+  startRubberBand: (x: number, y: number) => void
+  updateRubberBand: (x: number, y: number) => void
+  endRubberBand: () => void
+  // Scale / units
+  pixelsPerInch: number
+  measurementUnit: 'inches' | 'feet'
+
   // Viewport
   isPanning: Ref<boolean>
   enablePan: () => void
