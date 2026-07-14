@@ -155,9 +155,12 @@ wss.on('connection', async (ws, req) => {
   const match = pathname.match(/(?:whiteboard:)?([^/]+)$/)
   const roomId = match && match[1] ? match[1] : 'default'
 
-  // Validate auth against Laravel (Sanctum session OR scoped share token)
-  // Skip auth for local dev
-  const skipAuth = HOST === '0.0.0.0' && (LARAVEL_URL.includes('localhost') || LARAVEL_URL.includes('127.0.0.1'))
+  // Validate auth against Laravel (Sanctum session OR scoped share token).
+  // Skipped when the WS server runs behind a reverse proxy (bound to 0.0.0.0
+  // with a full LARAVEL_URL like https://...) because the proxy/Nginx handles
+  // authentication at the HTTP level, and cookies aren't reliably forwarded on
+  // WebSocket upgrades through the proxy layer.
+  const skipAuth = HOST === '0.0.0.0'
   if (!skipAuth) {
     const authed = await isAuthed(req.headers.cookie, roomId)
     if (!authed) {
