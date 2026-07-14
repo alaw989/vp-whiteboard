@@ -2,67 +2,96 @@ import { ref, computed, watch, type Ref } from 'vue'
 import type { CanvasElement } from '~/types'
 
 export function useSelection(stageRef: Ref<any>, elements: Ref<CanvasElement[]>) {
-  // Selection state
+  // Selection state (single + multi)
   const selectedId = ref<string | null>(null)
+  const selectedIds = ref<Set<string>>(new Set())
   const transformerRef = ref<any>(null)
+  // Rubber-band selection state
+  const selectionRect = ref<{ x: number; y: number; width: number; height: number } | null>(null)
+  const isRubberBanding = ref(false)
+  const rubberBandStart = ref<{ x: number; y: number } | null>(null)
 
-  // Get the selected element
+  // Get the selected element (primary, for backward compat)
   const selectedElement = computed(() =>
     elements.value.find(el => el.id === selectedId.value)
   )
 
   // Check if an element is currently selected
-  const hasSelection = computed(() => selectedId.value !== null)
+  const hasSelection = computed(() => selectedIds.value.size > 0)
 
   /**
-   * Select an element and attach transformer to its node
+   * Update the transformer to wrap currently selected nodes
    */
-  function selectElement(id: string, node: any) {
-    selectedId.value = id
-
+  function updateTransformer() {
     const transformer = transformerRef.value?.getNode()
     const stage = stageRef.value?.getNode()
+    if (!transformer || !stage) return
 
-    if (transformer && stage && node) {
-      // Attach transformer to the selected node
-      transformer.nodes([node])
+    // Collect all selected nodes from the stage
+    const nodes: any[] = []
+    selectedIds.value.forEach(id => {
+      const found = stage.find(`#${CSS.escape(id)}`)
+      if (found.length > 0) {
+        const node = found[0].getParent()?.className === 'Group' ? found[0].getParent() : found[0]
+        node.draggable(true)
+        nodes.push(node)
+      }
+    })
 
-      // Move transformer to top of layer
+    if (nodes.length > 0) {
+      transformer.nodes(nodes)
       transformer.moveToTop()
-
-      // Enable dragging on the element
-      node.draggable(true)
+    } else {
+      transformer.nodes([])
     }
   }
 
   /**
-   * Deselect current element
+   * Select an element (replaces current selection, or toggles if shift)
+   */
+  function selectElement(id: string, node: any, shiftKey?: boolean) {
+    if (shiftKey && selectedIds.value.has(id)) {
+      // Remove from selection
+      selectedIds.value.delete(id)
+      node.draggable(false)
+    } else if (shiftKey) {
+      // Add to selection
+      selectedIds.value.add(id)
+      node.draggable(true)
+    } else {
+      // Single select (replace)
+      // Disable drag on previously selected
+      const stage = stageRef.value?.getNode()
+      stage?.find('Shape').forEach((s: any) => s.draggable(false))
+      stage?.find('Group').forEach((g: any) => g.draggable(false))
+      selectedIds.value = new Set([id])
+      node.draggable(true)
+    }
+
+    selectedId.value = shiftKey ? (selectedIds.value.size > 0 ? id : null) : id
+    updateTransformer()
+  }
+
+  /**
+   * Deselect all elements
    */
   function deselect() {
     const transformer = transformerRef.value?.getNode()
     const stage = stageRef.value?.getNode()
 
     if (transformer) {
-      // Detach transformer from all nodes
       transformer.nodes([])
-
-      // Disable dragging on all elements
-      stage?.find('Shape').forEach((shape: any) => {
-        shape.draggable(false)
-      })
-
-      // Also disable dragging on groups (for stamps, text-annotations)
-      stage?.find('Group').forEach((group: any) => {
-        group.draggable(false)
-      })
+      stage?.find('Shape').forEach((shape: any) => shape.draggable(false))
+      stage?.find('Group').forEach((group: any) => group.draggable(false))
     }
 
     selectedId.value = null
+    selectedIds.value = new Set()
+    selectionRect.value = null
   }
 
   /**
-   * Delete the selected element
-   * Returns the element ID for deletion
+   * Delete the selected element (primary)
    */
   function deleteSelected(): string | null {
     if (selectedId.value) {
@@ -76,14 +105,12 @@ export function useSelection(stageRef: Ref<any>, elements: Ref<CanvasElement[]>)
   /**
    * Find and select element by stage position
    */
-  function selectElementAtPosition(x: number, y: number): boolean {
+  function selectElementAtPosition(x: number, y: number, shiftKey?: boolean): boolean {
     const stage = stageRef.value?.getNode()
     if (!stage) return false
 
-    // Get all shapes at the clicked position (reverse for top-most first)
     const shapes = stage.getAllIntersections({ x, y }).reverse()
 
-    // Filter out document layer and background
     const canvasShapes = shapes.filter((shape: any) => {
       const parent = shape.getParent()
       const layer = parent?.getParent()
@@ -92,32 +119,101 @@ export function useSelection(stageRef: Ref<any>, elements: Ref<CanvasElement[]>)
     })
 
     if (canvasShapes.length > 0) {
-      // Get the first shape's associated element ID
       const shape = canvasShapes[0]
-
-      // For groups (stamps, text-annotations), get the group's id
-      // For individual shapes, get the shape's id
       const elementId = shape.id() || shape.getParent()?.id()
 
       if (elementId) {
-        // Find the actual node to attach transformer to
-        // For groups, attach to the group, for shapes attach to the shape
         const node = shape.getParent()?.className === 'Group' ? shape.getParent() : shape
-        selectElement(elementId, node)
+        selectElement(elementId, node, shiftKey)
         return true
       }
+    } else if (!shiftKey) {
+      deselect()
     }
 
-    // No element found - deselect
-    deselect()
     return false
+  }
+
+  /**
+   * Start rubber-band selection
+   */
+  function startRubberBand(x: number, y: number) {
+    isRubberBanding.value = true
+    rubberBandStart.value = { x, y }
+    selectionRect.value = { x, y, width: 0, height: 0 }
+  }
+
+  /**
+   * Update rubber-band selection rect
+   */
+  function updateRubberBand(x: number, y: number) {
+    if (!isRubberBanding.value || !rubberBandStart.value) return
+    const start = rubberBandStart.value
+    selectionRect.value = {
+      x: Math.min(start.x, x),
+      y: Math.min(start.y, y),
+      width: Math.abs(x - start.x),
+      height: Math.abs(y - start.y),
+    }
+  }
+
+  /**
+   * Complete rubber-band selection
+   */
+  function endRubberBand() {
+    if (!isRubberBanding.value || !selectionRect.value) {
+      isRubberBanding.value = false
+      return
+    }
+
+    const rect = selectionRect.value
+    if (rect.width < 5 && rect.height < 5) {
+      // Too small — treat as click, not drag
+      isRubberBanding.value = false
+      selectionRect.value = null
+      rubberBandStart.value = null
+      return
+    }
+
+    // Find all elements that intersect the selection rectangle
+    const stage = stageRef.value?.getNode()
+    if (stage) {
+      stage.find('Shape').forEach((shape: any) => {
+        const parent = shape.getParent()
+        const layer = parent?.getParent()
+        const layerName = layer?.name()
+        if (layerName === 'documentLayer' || layerName === 'transformerLayer') return
+
+        const box = shape.getClientRect()
+        if (box && box.x !== undefined) {
+          const overlap = !(box.x > rect.x + rect.width ||
+            box.x + box.width < rect.x ||
+            box.y > rect.y + rect.height ||
+            box.y + box.height < rect.y)
+          if (overlap) {
+            const elementId = shape.id() || parent?.id()
+            if (elementId) {
+              const node = parent?.className === 'Group' ? parent : shape
+              node.draggable(true)
+              selectedIds.value.add(elementId)
+            }
+          }
+        }
+      })
+
+      selectedId.value = selectedIds.value.size > 0 ? Array.from(selectedIds.value)[0]! : null
+      updateTransformer()
+    }
+
+    isRubberBanding.value = false
+    selectionRect.value = null
+    rubberBandStart.value = null
   }
 
   /**
    * Handle stage click for deselection
    */
   function handleStageClick(e: any) {
-    // Clicked on empty stage - deselect
     if (e.target === e.target.getStage()) {
       deselect()
     }
@@ -125,8 +221,16 @@ export function useSelection(stageRef: Ref<any>, elements: Ref<CanvasElement[]>)
 
   // Auto-deselect when element is removed from elements array
   watch(elements, (newElements) => {
-    if (selectedId.value && !newElements.find(el => el.id === selectedId.value)) {
-      deselect()
+    const removed = Array.from(selectedIds.value).filter(id => !newElements.find(el => el.id === id))
+    if (removed.length > 0) {
+      for (const id of removed) {
+        selectedIds.value.delete(id)
+        if (selectedId.value === id) {
+          selectedId.value = selectedIds.value.size > 0 ? Array.from(selectedIds.value)[0]! : null
+        }
+      }
+      if (selectedIds.value.size === 0) deselect()
+      else updateTransformer()
     }
   })
 
@@ -136,6 +240,9 @@ export function useSelection(stageRef: Ref<any>, elements: Ref<CanvasElement[]>)
     selectedElement,
     hasSelection,
     transformerRef,
+    selectedIds,
+    selectionRect,
+    isRubberBanding,
 
     // Actions
     selectElement,
@@ -143,5 +250,9 @@ export function useSelection(stageRef: Ref<any>, elements: Ref<CanvasElement[]>)
     deleteSelected,
     selectElementAtPosition,
     handleStageClick,
+    startRubberBand,
+    updateRubberBand,
+    endRubberBand,
+    updateTransformer,
   }
 }

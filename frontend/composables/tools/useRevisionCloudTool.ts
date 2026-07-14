@@ -66,17 +66,26 @@ export function useRevisionCloudTool(ctx: ToolContext): ToolHandler {
         }
       }
 
-      const constrained = vertices.value.length > 0
-        ? ctx.constrainPoint(vertices.value[vertices.value.length - 1]!, pos)
-        : pos
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      ctx.currentSnapPoint.value = snap || null
 
-      vertices.value.push(constrained)
+      const next = snap
+        ? { x: snap.x, y: snap.y } as PointerPosition
+        : vertices.value.length > 0
+          ? ctx.constrainPoint(vertices.value[vertices.value.length - 1]!, pos)
+          : pos
+
+      vertices.value.push(next)
       isDrawing.value = true
-      currentVertex.value = constrained
+      currentVertex.value = next
     },
     onMouseMove(_event: any, pos: PointerPosition) {
       if (!isDrawing.value || vertices.value.length === 0) return
-      currentVertex.value = ctx.constrainPoint(vertices.value[vertices.value.length - 1]!, pos)
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      ctx.currentSnapPoint.value = snap || null
+      currentVertex.value = snap
+        ? { x: snap.x, y: snap.y } as PointerPosition
+        : ctx.constrainPoint(vertices.value[vertices.value.length - 1]!, pos)
     },
     onMouseUp() {
       // Revision cloud uses clicks, not drag — no action on mouseup

@@ -147,7 +147,8 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
       }
 
       if (step.value === 'basepoint') {
-        basepoint.value = pos
+        const snap = ctx.findSnapPoint(pos, ctx.elements)
+        basepoint.value = snap ? { x: snap.x, y: snap.y } : pos
         // 1× reference = the selection centroid's distance from the pivot.
         const ref = distance(pos, selectionCentroid())
         referenceDist.value = ref > 1 ? ref : 1
@@ -158,8 +159,12 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
       if (step.value === 'scale') {
         // Commit at the precise click point (don't trust the last move frame).
         currentScale.value = distance(basepoint.value!, pos) / referenceDist.value
+        const originals = [...selectedIds.value]
         for (const el of scaleSelected(currentScale.value)) {
           ctx.emitElementAdd(el)
+        }
+        for (const id of originals) {
+          ctx.emitElementDelete(id)
         }
         reset()
         return

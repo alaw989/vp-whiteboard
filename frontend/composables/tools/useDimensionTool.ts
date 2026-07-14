@@ -27,15 +27,15 @@ export function useDimensionTool(ctx: ToolContext): ToolHandler {
     const dx = end[0] - start[0]
     const dy = end[1] - start[1]
     const pixelDist = Math.sqrt(dx * dx + dy * dy)
-    const pixelsPerInch = 96
-    const value = +(pixelDist / pixelsPerInch).toFixed(4)
+    const ppi = ctx.pixelsPerInch || 96
+    const value = +(pixelDist / ppi).toFixed(4)
 
     const data: DimensionElement = {
       start,
       end,
       offset,
-      pixelsPerInch,
-      unit: 'inches',
+      pixelsPerInch: ppi,
+      unit: ctx.measurementUnit || 'inches',
       precision: 4,
       style: 'linear',
       color: ctx.currentColor,
@@ -81,6 +81,17 @@ export function useDimensionTool(ctx: ToolContext): ToolHandler {
         step.value = 'end'
         ctx.isDrawing.value = true
       } else if (step.value === 'end') {
+        // Discard zero-length dimension
+        if (startPoint.value) {
+          const dx = pt.x - startPoint.value[0]
+          const dy = pt.y - startPoint.value[1]
+          if (dx * dx + dy * dy < 1) {
+            ctx.isDrawing.value = false
+            step.value = 'start'
+            startPoint.value = null
+            return
+          }
+        }
         endPoint.value = [pt.x, pt.y]
         step.value = 'offset'
       } else if (step.value === 'offset') {

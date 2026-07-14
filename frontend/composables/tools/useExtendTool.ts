@@ -201,10 +201,14 @@ export function useExtendTool(ctx: ToolContext): ToolHandler {
       reset()
     },
     onMouseMove(_event: any, pos: PointerPosition) {
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      ctx.currentSnapPoint.value = snap || null
       const el = findElementAtPosition(pos)
       highlightId.value = el?.id ?? null
     },
     onMouseDown(_event: any, pos: PointerPosition) {
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      ctx.currentSnapPoint.value = snap || null
       const el = findElementAtPosition(pos)
       if (!el) return
 

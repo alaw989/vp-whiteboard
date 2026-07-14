@@ -38,6 +38,15 @@ export function useArrowTool(ctx: ToolContext): ToolHandler {
       const start = arrowStart.value
       const end = currentArrowEnd.value
 
+      // Discard zero-length arrows (click without drag)
+      const dx = end.x - start.x
+      const dy = end.y - start.y
+      if (dx * dx + dy * dy < 1) {
+        reset()
+        ctx.isDrawing.value = false
+        return
+      }
+
       const element: CanvasElement = {
         id: `${ctx.userId}-${Date.now()}`,
         type: 'arrow',

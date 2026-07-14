@@ -933,6 +933,21 @@
             rotateAnchorOffset: 20,
           }"
         />
+        <!-- Rubber-band selection rectangle -->
+        <v-rect
+          v-if="selectionRect"
+          :config="{
+            x: selectionRect.x,
+            y: selectionRect.y,
+            width: selectionRect.width,
+            height: selectionRect.height,
+            stroke: '#3B82F6',
+            strokeWidth: 1,
+            fill: '#3B82F620',
+            dash: [5, 5],
+            listening: false,
+          }"
+        />
       </v-layer>
     </v-stage>
 
@@ -1117,6 +1132,7 @@ const props = defineProps<{
   // Layer visibility filtering
   hiddenLayerIds?: Set<string>
   activeLayerId?: string
+  measurementUnit?: 'inches' | 'feet'
 }>()
 
 const emit = defineEmits<{
@@ -1148,6 +1164,7 @@ const {
 
 // Default scale: 96 pixels per inch (standard screen resolution)
 const pixelsPerInch = ref(96)
+const measurementUnit = computed(() => props.measurementUnit || 'inches')
 
 // Measurement composable
 const yElementsProxy = {
@@ -1179,6 +1196,7 @@ const {
   userId: props.userId,
   userName: props.userName,
   pixelsPerInch,
+  measurementUnit,
 })
 
 // Snapping composable
@@ -1188,13 +1206,20 @@ const { findSnapPoint } = snapping
 // Selection composable
 const {
   selectedId,
+  selectedIds,
   hasSelection,
   transformerRef,
+  selectionRect,
+  isRubberBanding,
   selectElement,
   deselect,
   deleteSelected,
   selectElementAtPosition,
   handleStageClick,
+  startRubberBand,
+  updateRubberBand,
+  endRubberBand,
+  updateTransformer,
 } = useSelection(stageRef, computed(() => props.elements))
 
 // Viewport composable
@@ -1839,6 +1864,11 @@ const toolContext: ToolContext = {
   measureArea,
   selectedId,
   selectElementAtPosition,
+  isRubberBanding,
+  selectionRect,
+  startRubberBand,
+  updateRubberBand,
+  endRubberBand,
   isPanning,
   enablePan,
   disablePan,
@@ -1846,6 +1876,8 @@ const toolContext: ToolContext = {
   panStartPointer,
   panStartViewport,
   get activeLayerId() { return props.activeLayerId || 'default' },
+  get pixelsPerInch() { return pixelsPerInch.value },
+  get measurementUnit() { return measurementUnit.value },
 }
 
 // Instantiate all tool handlers

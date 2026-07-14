@@ -26,8 +26,8 @@ export function useCircleTool(ctx: ToolContext): ToolHandler {
       if (snap) {
         currentShapeEnd.value = { x: snap.x, y: snap.y }
         ctx.currentSnapPoint.value = snap
-      } else {
-        currentShapeEnd.value = pos
+      } else if (shapeStart.value) {
+        currentShapeEnd.value = ctx.constrainPoint(shapeStart.value, pos)
         ctx.currentSnapPoint.value = null
       }
     },

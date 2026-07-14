@@ -161,10 +161,12 @@
               :observe-viewport="(canvasInstance as any)?.observeViewport"
               :y-document-layers="(canvasInstance as any)?.yDocumentLayers"
               :add-document-layer="(canvasInstance as any)?.addDocumentLayer"
+              :measurement-unit="measurementUnit"
               :update-document-layer="(canvasInstance as any)?.updateDocumentLayer"
               :remove-document-layer="(canvasInstance as any)?.removeDocumentLayer"
               @element-add="(element) => canvasInstance?.addElement?.(element)"
               @element-delete="handleDeleteElement"
+              @element-update="(id, updates) => canvasInstance?.updateElement?.(id, updates)"
               @cursor-update="updateCursor"
             />
             <template #fallback>
@@ -216,6 +218,13 @@
             :ortho-enabled="orthoEnabled"
             :polar-enabled="polarTrackingActive"
           />
+          <button
+            class="px-1.5 py-1 text-[10px] font-mono rounded hover:bg-neutral-700 transition-colors text-neutral-400 hover:text-neutral-200 flex-shrink-0"
+            :title="'Toggle units'"
+            @click="toggleUnit"
+          >
+            {{ measurementUnit === 'inches' ? 'in' : 'ft' }}
+          </button>
         </ClientOnly>
         </div>
 
@@ -472,9 +481,15 @@ function cancelNameEdit() {
   editNameValue.value = ''
 }
 
+// Measurement unit (shared with canvas through props)
+const measurementUnit = ref<'inches' | 'feet'>('inches')
+function toggleUnit() {
+  measurementUnit.value = measurementUnit.value === 'inches' ? 'feet' : 'inches'
+}
+
 // Scale state
 const scaleInstance = ref<ReturnType<typeof useScale> | null>(null)
-const currentScaleValue = ref<{ label: string } | null>(null)
+const currentScaleValue = ref<any>(null)
 const scaleDisplayFormat = ref<string>('No scale set')
 
 // Canvas state refs (computed - derived from canvasInstance)

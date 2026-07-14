@@ -1,5 +1,9 @@
 # Agent Memory
 
+## Rules
+
+- Do NOT commit, push, create PRs, or deploy unless explicitly instructed by the user.
+
 ## Fixes applied July 13, 2026 — Persistence & Upload
 
 ### Problem: Drawings and file uploads lost on page reload
