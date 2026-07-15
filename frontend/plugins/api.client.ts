@@ -56,16 +56,25 @@ export default defineNuxtPlugin(() => {
       }
     }
 
-    // Use raw $fetch to avoid type constraints on generic
-    return await $fetch.raw<T>(fullUrl as never, {
-      ...options,
-      credentials: 'include',
-      headers: {
-        accept: 'application/json',
-        'x-requested-with': 'XMLHttpRequest',
-        ...((options.headers || {}) as Record<string, string>),
-      },
-    } as never).then(r => r._data as T)
+    try {
+      // Use raw $fetch to avoid type constraints on generic
+      return await $fetch.raw<T>(fullUrl as never, {
+        ...options,
+        credentials: 'include',
+        headers: {
+          accept: 'application/json',
+          'x-requested-with': 'XMLHttpRequest',
+          ...((options.headers || {}) as Record<string, string>),
+        },
+      } as never).then(r => r._data as T)
+    } catch (e: any) {
+      // If the request was a mutation and got a 419 (CSRF token mismatch),
+      // reset the CSRF flag so the NEXT mutation fetches a fresh token.
+      if (isMutation && e?.response?.status === 419) {
+        csrfInitialized = false
+      }
+      throw e
+    }
   }
 
   return {

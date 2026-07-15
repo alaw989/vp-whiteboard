@@ -804,6 +804,18 @@ async function saveCanvasState() {
 
 onMounted(() => {
   saveInterval.value = setInterval(saveCanvasState, 30000)
+
+  // Debounced save on every elements change — catches edits between
+  // the 30s timer ticks, so a quick draw+reload is always persisted.
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  watch(
+    () => canvasInstance.value?.elements,
+    () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(saveCanvasState, 2000)
+    },
+    { deep: true },
+  )
 })
 
 onUnmounted(() => {
@@ -815,11 +827,27 @@ onUnmounted(() => {
   const state = canvasInstance.value?.exportState()
   if (state) {
     try {
-      const url = `${useRuntimeConfig().public.laravelUrl || 'http://localhost:8000'}/api/whiteboards/${whiteboardId}`
-      fetch(url, {
+      // Read XSRF token from cookie — same pattern as $api helper.
+      // Required by Laravel Sanctum for stateful PATCH requests.
+      let xsrfHeader: Record<string, string> = {}
+      if (import.meta.client) {
+        const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/)
+        if (match && match[1]) {
+          xsrfHeader['X-XSRF-TOKEN'] = decodeURIComponent(match[1])
+        }
+      }
+      const config = useRuntimeConfig()
+      const laravelUrl = (config.public.laravelUrl as string) || 'http://localhost:8000'
+      fetch(`${laravelUrl}/api/whiteboards/${whiteboardId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          ...xsrfHeader,
+        },
         body: JSON.stringify({ canvas_state: state }),
+        credentials: 'include' as RequestCredentials,
         keepalive: true,
       })
     } catch { /* fire-and-forget */ }
