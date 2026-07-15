@@ -523,9 +523,29 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     return el
   }
 
+  // Remove duplicate elements from the Yjs array in-place.
+  // Duplicates can accumulate from WebSocket sync interruptions and bloat
+  // the canvas_state payload past PHP/MySQL limits.
+  function deduplicateYElements() {
+    const seen = new Set<string>()
+    let removed = 0
+    for (let i = yElements.length - 1; i >= 0; i--) {
+      const el = yElements.get(i)
+      if (el && seen.has(el.id)) {
+        yElements.delete(i, 1)
+        removed++
+      } else if (el) {
+        seen.add(el.id)
+      }
+    }
+    if (removed > 0) console.log(`[dedup] removed ${removed} duplicate elements`)
+  }
+
   // Export canvas state (includes layers and document layers if present).
   // Coordinates are rounded to 2 decimal places to reduce payload size.
   function exportState() {
+    // Clean up duplicates before exporting
+    deduplicateYElements()
     const layers = yMeta.get('layers')
     const rawDocumentLayers = Array.from(yDocumentLayers.values())
     const documentLayers = rawDocumentLayers.map((l: any) => {
