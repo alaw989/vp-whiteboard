@@ -507,7 +507,24 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     return yElements.toArray()
   }
 
-  // Export canvas state (includes layers and document layers if present)
+  // Round coordinate values to 2 decimal places to reduce payload size.
+  // Stroke point arrays can bloat quickly with 15-digit float precision.
+  function roundElementCoords(el: CanvasElement): CanvasElement {
+    const d = el.data as any
+    if (d.points && Array.isArray(d.points)) {
+      d.points = d.points.map((p: number[]) => p.map((v: number) => Math.round(v * 100) / 100))
+    }
+    if (d.start) d.start = d.start.map((v: number) => Math.round(v * 100) / 100) as [number, number]
+    if (d.end) d.end = d.end.map((v: number) => Math.round(v * 100) / 100) as [number, number]
+    if (d.x !== undefined) d.x = Math.round(d.x * 100) / 100
+    if (d.y !== undefined) d.y = Math.round(d.y * 100) / 100
+    if (d.cx !== undefined) d.cx = Math.round(d.cx * 100) / 100
+    if (d.cy !== undefined) d.cy = Math.round(d.cy * 100) / 100
+    return el
+  }
+
+  // Export canvas state (includes layers and document layers if present).
+  // Coordinates are rounded to 2 decimal places to reduce payload size.
   function exportState() {
     const layers = yMeta.get('layers')
     const rawDocumentLayers = Array.from(yDocumentLayers.values())
@@ -519,24 +536,34 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       return l
     })
 
+    const elements = getElements().map(el => roundElementCoords(el))
+
     return {
       version: yMeta.get('version') || 1,
-      elements: getElements(),
+      elements,
       ...(layers ? { layers } : {}),
       ...(documentLayers.length ? { documentLayers } : {}),
     }
   }
 
-  // Import canvas state (for initial load, preserves existing layers if state has none)
+  // Import canvas state — deduplicates elements by id to prevent Yjs corruption
+  // from duplicate entries (which can accumulate after WebSocket sync failures).
   function importState(state: {
     version: number
     elements: CanvasElement[]
     layers?: any[]
     documentLayers?: any[]
   }) {
+    const seen = new Set<string>()
+    const uniqueElements = state.elements.filter(el => {
+      if (seen.has(el.id)) return false
+      seen.add(el.id)
+      return true
+    })
+
     ydoc.transact(() => {
       yElements.delete(0, yElements.length)
-      yElements.insert(0, state.elements)
+      yElements.insert(0, uniqueElements)
       yMeta.set('version', state.version)
       if (state.layers) {
         yMeta.set('layers', state.layers)
