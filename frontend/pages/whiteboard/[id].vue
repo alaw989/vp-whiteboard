@@ -731,6 +731,9 @@ watch(whiteboardData, (data) => {
   if (!canvasInstance.value) return
   if (data?.data?.canvas_state) {
     canvasInstance.value.importState(data.data.canvas_state)
+    // Initial load from API — don't mark as dirty (the import triggers
+    // the elements watcher, but there's nothing new to save).
+    nextTick(() => { dirty = false })
   }
 
   // Re-render PDF document layers that need rendering
@@ -787,18 +790,28 @@ watchEffect(() => {
 
 // Auto-save canvas state periodically (client-side only to avoid SSR error)
 const saveInterval = ref<ReturnType<typeof setInterval> | null>(null)
+let saveInProgress = false
+let dirty = false
 
 async function saveCanvasState() {
   const instance = canvasInstance.value
-  if (!instance) return
+  if (!instance || saveInProgress) return
+
+  // Skip save if nothing changed since the last save
+  if (!dirty) return
+
+  saveInProgress = true
   try {
     const state = instance.exportState()
     await $api(`/api/whiteboards/${whiteboardId}`, {
       method: 'PATCH',
       body: { canvas_state: state },
     })
+    dirty = false
   } catch (e) {
     console.warn('[auto-save] failed to persist canvas state:', e)
+  } finally {
+    saveInProgress = false
   }
 }
 
@@ -811,6 +824,7 @@ onMounted(() => {
   watch(
     () => canvasInstance.value?.elements,
     () => {
+      dirty = true
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(saveCanvasState, 2000)
     },
