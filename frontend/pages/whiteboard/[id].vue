@@ -729,8 +729,26 @@ onMounted(() => {
 // Watch for whiteboard data loaded — import canvas state and re-render PDF layers
 watch(whiteboardData, (data) => {
   if (!canvasInstance.value) return
-  if (data?.data?.canvas_state) {
-    canvasInstance.value.importState(data.data.canvas_state)
+
+  // Prefer localStorage over API state — localStorage is updated on every
+  // elements change (including undo), while the API state may be stale if
+  // the last PATCH during onUnmount didn't complete before page tear-down.
+  let canvasState = data?.data?.canvas_state
+  const savedKey = `whiteboard:${whiteboardId}`
+  if (import.meta.client) {
+    try {
+      const localRaw = localStorage.getItem(savedKey)
+      if (localRaw) {
+        const localState = JSON.parse(localRaw)
+        if (localState?.elements) {
+          canvasState = localState
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (canvasState) {
+    canvasInstance.value.importState(canvasState)
   }
 
   // Re-render PDF document layers that need rendering
@@ -809,13 +827,20 @@ onMounted(() => {
 onUnmounted(() => {
   if (saveInterval.value !== null) clearInterval(saveInterval.value)
 
-  // Capture state synchronously before Yjs doc is destroyed
+  // Capture state synchronously before Yjs doc is destroyed.
+  // Use fetch + keepalive so the request survives page unload/tab close
+  // (navigator.sendBeacon only supports POST, but keepalive fetch allows PATCH).
   const state = canvasInstance.value?.exportState()
   if (state) {
-    $api(`/api/whiteboards/${whiteboardId}`, {
-      method: 'PATCH',
-      body: { canvas_state: state },
-    }).catch(() => {})
+    try {
+      const url = `${useRuntimeConfig().public.laravelUrl || 'http://localhost:8000'}/api/whiteboards/${whiteboardId}`
+      fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canvas_state: state }),
+        keepalive: true,
+      })
+    } catch { /* fire-and-forget */ }
   }
 
   if (canvasInstance.value) canvasInstance.value.cleanup()
