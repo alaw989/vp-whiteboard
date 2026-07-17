@@ -4,9 +4,6 @@
     <v-stage
       ref="stageRef"
       :config="stageConfig"
-      @mousedown="handleMouseDown"
-      @mousemove="handleMouseMove"
-      @mouseup="handleMouseUp"
       @mouseleave="handleMouseUp"
       @wheel="handleWheel"
       @pointerdown="handlePointerDown"
@@ -3199,7 +3196,7 @@ function handleElementClick(element: CanvasElement, evt: any) {
     const targetNode = node.getParent()?.className === 'Group' ? node.getParent() : node
     selectElement(element.id, targetNode)
     evt.cancelBubble = true
-  } else if (props.currentTool === 'measure-distance' && evt.evt.detail === 2) {
+  } else if (props.currentTool === 'measure-distance' && evt.evt?.detail === 2) {
     // Double-click on measurement with measure tool active - open edit dialog
     handleMeasurementDoubleClick(element)
     evt.cancelBubble = true

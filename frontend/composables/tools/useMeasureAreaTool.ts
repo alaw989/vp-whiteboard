@@ -12,7 +12,7 @@ export function useMeasureAreaTool(ctx: ToolContext): ToolHandler {
       const canvasShapes = allShapes.filter((shape: any) => {
         const parent = shape.getParent()
         const layer = parent?.getParent()
-        return layer?.name !== 'documentLayer'
+        return layer?.name() !== 'documentLayer'
       })
 
       let measured = false
@@ -41,7 +41,7 @@ export function useMeasureAreaTool(ctx: ToolContext): ToolHandler {
       const canvasShapes = shapes.filter((shape: any) => {
         const parent = shape.getParent()
         const layer = parent?.getParent()
-        return layer?.name !== 'documentLayer'
+        return layer?.name() !== 'documentLayer'
       })
 
       let overMeasurable = false

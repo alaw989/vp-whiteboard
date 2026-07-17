@@ -148,7 +148,7 @@ export function useMeasurements(options: UseMeasurementsOptions) {
       stroke: '#3B82F6',
       strokeWidth: 2,
       dash: [5, 5],
-      label: formatDistanceMeasurement(inches, 4, 'inches'),
+      label: formatDistanceMeasurement(inches, 4, measurementUnit?.value || 'inches'),
     }
   })
 

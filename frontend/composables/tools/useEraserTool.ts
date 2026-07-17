@@ -10,7 +10,7 @@ export function useEraserTool(ctx: ToolContext): ToolHandler {
     const canvasShapes = shapes.filter((shape: any) => {
       const parent = shape.getParent()
       const layer = parent?.getParent()
-      return layer?.name !== 'documentLayer'
+      return layer?.name() !== 'documentLayer'
     })
 
     for (const shape of canvasShapes) {
@@ -36,6 +36,7 @@ export function useEraserTool(ctx: ToolContext): ToolHandler {
 
   return {
     onMouseDown(_event: any, _pos: PointerPosition) {
+      ctx.isDrawing.value = true
       const stagePos = ctx.getStagePointerPos()
       eraseElementAt(stagePos.x, stagePos.y)
     },
@@ -43,6 +44,9 @@ export function useEraserTool(ctx: ToolContext): ToolHandler {
       if (!ctx.isDrawing.value) return
       const stagePos = ctx.getStagePointerPos()
       eraseElementAt(stagePos.x, stagePos.y)
+    },
+    onMouseUp(_event: any, _pos: PointerPosition) {
+      ctx.isDrawing.value = false
     },
     activate() {
       ctx.setCursor('crosshair')

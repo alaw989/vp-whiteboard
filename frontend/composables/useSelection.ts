@@ -68,7 +68,7 @@ export function useSelection(stageRef: Ref<any>, elements: Ref<CanvasElement[]>)
       node.draggable(true)
     }
 
-    selectedId.value = shiftKey ? (selectedIds.value.size > 0 ? id : null) : id
+    selectedId.value = shiftKey ? (selectedIds.value.size > 0 ? Array.from(selectedIds.value)[0]! : null) : id
     updateTransformer()
   }
 
