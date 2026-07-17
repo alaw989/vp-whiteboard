@@ -1,73 +1,29 @@
 #!/bin/bash
-set -e
-
-# Tool Quality Loop — continuous quality scan.
-# Each iteration invokes opencode with the tool-quality-scan skill,
-# which scans the tool codebase, fixes the most impactful issue,
-# verifies with tests, commits, and signals DONE.
+# Tool Quality Loop
 #
-# The loop terminates when:
-#   - The skill outputs <promise>ALL_DONE</promise> (nothing left to fix)
-#   - The iteration cap is reached
+# Usage in opencode:
+#   1. Run:  skill tool-quality-loop
+#   2. The agent scans tools/, fixes one issue, verifies, commits
+#   3. Re-run the skill to fix the next issue
+#   4. Stop when the agent outputs ALL_DONE
 #
-# Usage:
-#   ./scripts/tool-loop.sh          # Default cap: 25 iterations
-#   ./scripts/tool-loop.sh 10       # Override cap
-#   ./scripts/tool-loop.sh --dry-run  # Show info and exit
+# This is NOT a CLI automation — opencode is interactive.
+# The skill lives at ~/.config/opencode/skills/tool-quality-loop/SKILL.md
+# and is loaded within opencode via the `skill` tool.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-ITER=0
-MAX=25
-
-cd "$PROJECT_DIR"
-
-# Parse args
-if [ "$1" = "--dry-run" ]; then
-  echo "Tool Quality Loop — dry run"
-  echo "Project: $PROJECT_DIR"
-  echo "Skill: .agents/skills/tool-quality-loop/SKILL.md"
-  echo "Max iterations: ${2:-$MAX}"
-  exit 0
-fi
-
-if [[ "$1" =~ ^[0-9]+$ ]]; then
-  MAX=$1
-fi
-
-# Ensure opencode is available
-if ! command -v opencode &>/dev/null; then
-  echo "Error: opencode not found. This loop requires opencode."
-  exit 1
-fi
-
-# Branch guard — refuse to run on deploy branches
-BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
-for blocked in master develop main; do
-  if [ "$BRANCH" = "$blocked" ]; then
-    echo "Error: refusing to run on $BRANCH (auto-deploys). Create a feature branch."
-    exit 1
-  fi
-done
-
-echo "Tool Quality Loop — starting (max: $MAX, branch: $BRANCH)"
+echo "Tool Quality Loop — opencode skill"
 echo ""
-
-while [ "$ITER" -lt "$MAX" ]; do
-  ITER=$((ITER + 1))
-  echo "=== Iteration $ITER/$MAX ==="
-
-  # Run opencode with the scan skill
-  OUTPUT=$(opencode --skill tool-quality-loop 2>&1) || true
-
-  # Check termination signal
-  if echo "$OUTPUT" | grep -q "ALL_DONE"; then
-    echo "No fixable issues found. Loop complete."
-    break
-  fi
-
-  echo ""
-done
-
+echo "To run inside opencode:"
+echo "  skill tool-quality-loop"
 echo ""
-echo "=== Tool Quality Loop finished ($ITER iterations) ==="
+echo "This loads the scan checklist. The agent will:"
+echo "  1. Check typecheck errors"
+echo "  2. Check test failures"
+echo "  3. Check TOOL_AUDIT.md gaps"
+echo "  4. Scan tools/ for common bug patterns"
+echo "  5. Fix the most severe issue found"
+echo "  6. Verify with tests"
+echo "  7. Commit"
+echo ""
+echo "Re-run 'skill tool-quality-loop' to continue."
+echo "Stop when the agent outputs: ALL_DONE"
