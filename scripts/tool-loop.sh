@@ -1,42 +1,47 @@
 #!/bin/bash
 set -e
 
-# Tool Quality Loop — drives opencode through the specs/tools/ backlog.
+# Tool Quality Loop — continuous quality scan.
+# Each iteration invokes opencode with the tool-quality-scan skill,
+# which scans the tool codebase, fixes the most impactful issue,
+# verifies with tests, commits, and signals DONE.
+#
+# The loop terminates when:
+#   - The skill outputs <promise>ALL_DONE</promise> (nothing left to fix)
+#   - The iteration cap is reached
+#
 # Usage:
 #   ./scripts/tool-loop.sh          # Default cap: 25 iterations
 #   ./scripts/tool-loop.sh 10       # Override cap
-#   ./scripts/tool-loop.sh --dry-run  # Print info and exit
+#   ./scripts/tool-loop.sh --dry-run  # Show info and exit
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ITER=0
-MAX=${1:-25}
+MAX=25
 
 cd "$PROJECT_DIR"
 
-# Dry run
+# Parse args
 if [ "$1" = "--dry-run" ]; then
   echo "Tool Quality Loop — dry run"
   echo "Project: $PROJECT_DIR"
-  echo "Specs:"
-  for f in specs/tools/*.md; do
-    name=$(basename "$f" .md)
-    status=$(grep "^## Status:" "$f" | head -1 | sed 's/## Status: //')
-    echo "  $name: $status"
-  done
-  incomplete=$(grep -l "Status: INCOMPLETE" specs/tools/*.md 2>/dev/null | wc -l)
-  echo "Incomplete: $incomplete / $(ls specs/tools/*.md 2>/dev/null | wc -l) total"
-  echo "Max iterations: $MAX"
+  echo "Skill: .agents/skills/tool-quality-loop/SKILL.md"
+  echo "Max iterations: ${2:-$MAX}"
   exit 0
+fi
+
+if [[ "$1" =~ ^[0-9]+$ ]]; then
+  MAX=$1
 fi
 
 # Ensure opencode is available
 if ! command -v opencode &>/dev/null; then
-  echo "Error: opencode not found. This loop requires opencode to run."
+  echo "Error: opencode not found. This loop requires opencode."
   exit 1
 fi
 
-# Ensure we're on a non-deploy branch
+# Branch guard — refuse to run on deploy branches
 BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 for blocked in master develop main; do
   if [ "$BRANCH" = "$blocked" ]; then
@@ -45,25 +50,20 @@ for blocked in master develop main; do
   fi
 done
 
-echo "Tool Quality Loop — starting (cap: $MAX iterations, branch: $BRANCH)"
+echo "Tool Quality Loop — starting (max: $MAX, branch: $BRANCH)"
 echo ""
 
 while [ "$ITER" -lt "$MAX" ]; do
   ITER=$((ITER + 1))
+  echo "=== Iteration $ITER/$MAX ==="
 
-  # Check remaining incomplete specs
-  INCOMPLETE=$(grep -l "Status: INCOMPLETE" specs/tools/*.md 2>/dev/null | wc -l)
-  echo "=== Iteration $ITER/$MAX — $INCOMPLETE specs remaining ==="
+  # Run opencode with the scan skill
+  OUTPUT=$(opencode --skill tool-quality-loop 2>&1) || true
 
-  if [ "$INCOMPLETE" -eq 0 ]; then
-    echo "All specs complete!"
+  # Check termination signal
+  if echo "$OUTPUT" | grep -q "ALL_DONE"; then
+    echo "No fixable issues found. Loop complete."
     break
-  fi
-
-  # Run opencode with the tool-quality-loop skill
-  # The skill handles: read spec → implement → verify → update status → commit → DONE
-  if ! opencode --skill tool-quality-loop; then
-    echo "Warning: opencode exited with an error. Continuing to next iteration."
   fi
 
   echo ""
@@ -71,5 +71,3 @@ done
 
 echo ""
 echo "=== Tool Quality Loop finished ($ITER iterations) ==="
-INCOMPLETE=$(grep -l "Status: INCOMPLETE" specs/tools/*.md 2>/dev/null | wc -l)
-echo "Remaining incomplete: $INCOMPLETE"

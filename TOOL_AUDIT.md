@@ -56,33 +56,33 @@
 ## Remaining Gaps by Priority
 
 ### P1 — Missing OSnap (lower priority, element-based selection)
-| Tool | Reason | Spec |
-|------|--------|------|
-| Stamp | Uses click-to-place, OSnap would help precision | `specs/tools/01-stamp-osnap.md` |
-| Text Annotation | Leader line start/end would benefit from OSnap | `specs/tools/02-text-annotation-osnap.md` |
+| Tool | Reason |
+|------|--------|
+| Stamp | Uses click-to-place, OSnap would help precision |
+| Text Annotation | Leader line start/end would benefit from OSnap |
 
 ### P2 — Feature Gaps
-| Issue | Details | Spec |
-|-------|---------|------|
-| Arc collinear check | 3 collinear points create degenerate arc — no guard | `specs/tools/03-arc-collinear-guard.md` |
-| Measure Area types | Only rect/circle/ellipse — missing polyline, arc, stroke | `specs/tools/04-measure-area-types.md` |
+| Issue | Details |
+|-------|---------|
+| Arc collinear check | 3 collinear points create degenerate arc — no guard |
+| Measure Area types | Only rect/circle/ellipse — missing polyline, arc, stroke |
 
 ### P3 — Polish
-| Issue | Details | Spec |
-|-------|---------|------|
-| Scale tool sensitivity | Extreme scale jump when clicking near centroid | `specs/tools/05-scale-tool-sensitivity.md` |
+| Issue | Details |
+|-------|---------|
+| Scale tool sensitivity | Extreme scale jump when clicking near centroid |
 
 ---
 
 ## Automation
 
-The remaining gaps are tracked as specs in `specs/tools/`. Run the loop:
+Run the continuous quality scanner:
 
 ```bash
-./scripts/tool-loop.sh 5
+./scripts/tool-loop.sh 25
 ```
 
-Each iteration picks the next incomplete spec, implements it, verifies with the full test suite, commits, and updates this file.
+Each iteration scans tools/ for the most impactful fixable issue, implements it, verifies with the full test suite, and commits. The loop terminates when no fixable issues remain.
 
 ---
 
