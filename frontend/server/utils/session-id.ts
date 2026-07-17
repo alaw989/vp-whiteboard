@@ -15,6 +15,7 @@ export function generateSessionIdWithPrefix(prefix: string): string {
 }
 
 // Validate that a string looks like a session ID
+// Must match the PHP SessionController regex (full alphanumeric)
 export function isValidSessionId(id: string): boolean {
-  return /^[abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/.test(id)
+  return /^[A-Za-z0-9]{8}$/.test(id)
 }

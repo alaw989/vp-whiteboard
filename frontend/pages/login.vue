@@ -56,7 +56,7 @@
 
 <script setup lang="ts">
 const route = useRoute()
-const { $api, $ensureCsrf: ensureCsrf } = useNuxtApp()
+const { $api, $ensureCsrf: ensureCsrf } = useApi()
 const email = ref('')
 const password = ref('')
 const error = ref('')

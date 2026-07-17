@@ -138,7 +138,7 @@
 import type { Whiteboard, ApiResponse } from '~/types'
 
 const router = useRouter()
-const { $api } = useNuxtApp()
+const { $api } = useApi()
 
 const formData = ref({
   name: '',

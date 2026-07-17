@@ -12,7 +12,10 @@ interface ApiResponse<T = unknown> {
   error?: string
 }
 
-export default defineNuxtPlugin(() => {
+export default defineNuxtPlugin<{
+  api: <T = unknown>(url: string, options?: Record<string, unknown>) => Promise<T>
+  ensureCsrf: () => Promise<void>
+}>(() => {
   const config = useRuntimeConfig()
   const laravelUrl = (config.public.laravelUrl as string) || 'http://localhost:8000'
 

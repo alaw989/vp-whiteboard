@@ -117,30 +117,39 @@ export function useToolHandlers(): ToolHandlerRegistry {
     return handlers.get(toolId)
   }
 
+  function wrapError<T>(fn: () => T, context: string): T | undefined {
+    try {
+      return fn()
+    } catch (e) {
+      console.error(`[tool] ${context}:`, e)
+      return undefined
+    }
+  }
+
   function dispatchMouseDown(tool: DrawingTool, event: any, pos: PointerPosition) {
-    handlers.get(tool)?.onMouseDown?.(event, pos)
+    wrapError(() => handlers.get(tool)?.onMouseDown?.(event, pos), `${tool}.onMouseDown`)
   }
 
   function dispatchMouseMove(tool: DrawingTool, event: any, pos: PointerPosition) {
-    handlers.get(tool)?.onMouseMove?.(event, pos)
+    wrapError(() => handlers.get(tool)?.onMouseMove?.(event, pos), `${tool}.onMouseMove`)
   }
 
   function dispatchMouseUp(tool: DrawingTool, event: any, pos: PointerPosition) {
-    handlers.get(tool)?.onMouseUp?.(event, pos)
+    wrapError(() => handlers.get(tool)?.onMouseUp?.(event, pos), `${tool}.onMouseUp`)
   }
 
   function dispatchKeyDown(tool: DrawingTool, event: KeyboardEvent): boolean {
     const handler = handlers.get(tool)
     if (!handler?.onKeyDown) return false
-    return !!handler.onKeyDown(event)
+    return !!wrapError(() => handler.onKeyDown!(event), `${tool}.onKeyDown`)
   }
 
   function activateTool(tool: DrawingTool) {
-    handlers.get(tool)?.activate?.()
+    wrapError(() => handlers.get(tool)?.activate?.(), `${tool}.activate`)
   }
 
   function deactivateTool(tool: DrawingTool) {
-    handlers.get(tool)?.deactivate?.()
+    wrapError(() => handlers.get(tool)?.deactivate?.(), `${tool}.deactivate`)
   }
 
   return {

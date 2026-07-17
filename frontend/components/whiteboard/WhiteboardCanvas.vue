@@ -2274,6 +2274,46 @@ function handleMouseUp(event: any) {
 // Track drag start position for delta calculation
 const dragStartPosition = ref<{ x: number; y: number } | null>(null)
 
+// Compute drag delta for an element type given start/end positions + element data
+function computeDragDelta(
+  element: CanvasElement,
+  newPosition: { x: number; y: number },
+  startPos: { x: number; y: number },
+  newScale: { x: number; y: number },
+  newRotation: number,
+): Partial<CanvasElement> {
+  const updates: Partial<CanvasElement> = {}
+  const data = element.data as any
+  const deltaX = newPosition.x - startPos.x
+  const deltaY = newPosition.y - startPos.y
+
+  if (element.type === 'rectangle' || element.type === 'ellipse' || element.type === 'text' || element.type === 'image') {
+    updates.data = { ...data, x: newPosition.x, y: newPosition.y, scaleX: newScale.x, scaleY: newScale.y, rotation: newRotation }
+  } else if (element.type === 'circle') {
+    updates.data = { ...data, cx: newPosition.x, cy: newPosition.y, scaleX: newScale.x, scaleY: newScale.y, rotation: newRotation }
+  } else if (element.type === 'stamp' || element.type === 'text-annotation') {
+    updates.data = { ...data, x: newPosition.x, y: newPosition.y, scaleX: newScale.x, scaleY: newScale.y, rotation: newRotation }
+  } else if (element.type === 'stroke') {
+    updates.data = { ...data, points: data.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]), scaleX: newScale.x, scaleY: newScale.y, rotation: newRotation }
+  } else if (element.type === 'line') {
+    updates.data = { ...data, start: [data.start[0] + deltaX, data.start[1] + deltaY], end: [data.end[0] + deltaX, data.end[1] + deltaY], scaleX: newScale.x, scaleY: newScale.y, rotation: newRotation }
+  } else if (element.type === 'arrow') {
+    updates.data = { ...data, points: data.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]), scaleX: newScale.x, scaleY: newScale.y, rotation: newRotation }
+  } else if (element.type === 'polyline' || element.type === 'revision-cloud') {
+    updates.data = { ...data, points: data.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]) }
+  } else if (element.type === 'arc') {
+    updates.data = { ...data, start: [data.start[0] + deltaX, data.start[1] + deltaY], through: [data.through[0] + deltaX, data.through[1] + deltaY], end: [data.end[0] + deltaX, data.end[1] + deltaY] }
+  } else if (element.type === 'fillet-arc') {
+    updates.data = { ...data, center: [data.center[0] + deltaX, data.center[1] + deltaY] }
+  } else if (element.type === 'measurement-distance') {
+    updates.data = { ...data, x: newPosition.x, y: newPosition.y, scaleX: newScale.x, scaleY: newScale.y, rotation: newRotation }
+  } else {
+    updates.data = { ...data, x: newPosition.x, y: newPosition.y, scaleX: newScale.x, scaleY: newScale.y, rotation: newRotation }
+  }
+
+  return updates
+}
+
 /**
  * Handle drag start - record initial position for delta calculation
  */
@@ -2291,23 +2331,15 @@ function handleDragMove(event: any) {
   const element = props.elements.find(el => el.id === selectedId.value)
   if (!element || !dragStartPosition.value) return
 
-  // Only stroke/line/arrow need special handling during drag
   if (element.type !== 'stroke' && element.type !== 'line' && element.type !== 'arrow') {
     return
   }
-
-  const node = event.target
-  const currentPosition = node.position()
-  const deltaX = currentPosition.x - dragStartPosition.value.x
-  const deltaY = currentPosition.y - dragStartPosition.value.y
-
-  // Update visual position would happen automatically by Konva
-  // We just track for end event
 }
 
 /**
- * Handle drag end for selected elements
- * Updates element position in Yjs after drag completes
+ * Handle drag end for selected elements.
+ * Updates the dragged element + all other selected elements by the same delta
+ * so multi-select drag moves the entire group.
  */
 function handleDragEnd(event: any) {
   if (props.currentTool !== 'select' || !selectedId.value) return
@@ -2316,137 +2348,52 @@ function handleDragEnd(event: any) {
   const element = props.elements.find(el => el.id === selectedId.value)
   if (!element) return
 
-  // Get new position from the node
   const newPosition = node.position()
   const newScale = node.scale()
   const newRotation = node.rotation()
+  const startPos = dragStartPosition.value
 
-  // Build update based on element type
-  const updates: Partial<CanvasElement> = {}
-
-  // Handle different element types with different position properties
-  if (element.type === 'rectangle' || element.type === 'ellipse' || element.type === 'text' || element.type === 'image') {
-    // These use x, y
-    const data = element.data as any
-    updates.data = {
-      ...data,
-      x: newPosition.x,
-      y: newPosition.y,
-      scaleX: newScale.x,
-      scaleY: newScale.y,
-      rotation: newRotation,
-    }
-  } else if (element.type === 'circle') {
-    // Circles use cx, cy
-    const data = element.data as any
-    updates.data = {
-      ...data,
-      cx: newPosition.x,
-      cy: newPosition.y,
-      scaleX: newScale.x,
-      scaleY: newScale.y,
-      rotation: newRotation,
-    }
-  } else if (element.type === 'stamp' || element.type === 'text-annotation') {
-    // Groups use x, y
-    const data = element.data as any
-    updates.data = {
-      ...data,
-      x: newPosition.x,
-      y: newPosition.y,
-      scaleX: newScale.x,
-      scaleY: newScale.y,
-      rotation: newRotation,
-    }
-  } else if (element.type === 'stroke' || element.type === 'line' || element.type === 'arrow') {
-    // Lines and arrows need point transformation - translate all points by drag delta
-    const data = element.data as any
-    const startPos = dragStartPosition.value
-    if (startPos) {
-      const deltaX = newPosition.x - startPos.x
-      const deltaY = newPosition.y - startPos.y
-
-      if (element.type === 'stroke') {
-        // Translate all stroke points
-        updates.data = {
-          ...data,
-          points: data.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]),
-          scaleX: newScale.x,
-          scaleY: newScale.y,
-          rotation: newRotation,
-        }
-      } else if (element.type === 'line') {
-        // Translate line start/end
-        updates.data = {
-          ...data,
-          start: [data.start[0] + deltaX, data.start[1] + deltaY],
-          end: [data.end[0] + deltaX, data.end[1] + deltaY],
-          scaleX: newScale.x,
-          scaleY: newScale.y,
-          rotation: newRotation,
-        }
-      } else if (element.type === 'arrow') {
-        // Translate all arrow points
-        updates.data = {
-          ...data,
-          points: data.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]),
-          scaleX: newScale.x,
-          scaleY: newScale.y,
-          rotation: newRotation,
-        }
-      }
-    } else {
-      // Fallback if no drag start recorded
-      updates.data = {
-        ...data,
-        scaleX: newScale.x,
-        scaleY: newScale.y,
-        rotation: newRotation,
-      }
-    }
-  } else if (element.type === 'polyline' || element.type === 'arc' || element.type === 'fillet-arc' || element.type === 'revision-cloud') {
-    // Polyline/arc/fillet-arc/revision-cloud are v-line elements needing point transformation
-    const data = element.data as any
-    const startPos = dragStartPosition.value
-    if (startPos) {
-      const deltaX = newPosition.x - startPos.x
-      const deltaY = newPosition.y - startPos.y
-
-      if (element.type === 'polyline' || element.type === 'revision-cloud') {
-        updates.data = {
-          ...data,
-          points: data.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]),
-        }
-      } else if (element.type === 'arc') {
-        updates.data = {
-          ...data,
-          start: [data.start[0] + deltaX, data.start[1] + deltaY],
-          through: [data.through[0] + deltaX, data.through[1] + deltaY],
-          end: [data.end[0] + deltaX, data.end[1] + deltaY],
-        }
-      } else if (element.type === 'fillet-arc') {
-        updates.data = {
-          ...data,
-          center: [data.center[0] + deltaX, data.center[1] + deltaY],
-        }
-      }
-    }
-  } else if (element.type === 'measurement-distance') {
-    // Measurements use x, y for group offset
-    const data = element.data as any
-    updates.data = {
-      ...data,
-      x: newPosition.x,
-      y: newPosition.y,
-      scaleX: newScale.x,
-      scaleY: newScale.y,
-      rotation: newRotation,
-    }
-  }
+  // Build update for primary element
+  const updates = startPos
+    ? computeDragDelta(element, newPosition, startPos, newScale, newRotation)
+    : { data: { ...(element.data as any), x: newPosition.x, y: newPosition.y, scaleX: newScale.x, scaleY: newScale.y, rotation: newRotation } }
 
   emit('element-update', selectedId.value, updates)
 
-  // Reset drag start position
+  // Apply the same delta to all OTHER selected elements (multi-select drag)
+  if (startPos && selectedIds.value.size > 1) {
+    const primaryId = selectedId.value
+    const deltaX = newPosition.x - startPos.x
+    const deltaY = newPosition.y - startPos.y
+
+    selectedIds.value.forEach((otherId) => {
+      if (otherId === primaryId) return
+      const otherEl = props.elements.find(el => el.id === otherId)
+      if (!otherEl) return
+
+      const otherData = otherEl.data as any
+      const otherUpdates: Partial<CanvasElement> = {}
+      const oX = otherData.x ?? 0
+      const oY = otherData.y ?? 0
+
+      if (otherEl.type === 'circle') {
+        otherUpdates.data = { ...otherData, cx: (otherData.cx ?? 0) + deltaX, cy: (otherData.cy ?? 0) + deltaY }
+      } else if (otherEl.type === 'line') {
+        otherUpdates.data = { ...otherData, start: [otherData.start[0] + deltaX, otherData.start[1] + deltaY], end: [otherData.end[0] + deltaX, otherData.end[1] + deltaY] }
+      } else if (otherEl.type === 'stroke' || otherEl.type === 'arrow' || otherEl.type === 'polyline' || otherEl.type === 'revision-cloud') {
+        otherUpdates.data = { ...otherData, points: otherData.points.map(([px, py]: [number, number]) => [px + deltaX, py + deltaY]) }
+      } else if (otherEl.type === 'arc') {
+        otherUpdates.data = { ...otherData, start: [otherData.start[0] + deltaX, otherData.start[1] + deltaY], through: [otherData.through[0] + deltaX, otherData.through[1] + deltaY], end: [otherData.end[0] + deltaX, otherData.end[1] + deltaY] }
+      } else if (otherEl.type === 'fillet-arc') {
+        otherUpdates.data = { ...otherData, center: [otherData.center[0] + deltaX, otherData.center[1] + deltaY] }
+      } else {
+        otherUpdates.data = { ...otherData, x: oX + deltaX, y: oY + deltaY }
+      }
+
+      emit('element-update', otherId, otherUpdates)
+    })
+  }
+
   dragStartPosition.value = null
 }
 
@@ -2977,7 +2924,8 @@ function getDimensionTextConfig(element: CanvasElement) {
   const dx = data.end[0] - data.start[0]
   const dy = data.end[1] - data.start[1]
   const pixelDist = Math.sqrt(dx * dx + dy * dy)
-  const value = data.value ?? +(pixelDist / data.pixelsPerInch).toFixed(data.precision)
+  const inches = pixelDist / data.pixelsPerInch
+  const value = data.value ?? (data.unit === 'feet' ? +(inches / 12).toFixed(data.precision) : +(inches).toFixed(data.precision))
 
   const unitLabel = data.unit === 'feet' ? ' ft' : ' in'
   const text = `${value}${unitLabel}`

@@ -1,5 +1,9 @@
 {
   "extends": "./.nuxt/tsconfig.json",
+  "exclude": [
+    "./e2e",
+    "./playwright.config.ts"
+  ],
   "compilerOptions": {
     "strict": true,
     "esModuleInterop": true,
