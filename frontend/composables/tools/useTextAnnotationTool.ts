@@ -63,17 +63,24 @@ export function useTextAnnotationTool(ctx: ToolContext): ToolHandler {
     state: { textAnnotationStart, currentLeaderLineEnd, showAnnotationInput, pendingAnnotationText, annotationInputPosition, confirmAnnotation, cancelAnnotation },
     onMouseDown(_event: any, pos: PointerPosition) {
       ctx.isDrawing.value = true
-      textAnnotationStart.value = pos
-      currentLeaderLineEnd.value = pos
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      const snapped = snap || pos
+      textAnnotationStart.value = snapped
+      currentLeaderLineEnd.value = snapped
+      ctx.currentSnapPoint.value = snap || null
     },
     onMouseMove(_event: any, pos: PointerPosition) {
       if (!ctx.isDrawing.value) return
       currentLeaderLineEnd.value = pos
+      const snap = ctx.findSnapPoint(pos, ctx.elements)
+      ctx.currentSnapPoint.value = snap || null
     },
     onMouseUp(_event: any, _pos: PointerPosition) {
       if (!ctx.isDrawing.value || !textAnnotationStart.value || !currentLeaderLineEnd.value) return
 
       const start = textAnnotationStart.value
+      const snap = ctx.findSnapPoint(currentLeaderLineEnd.value, ctx.elements)
+      const end = snap || currentLeaderLineEnd.value
 
       annotationInputPosition.value = { x: start.x, y: start.y }
       pendingAnnotationText.value = ''
@@ -81,7 +88,7 @@ export function useTextAnnotationTool(ctx: ToolContext): ToolHandler {
 
       pendingLeaderLine.value = {
         start: [start.x, start.y],
-        end: [currentLeaderLineEnd.value.x, currentLeaderLineEnd.value.y],
+        end: [end.x, end.y],
       }
 
       reset()
