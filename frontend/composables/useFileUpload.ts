@@ -69,7 +69,7 @@ export function getFileIcon(type: string): string {
 }
 
 export function useFileUpload() {
-  const { $api, $ensureCsrf: ensureCsrf } = useNuxtApp()
+  const { $api, $ensureCsrf: ensureCsrf } = useApi()
 
   /**
    * Upload a file with progress tracking

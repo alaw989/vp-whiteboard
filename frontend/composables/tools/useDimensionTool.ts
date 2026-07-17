@@ -28,14 +28,16 @@ export function useDimensionTool(ctx: ToolContext): ToolHandler {
     const dy = end[1] - start[1]
     const pixelDist = Math.sqrt(dx * dx + dy * dy)
     const ppi = ctx.pixelsPerInch || 96
-    const value = +(pixelDist / ppi).toFixed(4)
+    const unit = ctx.measurementUnit || 'inches'
+    const inches = pixelDist / ppi
+    const value = unit === 'feet' ? +(inches / 12).toFixed(4) : +(inches).toFixed(4)
 
     const data: DimensionElement = {
       start,
       end,
       offset,
       pixelsPerInch: ppi,
-      unit: ctx.measurementUnit || 'inches',
+      unit,
       precision: 4,
       style: 'linear',
       color: ctx.currentColor,

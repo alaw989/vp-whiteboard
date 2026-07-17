@@ -83,6 +83,6 @@ class SessionController extends Controller
 
     private function isValidShareToken(string $id): bool
     {
-        return (bool) preg_match('/^[abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/', $id);
+        return (bool) preg_match('/^[A-Za-z0-9]{8}$/', $id);
     }
 }

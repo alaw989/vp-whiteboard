@@ -439,10 +439,16 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   })
 
   // Save to localStorage when elements change
-  watch(() => yElements.toArray(), (elements) => {
+  watch(() => yElements.toArray(), () => {
     const state = exportState()
     localStorage.setItem(`whiteboard:${whiteboardId}`, JSON.stringify(state))
   }, { deep: true })
+
+  // Also save to localStorage when document layers change (PDF/image uploads)
+  yDocumentLayers.observe(() => {
+    const state = exportState()
+    localStorage.setItem(`whiteboard:${whiteboardId}`, JSON.stringify(state))
+  })
 
   // Update local cursor position
   function updateCursor(x: number, y: number, tool?: DrawingTool) {

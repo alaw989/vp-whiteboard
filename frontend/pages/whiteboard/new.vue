@@ -5,7 +5,7 @@ const router = useRouter()
 // Simple user ID for creating whiteboards (in production, this comes from auth)
 const createUserId = `user-${Math.random().toString(36).substring(2, 9)}`
 
-const { $api } = useNuxtApp()
+const { $api } = useApi()
 
 onMounted(async () => {
   try {

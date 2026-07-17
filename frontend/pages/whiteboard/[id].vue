@@ -385,7 +385,7 @@ const canvasInstance = ref<CanvasInstanceType | null>(null)
 const canvasRef = ref<{ stageRef?: { getNode: () => any } } | null>(null)
 
 // Fetch whiteboard data
-const { $api } = useNuxtApp()
+const { $api } = useApi()
 const whiteboardData = ref<ApiResponse<Whiteboard> | null>(null)
 const whiteboardLoading = ref(true)
 const whiteboard = computed(() => whiteboardData.value?.data)
@@ -830,6 +830,15 @@ onMounted(() => {
     },
     { deep: true },
   )
+
+  // Also mark dirty when document layers change (PDF/image uploads)
+  // so auto-save persists them within the next 30s interval tick.
+  const docLayers = canvasInstance.value?.yDocumentLayers
+  if (docLayers) {
+    const onDocLayersChange = () => { dirty = true }
+    docLayers.observe(onDocLayersChange)
+    onUnmounted(() => { docLayers.unobserve(onDocLayersChange) })
+  }
 })
 
 onUnmounted(() => {

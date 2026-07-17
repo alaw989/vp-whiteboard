@@ -195,7 +195,7 @@
 import type { Whiteboard, ApiResponse } from '~/types'
 import { toastSuccess, toastError } from '~/composables/useToast'
 
-const { $api } = useNuxtApp()
+const { $api } = useApi()
 
 // Fetch whiteboards
 const whiteboards = ref<Whiteboard[]>([])
