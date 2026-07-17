@@ -29,9 +29,10 @@ export function useArcTool(ctx: ToolContext): ToolHandler {
     }
 
     // Discard if points are collinear (degenerate arc)
+    // Keep first 2 points so user can retry a different through point
     const cross = (through[0] - start[0]) * (end[1] - start[1]) - (through[1] - start[1]) * (end[0] - start[0])
-    if (Math.abs(cross) < 1) {
-      reset()
+    if (Math.abs(cross) < 10) {
+      clickPoints.value = [clickPoints.value[0]!, clickPoints.value[1]!]
       return
     }
 

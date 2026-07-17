@@ -43,6 +43,7 @@
 | Select tool | Multi-select drag — all selected elements move together |
 | Stamp OSnap | Added `findSnapPoint` for precision placement |
 | Text Annotation OSnap | Added `findSnapPoint` to leader line start and end |
+| Arc collinear guard | Keep first 2 points on collinear rejection, user retries 3rd |
 | Error boundaries | `try/catch` in tool dispatch layer for all 25 tools |
 | TS errors | 0 type errors (fixed 12 via `useApi` composable) |
 | Deploy pipeline | `deploy.yml` rewritten for Laravel+Nuxt stack |
@@ -62,7 +63,6 @@
 ### P2 — Feature Gaps
 | Issue | Details |
 |-------|---------|
-| Arc collinear check | 3 collinear points create degenerate arc — no guard |
 | Measure Area types | Only rect/circle/ellipse — missing polyline, arc, stroke |
 
 ### P3 — Polish
@@ -98,7 +98,7 @@ Each iteration scans tools/ for the most impactful fixable issue, implements it,
 | Circle (C) | ✓ | Min radius ✓, Constraint ✓, OSnap ✓ |
 | Ellipse (E) | ✓ | Min size ✓, Constraint ✓, OSnap ✓ |
 | Polyline (PL) | ✓ | Multi-click, Constraint ✓, OSnap ✓ |
-| Arc (ARC) | ⚠️ | No collinear point guard (spec 03) |
+| Arc (ARC) | ✓ | Collinear guard ✓ |
 | Revision Cloud (RC) | ✓ | Multi-click, Constraint ✓, OSnap ✓ |
 
 ### PHASE 2: MODIFY
