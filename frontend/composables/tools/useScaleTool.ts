@@ -97,6 +97,24 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
     return centroidOfPoints(pts)
   }
 
+  function selectionBBoxDiagonal(): number {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    let found = false
+    for (const id of selectedIds.value) {
+      const el = ctx.elements.find(e => e.id === id)
+      if (!el) continue
+      for (const p of elementPoints(el)) {
+        if (p.x < minX) minX = p.x
+        if (p.y < minY) minY = p.y
+        if (p.x > maxX) maxX = p.x
+        if (p.y > maxY) maxY = p.y
+        found = true
+      }
+    }
+    if (!found) return 1
+    return Math.hypot(maxX - minX, maxY - minY)
+  }
+
   function scaleSelected(factor: number): CanvasElement[] {
     const out: CanvasElement[] = []
     const origin = basepoint.value!
@@ -149,9 +167,11 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
       if (step.value === 'basepoint') {
         const snap = ctx.findSnapPoint(pos, ctx.elements)
         basepoint.value = snap ? { x: snap.x, y: snap.y } : pos
-        // 1× reference = the selection centroid's distance from the pivot.
+        // Use bounding-box diagonal as reference, with 5% minimum.
+        // This prevents extreme scale jumps when clicking near the centroid.
+        const bboxDiag = selectionBBoxDiagonal()
         const ref = distance(pos, selectionCentroid())
-        referenceDist.value = ref > 1 ? ref : 1
+        referenceDist.value = Math.max(ref, bboxDiag * 0.05, 1)
         step.value = 'scale'
         return
       }

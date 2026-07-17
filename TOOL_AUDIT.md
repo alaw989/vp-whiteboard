@@ -45,6 +45,7 @@
 | Text Annotation OSnap | Added `findSnapPoint` to leader line start and end |
 | Arc collinear guard | Keep first 2 points on collinear rejection, user retries 3rd |
 | Measure Area types | Added arc and stroke area calculation; measureArea returns boolean; silent failures now show error toast |
+| Scale tool sensitivity | Use bounding-box diagonal as reference instead of raw 1px clamp |
 | Error boundaries | `try/catch` in tool dispatch layer for all 25 tools |
 | TS errors | 0 type errors (fixed 12 via `useApi` composable) |
 | Deploy pipeline | `deploy.yml` rewritten for Laravel+Nuxt stack |
@@ -63,10 +64,7 @@
 
 ### P2 — No remaining feature gaps
 
-### P3 — Polish
-| Issue | Details |
-|-------|---------|
-| Scale tool sensitivity | Extreme scale jump when clicking near centroid |
+### P3 — No remaining polish gaps
 
 ---
 
@@ -106,7 +104,7 @@ Each iteration scans tools/ for the most impactful fixable issue, implements it,
 | Offset (OFF) | ✓ | Only line/polyline/rect |
 | Mirror (MI) | ✓ | Type coverage limited |
 | Rotate (RO) | ✓ | — |
-| Scale (SC) | ⚠️ | Extreme sensitivity near centroid (spec 05) |
+| Scale (SC) | ✓ | BBox-diagonal reference ✓ |
 | Trim (TR) | ✓ | Only line/polyline |
 | Extend (EX) | ✓ | Only line/polyline |
 | Fillet (F) | ✓ | Only lines |
