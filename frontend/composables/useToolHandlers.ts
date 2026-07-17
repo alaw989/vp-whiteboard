@@ -59,7 +59,7 @@ export interface ToolContext {
   updateMeasurementPreview: (pos: [number, number]) => void
   completeDistanceMeasurement: (end: [number, number], color: string) => void
   cancelMeasurement: () => void
-  measureArea: (elementId: string, color: string) => void
+  measureArea: (elementId: string, color: string) => boolean
   // Selection
   selectedId: Ref<string | null>
   selectElementAtPosition: (x: number, y: number, shiftKey?: boolean) => boolean

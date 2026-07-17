@@ -20,8 +20,7 @@ export function useMeasureAreaTool(ctx: ToolContext): ToolHandler {
         const elementId = shape.id() || shape.getParent()?.id()
         if (elementId) {
           const targetElement = ctx.elements.find(el => el.id === elementId)
-          if (targetElement && (targetElement.type === 'rectangle' || targetElement.type === 'circle' || targetElement.type === 'ellipse' || targetElement.type === 'polyline' || targetElement.type === 'revision-cloud')) {
-            ctx.measureArea(elementId, ctx.currentColor)
+          if (targetElement && ctx.measureArea(elementId, ctx.currentColor)) {
             measured = true
             break
           }
@@ -49,7 +48,7 @@ export function useMeasureAreaTool(ctx: ToolContext): ToolHandler {
         const elementId = shape.id() || shape.getParent()?.id()
         if (elementId) {
           const el = ctx.elements.find(e => e.id === elementId)
-          if (el && (el.type === 'rectangle' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline' || el.type === 'revision-cloud')) {
+          if (el && (el.type === 'rectangle' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline' || el.type === 'revision-cloud' || el.type === 'arc' || el.type === 'stroke')) {
             overMeasurable = true
             break
           }

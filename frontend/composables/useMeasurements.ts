@@ -227,6 +227,37 @@ export function useMeasurements(options: UseMeasurementsOptions) {
    * Calculate area for any supported shape element
    * Returns null for unsupported element types
    */
+  function calculateArcArea(element: CanvasElement, pixelsPerInch: number): number | null {
+    const data = element.data as any
+    const start = data.start as [number, number] | undefined
+    const through = data.through as [number, number] | undefined
+    const end = data.end as [number, number] | undefined
+    if (!start || !through || !end) return null
+    const pxArea = Math.abs(
+      (start[0] - end[0]) * (through[1] - end[1]) -
+      (through[0] - end[0]) * (start[1] - end[1])
+    ) / 2
+    const sqInches = pxArea / (pixelsPerInch * pixelsPerInch)
+    return sqInches
+  }
+
+  function calculateStrokeArea(element: CanvasElement, pixelsPerInch: number): number | null {
+    const data = element.data as any
+    const points = data.points as [number, number][]
+    if (!points || points.length < 2) return null
+    const first = points[0]!
+    let minX = first[0], minY = first[1], maxX = first[0], maxY = first[1]
+    for (const [px, py] of points) {
+      if (px < minX) minX = px
+      if (py < minY) minY = py
+      if (px > maxX) maxX = px
+      if (py > maxY) maxY = py
+    }
+    const pxArea = (maxX - minX) * (maxY - minY)
+    const sqInches = pxArea / (pixelsPerInch * pixelsPerInch)
+    return sqInches
+  }
+
   function calculateArea(element: CanvasElement, pixelsPerInch: number): number | null {
     switch (element.type) {
       case 'rectangle':
@@ -239,8 +270,12 @@ export function useMeasurements(options: UseMeasurementsOptions) {
         return calculatePolylineArea(element, pixelsPerInch)
       case 'revision-cloud':
         return calculateRevisionCloudArea(element, pixelsPerInch)
+      case 'arc':
+        return calculateArcArea(element, pixelsPerInch)
+      case 'stroke':
+        return calculateStrokeArea(element, pixelsPerInch)
       default:
-        return null  // Unsupported type
+        return null
     }
   }
 
@@ -270,14 +305,14 @@ export function useMeasurements(options: UseMeasurementsOptions) {
   function measureArea(
     targetElementId: string,
     color: string
-  ): CanvasElement | null {
+  ): boolean {
     const element = elementsArray().find(el => el.id === targetElementId)
-    if (!element) return null
+    if (!element) return false
 
     const areaInches = calculateArea(element, pixelsPerInch.value)
     if (areaInches === null) {
       console.warn(`Cannot measure area for element type: ${element.type}`)
-      return null
+      return false
     }
 
     // Create measurement-area element
@@ -296,10 +331,9 @@ export function useMeasurements(options: UseMeasurementsOptions) {
       } as MeasurementAreaElement
     }
 
-    // Add to yElements
     yElements.push([measurementElement])
 
-    return measurementElement
+    return true
   }
 
   /**

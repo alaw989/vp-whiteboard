@@ -44,6 +44,7 @@
 | Stamp OSnap | Added `findSnapPoint` for precision placement |
 | Text Annotation OSnap | Added `findSnapPoint` to leader line start and end |
 | Arc collinear guard | Keep first 2 points on collinear rejection, user retries 3rd |
+| Measure Area types | Added arc and stroke area calculation; measureArea returns boolean; silent failures now show error toast |
 | Error boundaries | `try/catch` in tool dispatch layer for all 25 tools |
 | TS errors | 0 type errors (fixed 12 via `useApi` composable) |
 | Deploy pipeline | `deploy.yml` rewritten for Laravel+Nuxt stack |
@@ -60,10 +61,7 @@
 
 ### P1 — No remaining OSnap gaps
 
-### P2 — Feature Gaps
-| Issue | Details |
-|-------|---------|
-| Measure Area types | Only rect/circle/ellipse — missing polyline, arc, stroke |
+### P2 — No remaining feature gaps
 
 ### P3 — Polish
 | Issue | Details |
@@ -127,7 +125,7 @@ Each iteration scans tools/ for the most impactful fixable issue, implements it,
 | Tool | Status | Key Gaps |
 |------|--------|----------|
 | Measure Distance (M) | ✓ | — |
-| Measure Area (Shift+M) | ⚠️ | Only rect/circle/ellipse (spec 04) |
+| Measure Area (Shift+M) | ✓ | Arc and stroke added |
 
 ### PHASE 5: NAV
 
