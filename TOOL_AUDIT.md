@@ -41,6 +41,7 @@
 | Rotate | Added OSnap for basepoint selection |
 | Mirror | Added OSnap for both axis points |
 | Select tool | Multi-select drag — all selected elements move together |
+| Stamp OSnap | Added `findSnapPoint` for precision placement |
 | Error boundaries | `try/catch` in tool dispatch layer for all 25 tools |
 | TS errors | 0 type errors (fixed 12 via `useApi` composable) |
 | Deploy pipeline | `deploy.yml` rewritten for Laravel+Nuxt stack |
@@ -58,7 +59,6 @@
 ### P1 — Missing OSnap (lower priority, element-based selection)
 | Tool | Reason |
 |------|--------|
-| Stamp | Uses click-to-place, OSnap would help precision |
 | Text Annotation | Leader line start/end would benefit from OSnap |
 
 ### P2 — Feature Gaps
@@ -122,7 +122,7 @@ Each iteration scans tools/ for the most impactful fixable issue, implements it,
 |------|--------|----------|
 | Text Annotation (T) | ⚠️ | No OSnap on leader line (spec 02) |
 | Dimension (DIM) | ✓ | — |
-| Stamp (S) | ⚠️ | No OSnap (spec 01) |
+| Stamp (S) | ✓ | OSnap ✓ |
 
 ### PHASE 4: MEASURE
 
