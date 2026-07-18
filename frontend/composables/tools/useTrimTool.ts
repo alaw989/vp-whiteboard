@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import type { CanvasElement, LineElement, PolylineElement } from '~/types'
 import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandlers'
 import {
@@ -6,6 +7,8 @@ import {
   nearestPointOnSegment,
   distance,
   getElementGeometry,
+  findElementAtPosition,
+  findElementsAtPosition,
 } from '~/utils/geometryUtils'
 
 export function useTrimTool(ctx: ToolContext): ToolHandler {
@@ -17,71 +20,6 @@ export function useTrimTool(ctx: ToolContext): ToolHandler {
     cuttingEdgeId.value = null
     step.value = 'cutting-edge'
     highlightId.value = null
-  }
-
-  function findElementsAtPosition(pos: PointerPosition, max: number = 1): CanvasElement[] {
-    const threshold = 8 / ctx.viewport.value.zoom
-    const results: { element: CanvasElement; dist: number }[] = []
-
-    for (const el of ctx.elements) {
-      const geo = getElementGeometry(el)
-
-      if (geo?.circle) {
-        const toCenter = distance(pos, geo.circle.center)
-        const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
-        const d = Math.min(distToPerimeter, toCenter)
-        if (d < threshold * 2) {
-          results.push({ element: el, dist: d })
-        }
-        continue
-      }
-
-      if (!geo?.segments) continue
-
-      for (const seg of geo.segments) {
-        const near = nearestPointOnSegment(seg.start, seg.end, pos)
-        const d = distance(pos, near)
-        if (d < threshold) {
-          results.push({ element: el, dist: d })
-          break // only one entry per element
-        }
-      }
-    }
-
-    results.sort((a, b) => a.dist - b.dist)
-    return results.slice(0, max).map(r => r.element)
-  }
-
-  function findElementAtPosition(pos: PointerPosition): CanvasElement | null {
-    const threshold = 8 / ctx.viewport.value.zoom
-    let best: { element: CanvasElement; dist: number } | null = null
-
-    for (const el of ctx.elements) {
-      const geo = getElementGeometry(el)
-
-      // Handle circles: check if click is near perimeter or inside
-      if (geo?.circle) {
-        const toCenter = distance(pos, geo.circle.center)
-        const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
-        const d = Math.min(distToPerimeter, toCenter)
-        if (d < threshold * 2 && (!best || d < best.dist)) {
-          best = { element: el, dist: d }
-        }
-        continue
-      }
-
-      if (!geo?.segments) continue
-
-      for (const seg of geo.segments) {
-        const near = nearestPointOnSegment(seg.start, seg.end, pos)
-        const d = distance(pos, near)
-        if (d < threshold && (!best || d < best.dist)) {
-          best = { element: el, dist: d }
-        }
-      }
-    }
-
-    return best?.element ?? null
   }
 
   /** Trim an element at intersection points with the cutting edge */
@@ -248,15 +186,14 @@ export function useTrimTool(ctx: ToolContext): ToolHandler {
     onMouseMove(_event: any, pos: PointerPosition) {
       const snap = ctx.findSnapPoint(pos, ctx.elements)
       ctx.currentSnapPoint.value = snap || null
-      const el = findElementAtPosition(pos)
+      const el = findElementAtPosition(pos, ctx.elements, ctx.viewport.value.zoom)
       highlightId.value = el?.id ?? null
     },
     onMouseDown(_event: any, pos: PointerPosition) {
       const snap = ctx.findSnapPoint(pos, ctx.elements)
       ctx.currentSnapPoint.value = snap || null
-      const el = findElementAtPosition(pos)
+      const el = findElementAtPosition(pos, ctx.elements, ctx.viewport.value.zoom)
       if (!el) return
-
       if (step.value === 'cutting-edge') {
         cuttingEdgeId.value = el.id
         step.value = 'trim'
@@ -264,11 +201,9 @@ export function useTrimTool(ctx: ToolContext): ToolHandler {
         return
       }
 
-      // Trim mode — trim this element at the cutting edge.
-      // If the click lands on the cutting edge again, find the NEXT nearest element.
       let targetEl = el
       if (el.id === cuttingEdgeId.value) {
-        const allEls = findElementsAtPosition(pos, 2)
+        const allEls = findElementsAtPosition(pos, ctx.elements, ctx.viewport.value.zoom, 2)
         targetEl = allEls.find(e => e.id !== cuttingEdgeId.value) || el
         if (targetEl.id === cuttingEdgeId.value) return
       }

@@ -686,6 +686,89 @@ export function findNearestElementSegment(
   return best
 }
 
+/**
+ * Find the single nearest element at position using the standard tool
+ * selection hit-test (threshold = 8 / zoom; circles use threshold * 2).
+ * Returns null when nothing is close enough.
+ */
+export function findElementAtPosition(
+  pos: Point,
+  elements: CanvasElement[],
+  zoom: number,
+): CanvasElement | null {
+  const threshold = 8 / zoom
+  let best: { element: CanvasElement; dist: number } | null = null
+
+  for (const el of elements) {
+    const geo = getElementGeometry(el)
+
+    if (geo?.circle) {
+      const toCenter = distance(pos, geo.circle.center)
+      const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
+      const d = Math.min(distToPerimeter, toCenter)
+      if (d < threshold * 2 && (!best || d < best.dist)) {
+        best = { element: el, dist: d }
+      }
+      continue
+    }
+
+    if (!geo?.segments) continue
+
+    for (const seg of geo.segments) {
+      const near = nearestPointOnSegment(seg.start, seg.end, pos)
+      const d = distance(pos, near)
+      if (d < threshold && (!best || d < best.dist)) {
+        best = { element: el, dist: d }
+      }
+    }
+  }
+
+  return best?.element ?? null
+}
+
+/**
+ * Find up to `max` nearest elements at position. Collects every element within
+ * threshold, sorts by distance, and returns top N. Used by the Trim tool for
+ * "click on cutting edge → find next nearest element".
+ */
+export function findElementsAtPosition(
+  pos: Point,
+  elements: CanvasElement[],
+  zoom: number,
+  max: number = 1,
+): CanvasElement[] {
+  const threshold = 8 / zoom
+  const results: { element: CanvasElement; dist: number }[] = []
+
+  for (const el of elements) {
+    const geo = getElementGeometry(el)
+
+    if (geo?.circle) {
+      const toCenter = distance(pos, geo.circle.center)
+      const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
+      const d = Math.min(distToPerimeter, toCenter)
+      if (d < threshold * 2) {
+        results.push({ element: el, dist: d })
+      }
+      continue
+    }
+
+    if (!geo?.segments) continue
+
+    for (const seg of geo.segments) {
+      const near = nearestPointOnSegment(seg.start, seg.end, pos)
+      const d = distance(pos, near)
+      if (d < threshold) {
+        results.push({ element: el, dist: d })
+        break
+      }
+    }
+  }
+
+  results.sort((a, b) => a.dist - b.dist)
+  return results.slice(0, max).map(r => r.element)
+}
+
 // --- Revision cloud ---
 
 /**

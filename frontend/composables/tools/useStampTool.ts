@@ -43,9 +43,17 @@ const STAMP_CONFIGS = {
 export type StampType = keyof typeof STAMP_CONFIGS
 
 export function useStampTool(ctx: ToolContext): ToolHandler {
+  function snapPosition(pos: PointerPosition): { x: number; y: number } {
+    const snap = ctx.findSnapPoint(pos, ctx.elements)
+    ctx.currentSnapPoint.value = snap || null
+    if (snap) return { x: snap.x, y: snap.y }
+    return { x: pos.x, y: pos.y }
+  }
+
   return {
     onMouseDown(_event: any, pos: PointerPosition) {
       if (!ctx.currentStampType) return
+      const snapped = snapPosition(pos)
       const stampType = ctx.currentStampType as StampType
       const config = STAMP_CONFIGS[stampType]
       const fontSize = config.fontSize
@@ -66,8 +74,8 @@ export function useStampTool(ctx: ToolContext): ToolHandler {
         data: {
           stampType,
           text: config.text,
-          x: pos.x - width / 2,
-          y: pos.y - height / 2,
+          x: snapped.x - width / 2,
+          y: snapped.y - height / 2,
           width,
           height,
           backgroundColor: config.backgroundColor,
@@ -80,6 +88,9 @@ export function useStampTool(ctx: ToolContext): ToolHandler {
       }
 
       ctx.emitElementAdd(element)
+    },
+    onMouseMove(_event: any, pos: PointerPosition) {
+      snapPosition(pos)
     },
   }
 }

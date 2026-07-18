@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import type { CanvasElement, EllipseElement } from '~/types'
 import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandlers'
 

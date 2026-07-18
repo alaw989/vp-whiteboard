@@ -1,3 +1,4 @@
+import { ref, readonly } from 'vue'
 import { useCommandRegistry, type CommandDefinition } from './useCommandRegistry'
 import type { DrawingTool } from '~/types'
 

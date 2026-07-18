@@ -1,13 +1,13 @@
+import { ref } from 'vue'
 import type { CanvasElement } from '~/types'
 import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandlers'
 import {
   type Point,
   distance,
-  nearestPointOnSegment,
-  getElementGeometry,
   scalePointFromOrigin,
   centroidOfPoints,
   transformElement,
+  findElementAtPosition,
 } from '~/utils/geometryUtils'
 
 /**
@@ -46,38 +46,6 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
     return `${ctx.userId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   }
 
-  function findElementAtPosition(pos: PointerPosition): CanvasElement | null {
-    const threshold = 8 / ctx.viewport.value.zoom
-    let best: { element: CanvasElement; dist: number } | null = null
-
-    for (const el of ctx.elements) {
-      const geo = getElementGeometry(el)
-
-      // Handle circles: check if click is near perimeter or inside
-      if (geo?.circle) {
-        const toCenter = distance(pos, geo.circle.center)
-        const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
-        const d = Math.min(distToPerimeter, toCenter)
-        if (d < threshold * 2 && (!best || d < best.dist)) {
-          best = { element: el, dist: d }
-        }
-        continue
-      }
-
-      if (!geo?.segments) continue
-
-      for (const seg of geo.segments) {
-        const near = nearestPointOnSegment(seg.start, seg.end, pos)
-        const d = distance(pos, near)
-        if (d < threshold && (!best || d < best.dist)) {
-          best = { element: el, dist: d }
-        }
-      }
-    }
-
-    return best?.element ?? null
-  }
-
   /** Representative geometry points of an element, for centroid calculation. */
   function elementPoints(el: CanvasElement): Point[] {
     const geo = getElementGeometry(el)
@@ -95,6 +63,24 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
       if (el) pts.push(...elementPoints(el))
     }
     return centroidOfPoints(pts)
+  }
+
+  function selectionBBoxDiagonal(): number {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    let found = false
+    for (const id of selectedIds.value) {
+      const el = ctx.elements.find(e => e.id === id)
+      if (!el) continue
+      for (const p of elementPoints(el)) {
+        if (p.x < minX) minX = p.x
+        if (p.y < minY) minY = p.y
+        if (p.x > maxX) maxX = p.x
+        if (p.y > maxY) maxY = p.y
+        found = true
+      }
+    }
+    if (!found) return 1
+    return Math.hypot(maxX - minX, maxY - minY)
   }
 
   function scaleSelected(factor: number): CanvasElement[] {
@@ -129,7 +115,7 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
     },
     onMouseDown(_event: any, pos: PointerPosition) {
       if (step.value === 'select') {
-        const el = findElementAtPosition(pos)
+        const el = findElementAtPosition(pos, ctx.elements, ctx.viewport.value.zoom)
         if (!el) {
           // Empty click confirms selection if elements are selected
           if (selectedIds.value.length > 0) {
@@ -149,9 +135,11 @@ export function useScaleTool(ctx: ToolContext): ToolHandler {
       if (step.value === 'basepoint') {
         const snap = ctx.findSnapPoint(pos, ctx.elements)
         basepoint.value = snap ? { x: snap.x, y: snap.y } : pos
-        // 1× reference = the selection centroid's distance from the pivot.
+        // Use bounding-box diagonal as reference, with 5% minimum.
+        // This prevents extreme scale jumps when clicking near the centroid.
+        const bboxDiag = selectionBBoxDiagonal()
         const ref = distance(pos, selectionCentroid())
-        referenceDist.value = ref > 1 ? ref : 1
+        referenceDist.value = Math.max(ref, bboxDiag * 0.05, 1)
         step.value = 'scale'
         return
       }

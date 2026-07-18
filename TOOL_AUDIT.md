@@ -41,6 +41,11 @@
 | Rotate | Added OSnap for basepoint selection |
 | Mirror | Added OSnap for both axis points |
 | Select tool | Multi-select drag — all selected elements move together |
+| Stamp OSnap | Added `findSnapPoint` for precision placement |
+| Text Annotation OSnap | Added `findSnapPoint` to leader line start and end |
+| Arc collinear guard | Keep first 2 points on collinear rejection, user retries 3rd |
+| Measure Area types | Added arc and stroke area calculation; measureArea returns boolean; silent failures now show error toast |
+| Scale tool sensitivity | Use bounding-box diagonal as reference instead of raw 1px clamp |
 | Error boundaries | `try/catch` in tool dispatch layer for all 25 tools |
 | TS errors | 0 type errors (fixed 12 via `useApi` composable) |
 | Deploy pipeline | `deploy.yml` rewritten for Laravel+Nuxt stack |
@@ -55,22 +60,11 @@
 
 ## Remaining Gaps by Priority
 
-### P1 — Missing OSnap (lower priority, element-based selection)
-| Tool | Reason |
-|------|--------|
-| Stamp | Uses click-to-place, OSnap would help precision |
-| Text Annotation | Leader line start/end would benefit from OSnap |
+### P1 — No remaining OSnap gaps
 
-### P2 — Feature Gaps
-| Issue | Details |
-|-------|---------|
-| Arc collinear check | 3 collinear points create degenerate arc — no guard |
-| Measure Area types | Only rect/circle/ellipse — missing polyline, arc, stroke |
+### P2 — No remaining feature gaps
 
-### P3 — Polish
-| Issue | Details |
-|-------|---------|
-| Scale tool sensitivity | Extreme scale jump when clicking near centroid |
+### P3 — No remaining polish gaps
 
 ---
 
@@ -100,7 +94,7 @@ Each iteration scans tools/ for the most impactful fixable issue, implements it,
 | Circle (C) | ✓ | Min radius ✓, Constraint ✓, OSnap ✓ |
 | Ellipse (E) | ✓ | Min size ✓, Constraint ✓, OSnap ✓ |
 | Polyline (PL) | ✓ | Multi-click, Constraint ✓, OSnap ✓ |
-| Arc (ARC) | ⚠️ | No collinear point guard (spec 03) |
+| Arc (ARC) | ✓ | Collinear guard ✓ |
 | Revision Cloud (RC) | ✓ | Multi-click, Constraint ✓, OSnap ✓ |
 
 ### PHASE 2: MODIFY
@@ -110,7 +104,7 @@ Each iteration scans tools/ for the most impactful fixable issue, implements it,
 | Offset (OFF) | ✓ | Only line/polyline/rect |
 | Mirror (MI) | ✓ | Type coverage limited |
 | Rotate (RO) | ✓ | — |
-| Scale (SC) | ⚠️ | Extreme sensitivity near centroid (spec 05) |
+| Scale (SC) | ✓ | BBox-diagonal reference ✓ |
 | Trim (TR) | ✓ | Only line/polyline |
 | Extend (EX) | ✓ | Only line/polyline |
 | Fillet (F) | ✓ | Only lines |
@@ -120,16 +114,16 @@ Each iteration scans tools/ for the most impactful fixable issue, implements it,
 
 | Tool | Status | Key Gaps |
 |------|--------|----------|
-| Text Annotation (T) | ⚠️ | No OSnap on leader line (spec 02) |
+| Text Annotation (T) | ✓ | OSnap ✓ |
 | Dimension (DIM) | ✓ | — |
-| Stamp (S) | ⚠️ | No OSnap (spec 01) |
+| Stamp (S) | ✓ | OSnap ✓ |
 
 ### PHASE 4: MEASURE
 
 | Tool | Status | Key Gaps |
 |------|--------|----------|
 | Measure Distance (M) | ✓ | — |
-| Measure Area (Shift+M) | ⚠️ | Only rect/circle/ellipse (spec 04) |
+| Measure Area (Shift+M) | ✓ | Arc and stroke added |
 
 ### PHASE 5: NAV
 
