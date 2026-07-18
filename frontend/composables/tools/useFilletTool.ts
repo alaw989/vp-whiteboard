@@ -3,11 +3,8 @@ import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandle
 import {
   type Point,
   calculateFillet,
-  nearestPointOnSegment,
   distance,
-  lineLineIntersection,
-  direction,
-  getElementGeometry,
+  findElementAtPosition,
 } from '~/utils/geometryUtils'
 
 export function useFilletTool(ctx: ToolContext): ToolHandler {
@@ -20,32 +17,6 @@ export function useFilletTool(ctx: ToolContext): ToolHandler {
     firstLineId.value = null
     step.value = 'first-line'
     highlightId.value = null
-  }
-
-  function findLineAtPosition(pos: PointerPosition): CanvasElement | null {
-    const threshold = 8 / ctx.viewport.value.zoom
-    let best: { element: CanvasElement; dist: number } | null = null
-
-    for (const el of ctx.elements) {
-      if (el.type !== 'line') continue
-      const data = el.data as LineElement
-      const start: Point = { x: data.start[0], y: data.start[1] }
-      const end: Point = { x: data.end[0], y: data.end[1] }
-      const near = { x: 0, y: 0 }
-      // Simple nearest on segment
-      const dx = end.x - start.x
-      const dy = end.y - start.y
-      const lenSq = dx * dx + dy * dy
-      const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((pos.x - start.x) * dx + (pos.y - start.y) * dy) / lenSq))
-      near.x = start.x + dx * t
-      near.y = start.y + dy * t
-      const d = distance(pos, near)
-      if (d < threshold && (!best || d < best.dist)) {
-        best = { element: el, dist: d }
-      }
-    }
-
-    return best?.element ?? null
   }
 
   function applyFillet(line1: CanvasElement, line2: CanvasElement) {
@@ -106,15 +77,14 @@ export function useFilletTool(ctx: ToolContext): ToolHandler {
     onMouseMove(_event: any, pos: PointerPosition) {
       const snap = ctx.findSnapPoint(pos, ctx.elements)
       ctx.currentSnapPoint.value = snap || null
-      const el = findLineAtPosition(pos)
-      highlightId.value = el?.id ?? null
+      const el = findElementAtPosition(pos, ctx.elements, ctx.viewport.value.zoom)
+      highlightId.value = el?.type === 'line' ? el.id : null
     },
     onMouseDown(_event: any, pos: PointerPosition) {
       const snap = ctx.findSnapPoint(pos, ctx.elements)
       ctx.currentSnapPoint.value = snap || null
-      const el = findLineAtPosition(pos)
-      if (!el) return
-
+      const el = findElementAtPosition(pos, ctx.elements, ctx.viewport.value.zoom)
+      if (!el || el.type !== 'line') return
       if (step.value === 'first-line') {
         firstLineId.value = el.id
         step.value = 'second-line'

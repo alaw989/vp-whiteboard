@@ -7,6 +7,7 @@ import {
   distance,
   direction,
   getElementGeometry,
+  findElementAtPosition,
 } from '~/utils/geometryUtils'
 
 export function useExtendTool(ctx: ToolContext): ToolHandler {
@@ -18,38 +19,6 @@ export function useExtendTool(ctx: ToolContext): ToolHandler {
     boundaryId.value = null
     step.value = 'boundary'
     highlightId.value = null
-  }
-
-  function findElementAtPosition(pos: PointerPosition): CanvasElement | null {
-    const threshold = 8 / ctx.viewport.value.zoom
-    let best: { element: CanvasElement; dist: number } | null = null
-
-    for (const el of ctx.elements) {
-      const geo = getElementGeometry(el)
-
-      // Handle circles: check if click is near perimeter or inside
-      if (geo?.circle) {
-        const toCenter = distance(pos, geo.circle.center)
-        const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
-        const d = Math.min(distToPerimeter, toCenter)
-        if (d < threshold * 2 && (!best || d < best.dist)) {
-          best = { element: el, dist: d }
-        }
-        continue
-      }
-
-      if (!geo?.segments) continue
-
-      for (const seg of geo.segments) {
-        const near = nearestPointOnSegment(seg.start, seg.end, pos)
-        const d = distance(pos, near)
-        if (d < threshold && (!best || d < best.dist)) {
-          best = { element: el, dist: d }
-        }
-      }
-    }
-
-    return best?.element ?? null
   }
 
   function extendElement(element: CanvasElement, boundary: CanvasElement, clickPos: PointerPosition) {
@@ -203,22 +172,20 @@ export function useExtendTool(ctx: ToolContext): ToolHandler {
     onMouseMove(_event: any, pos: PointerPosition) {
       const snap = ctx.findSnapPoint(pos, ctx.elements)
       ctx.currentSnapPoint.value = snap || null
-      const el = findElementAtPosition(pos)
+      const el = findElementAtPosition(pos, ctx.elements, ctx.viewport.value.zoom)
       highlightId.value = el?.id ?? null
     },
     onMouseDown(_event: any, pos: PointerPosition) {
       const snap = ctx.findSnapPoint(pos, ctx.elements)
       ctx.currentSnapPoint.value = snap || null
-      const el = findElementAtPosition(pos)
+      const el = findElementAtPosition(pos, ctx.elements, ctx.viewport.value.zoom)
       if (!el) return
-
       if (step.value === 'boundary') {
         boundaryId.value = el.id
         step.value = 'extend'
         highlightId.value = null
         return
       }
-
       if (el.id === boundaryId.value) return
 
       const boundary = ctx.elements.find(e => e.id === boundaryId.value)

@@ -1,6 +1,8 @@
 # Spec 01: Stamp tool — add OSnap support
 
-## Status: INCOMPLETE
+## Status: COMPLETE
+
+Commit: `c4a5c52` — `snapPosition()` calls `ctx.findSnapPoint()` on both `onMouseDown` and `onMouseMove`.
 
 Verify: npm run typecheck && npm run test:all && php artisan test
 
@@ -20,7 +22,9 @@ The Stamp tool (click-to-place an APPROVED/REJECTED/etc. stamp) has no object sn
 - `ToolContext.findSnapPoint` is already available on the context
 # Spec 02: Text Annotation tool — add OSnap support
 
-## Status: INCOMPLETE
+## Status: COMPLETE
+
+Commit: `19787b5` — `ctx.findSnapPoint()` called on both `onMouseDown` (annotation target) and `onMouseUp` (text label position).
 
 Verify: npm run typecheck && npm run test:all && php artisan test
 
@@ -40,7 +44,9 @@ The Text Annotation tool creates a text label with a leader line pointing to a s
 - `ctx.findSnapPoint(pos, ctx.elements)` — the snap function
 # Spec 03: Arc tool — collinear point guard
 
-## Status: INCOMPLETE
+## Status: COMPLETE
+
+Commit: `3682345` — cross-product collinear check rejects degenerate arcs and keeps first 2 points for retry.
 
 Verify: npm run typecheck && npm run test:all && php artisan test
 
@@ -61,7 +67,9 @@ The Arc tool creates a 3-point arc (start, through, end). When all 3 points are 
 - Similar zero-length guards already exist in `useLineTool.ts` and `useArrowTool.ts` — follow the same pattern
 # Spec 04: Measure Area — support polyline, arc, stroke types
 
-## Status: INCOMPLETE
+## Status: COMPLETE
+
+Commit: `298999e` — `calculateArea()` handles polyline (Shoelace), arc (triangle area), stroke (bounding-box). `measureArea()` returns `false` on null so the toast fires for unsupported types.
 
 Verify: npm run typecheck && npm run test:all && php artisan test
 
@@ -83,7 +91,9 @@ The Measure Area tool only calculates area for rectangles, circles, and ellipses
 - `calculatePolylineArea()` at line 190 already returns `null` for non-closed polylines
 # Spec 05: Scale tool — reduce sensitivity near centroid
 
-## Status: INCOMPLETE
+## Status: COMPLETE
+
+Commit: `a40bdbe` — `referenceDist` uses bounding-box diagonal × 5% as minimum, preventing extreme scale jumps when clicking near centroid.
 
 Verify: npm run typecheck && npm run test:all && php artisan test
 

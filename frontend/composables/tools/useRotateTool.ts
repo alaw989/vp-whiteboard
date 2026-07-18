@@ -1,13 +1,12 @@
+import { ref } from 'vue'
 import type { CanvasElement } from '~/types'
 import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandlers'
 import {
   type Point,
   angleOf,
-  distance,
-  nearestPointOnSegment,
-  getElementGeometry,
   rotatePointAroundOrigin,
   transformElement,
+  findElementAtPosition,
 } from '~/utils/geometryUtils'
 
 /**
@@ -43,38 +42,6 @@ export function useRotateTool(ctx: ToolContext): ToolHandler {
     return `${ctx.userId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   }
 
-  function findElementAtPosition(pos: PointerPosition): CanvasElement | null {
-    const threshold = 8 / ctx.viewport.value.zoom
-    let best: { element: CanvasElement; dist: number } | null = null
-
-    for (const el of ctx.elements) {
-      const geo = getElementGeometry(el)
-
-      // Handle circles: check if click is near perimeter or inside
-      if (geo?.circle) {
-        const toCenter = distance(pos, geo.circle.center)
-        const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
-        const d = Math.min(distToPerimeter, toCenter)
-        if (d < threshold * 2 && (!best || d < best.dist)) {
-          best = { element: el, dist: d }
-        }
-        continue
-      }
-
-      if (!geo?.segments) continue
-
-      for (const seg of geo.segments) {
-        const near = nearestPointOnSegment(seg.start, seg.end, pos)
-        const d = distance(pos, near)
-        if (d < threshold && (!best || d < best.dist)) {
-          best = { element: el, dist: d }
-        }
-      }
-    }
-
-    return best?.element ?? null
-  }
-
   function rotateSelected(angle: number): CanvasElement[] {
     const out: CanvasElement[] = []
     const origin = basepoint.value!
@@ -107,7 +74,7 @@ export function useRotateTool(ctx: ToolContext): ToolHandler {
     },
     onMouseDown(_event: any, pos: PointerPosition) {
       if (step.value === 'select') {
-        const el = findElementAtPosition(pos)
+        const el = findElementAtPosition(pos, ctx.elements, ctx.viewport.value.zoom)
         if (!el) {
           // Empty click confirms selection if elements are selected
           if (selectedIds.value.length > 0) {

@@ -90,8 +90,7 @@ export function useStampTool(ctx: ToolContext): ToolHandler {
       ctx.emitElementAdd(element)
     },
     onMouseMove(_event: any, pos: PointerPosition) {
-      const snap = ctx.findSnapPoint(pos, ctx.elements)
-      ctx.currentSnapPoint.value = snap || null
+      snapPosition(pos)
     },
   }
 }

@@ -27,7 +27,7 @@ export function useMeasureAreaTool(ctx: ToolContext): ToolHandler {
         }
       }
       if (!measured) {
-        toastError('Click on a rectangle, circle, ellipse, or closed polyline to measure its area')
+        toastError('Click on a shape or closed polyline to measure its area')
       }
     },
     onMouseMove(_event: any, _pos: PointerPosition) {
