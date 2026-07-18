@@ -15,13 +15,13 @@ export function useSelectTool(ctx: ToolContext): ToolHandler {
       }
     },
     onMouseMove(_event: any, _pos: PointerPosition) {
-      if (ctx.isRubberBanding) {
+      if (ctx.isRubberBanding.value) {
         const stagePos = ctx.getStagePointerPos()
         ctx.updateRubberBand(stagePos.x, stagePos.y)
       }
     },
     onMouseUp(_event: any, _pos: PointerPosition) {
-      if (ctx.isRubberBanding) {
+      if (ctx.isRubberBanding.value) {
         ctx.endRubberBand()
       }
     },

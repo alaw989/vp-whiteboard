@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import type { UserPresence, DrawingTool } from '~/types'
 import { useDebounceFn } from '@vueuse/core'
 

@@ -1,3 +1,4 @@
+import { ref, readonly } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import type { CanvasElement, LineElement, RectangleElement, CircleElement, EllipseElement, StrokeElement, PolylineElement, ArcElement, FilletArcElement, DimensionElement, RevisionCloudElement } from '~/types'
 

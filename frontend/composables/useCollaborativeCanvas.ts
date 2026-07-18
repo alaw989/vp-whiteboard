@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import * as Y from 'yjs'
 import type { CanvasElement, UserPresence, DrawingTool, ViewportState, SharedViewportState } from '~/types'
 

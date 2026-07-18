@@ -1,3 +1,4 @@
+import { ref, computed, readonly } from 'vue'
 import * as Y from 'yjs'
 import type { LayerDefinition } from '~/types'
 

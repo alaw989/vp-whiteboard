@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import type { CanvasElement, TextAnnotationElement } from '~/types'
 import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandlers'
 
@@ -60,7 +61,7 @@ export function useTextAnnotationTool(ctx: ToolContext): ToolHandler {
   }
 
   return {
-    state: { textAnnotationStart, currentLeaderLineEnd, showAnnotationInput, pendingAnnotationText, annotationInputPosition, confirmAnnotation, cancelAnnotation },
+    state: { textAnnotationStart, currentLeaderLineEnd, showAnnotationInput, pendingAnnotationText, pendingLeaderLine, annotationInputPosition, confirmAnnotation, cancelAnnotation },
     onMouseDown(_event: any, pos: PointerPosition) {
       ctx.isDrawing.value = true
       const snap = ctx.findSnapPoint(pos, ctx.elements)

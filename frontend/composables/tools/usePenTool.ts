@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { getStroke } from 'perfect-freehand'
 import type { CanvasElement, StrokeElement } from '~/types'
 import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandlers'

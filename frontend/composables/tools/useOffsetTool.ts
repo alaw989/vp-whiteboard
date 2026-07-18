@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import type { CanvasElement, LineElement, PolylineElement, RectangleElement } from '~/types'
 import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandlers'
 import {

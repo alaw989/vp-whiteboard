@@ -1,3 +1,5 @@
+import { ref, readonly } from 'vue'
+
 export interface OrthoModeOptions {
   enabled?: boolean
 }

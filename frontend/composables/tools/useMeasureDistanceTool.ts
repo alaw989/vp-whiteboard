@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { toastError } from '~/composables/useToast'
 import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandlers'
 
