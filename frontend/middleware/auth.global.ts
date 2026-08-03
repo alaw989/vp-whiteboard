@@ -1,5 +1,5 @@
 export default defineNuxtRouteMiddleware(async (to) => {
-  if (to.path === '/login') return
+  if (to.path === '/login' || to.path === '/register') return
 
   // Individual whiteboard pages are public (Google Docs-style)
   if (to.path.match(/^\/whiteboard\/[^/]+$/) && !to.path.endsWith('/new')) return
