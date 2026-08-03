@@ -1,0 +1,864 @@
+// Shared geometric calculations for modification tools
+import type {
+  CanvasElement,
+  PolylineElement,
+} from '~/types'
+
+export interface Point {
+  x: number
+  y: number
+}
+
+export interface LineSegment {
+  start: Point
+  end: Point
+}
+
+export interface CircleDef {
+  center: Point
+  radius: number
+}
+
+// --- Basics ---
+
+export function distance(a: Point, b: Point): number {
+  return Math.hypot(b.x - a.x, b.y - a.y)
+}
+
+export function midpoint(a: Point, b: Point): Point {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+}
+
+export function lerp(a: Point, b: Point, t: number): Point {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+}
+
+// --- Line operations ---
+
+/** Direction unit vector from a -> b */
+export function direction(a: Point, b: Point): Point {
+  const len = distance(a, b)
+  if (len === 0) return { x: 1, y: 0 }
+  return { x: (b.x - a.x) / len, y: (b.y - a.y) / len }
+}
+
+/** Left-hand normal (perpendicular, rotated 90° CCW) */
+export function normal(dir: Point): Point {
+  return { x: -dir.y, y: dir.x }
+}
+
+/** Angle of line a->b in radians */
+export function angleOf(a: Point, b: Point): number {
+  return Math.atan2(b.y - a.y, b.x - a.x)
+}
+
+/**
+ * Line-line intersection.
+ * Returns intersection point or null if parallel.
+ * Each line is defined by a point and direction.
+ */
+export function lineLineIntersection(
+  p1: Point, d1: Point,
+  p2: Point, d2: Point,
+): Point | null {
+  const cross = d1.x * d2.y - d1.y * d2.x
+  if (Math.abs(cross) < 1e-10) return null // parallel
+  const dx = p2.x - p1.x
+  const dy = p2.y - p1.y
+  const t = (dx * d2.y - dy * d2.x) / cross
+  return { x: p1.x + d1.x * t, y: p1.y + d1.y * t }
+}
+
+/**
+ * Segment-segment intersection.
+ * Returns the intersection point if it lies on both segments, else null.
+ */
+export function segmentSegmentIntersection(
+  a1: Point, a2: Point,
+  b1: Point, b2: Point,
+): Point | null {
+  const d1 = { x: a2.x - a1.x, y: a2.y - a1.y }
+  const d2 = { x: b2.x - b1.x, y: b2.y - b1.y }
+  const cross = d1.x * d2.y - d1.y * d2.x
+  if (Math.abs(cross) < 1e-10) return null
+  const dx = b1.x - a1.x
+  const dy = b1.y - a1.y
+  const t = (dx * d2.y - dy * d2.x) / cross
+  const u = (dx * d1.y - dy * d1.x) / cross
+  if (t < -1e-10 || t > 1 + 1e-10 || u < -1e-10 || u > 1 + 1e-10) return null
+  return { x: a1.x + d1.x * t, y: a1.y + d1.y * t }
+}
+
+/**
+ * Line-segment intersection.
+ * Line defined by point + direction; segment from s1 to s2.
+ */
+export function lineSegmentIntersection(
+  linePoint: Point, lineDir: Point,
+  s1: Point, s2: Point,
+): Point | null {
+  const d2 = { x: s2.x - s1.x, y: s2.y - s1.y }
+  const cross = lineDir.x * d2.y - lineDir.y * d2.x
+  if (Math.abs(cross) < 1e-10) return null
+  const dx = s1.x - linePoint.x
+  const dy = s1.y - linePoint.y
+  const u = (dx * lineDir.y - dy * lineDir.x) / cross
+  if (u < -1e-10 || u > 1 + 1e-10) return null
+  return { x: s1.x + d2.x * u, y: s1.y + d2.y * u }
+}
+
+/** Nearest point on segment ab to point p */
+export function nearestPointOnSegment(a: Point, b: Point, p: Point): Point {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const lenSq = dx * dx + dy * dy
+  if (lenSq === 0) return { ...a }
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq))
+  return { x: a.x + dx * t, y: a.y + dy * t }
+}
+
+/** Distance from point to nearest point on segment */
+export function pointToSegmentDistance(p: Point, a: Point, b: Point): number {
+  return distance(p, nearestPointOnSegment(a, b, p))
+}
+
+/** Project point onto infinite line defined by two points */
+export function projectPointOnLine(p: Point, a: Point, b: Point): Point {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const lenSq = dx * dx + dy * dy
+  if (lenSq === 0) return { ...a }
+  const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq
+  return { x: a.x + dx * t, y: a.y + dy * t }
+}
+
+// --- Parallel / Offset ---
+
+/** Create a parallel line segment offset by distance (positive = left side) */
+export function parallelSegment(seg: LineSegment, offset: number): LineSegment {
+  const dir = direction(seg.start, seg.end)
+  const n = normal(dir)
+  return {
+    start: { x: seg.start.x + n.x * offset, y: seg.start.y + n.y * offset },
+    end: { x: seg.end.x + n.x * offset, y: seg.end.y + n.y * offset },
+  }
+}
+
+/** Offset a polyline by distance, returning new point array */
+export function offsetPolyline(points: Point[], offset: number): Point[] {
+  if (points.length < 2) return points.map(p => ({ ...p }))
+
+  const result: Point[] = []
+
+  for (let i = 0; i < points.length; i++) {
+    if (i === 0) {
+      const next = points[1]!
+      const dir = direction(points[0]!, next)
+      const n = normal(dir)
+      result.push({ x: points[0]!.x + n.x * offset, y: points[0]!.y + n.y * offset })
+    } else if (i === points.length - 1) {
+      const prev = points[i - 1]!
+      const cur = points[i]!
+      const dir = direction(prev, cur)
+      const n = normal(dir)
+      result.push({ x: cur.x + n.x * offset, y: cur.y + n.y * offset })
+    } else {
+      const prev = points[i - 1]!
+      const cur = points[i]!
+      const next = points[i + 1]!
+      const dir1 = direction(prev, cur)
+      const dir2 = direction(cur, next)
+      const n1 = normal(dir1)
+      const n2 = normal(dir2)
+      const offsetPrev: Point = { x: cur.x + n1.x * offset, y: cur.y + n1.y * offset }
+      const offsetNext: Point = { x: cur.x + n2.x * offset, y: cur.y + n2.y * offset }
+      const intersection = lineLineIntersection(
+        { x: prev.x + n1.x * offset, y: prev.y + n1.y * offset }, dir1,
+        offsetNext, dir2,
+      )
+      result.push(intersection ?? midpoint(offsetPrev, offsetNext))
+    }
+  }
+
+  return result
+}
+
+// --- Mirror ---
+
+/** Mirror a point across a line defined by two points */
+export function mirrorPoint(p: Point, axisA: Point, axisB: Point): Point {
+  const proj = projectPointOnLine(p, axisA, axisB)
+  return { x: 2 * proj.x - p.x, y: 2 * proj.y - p.y }
+}
+
+/** Mirror a line segment across an axis */
+export function mirrorSegment(seg: LineSegment, axisA: Point, axisB: Point): LineSegment {
+  return {
+    start: mirrorPoint(seg.start, axisA, axisB),
+    end: mirrorPoint(seg.end, axisA, axisB),
+  }
+}
+
+// --- Affine transforms (rotate / scale) ---
+
+/**
+ * Rotate point `p` around `origin` by `angleRad` radians.
+ * Uses the standard rotation matrix; in screen coordinates (y-down) a positive
+ * angle appears clockwise. Consumed by the Rotate tool.
+ */
+export function rotatePointAroundOrigin(p: Point, origin: Point, angleRad: number): Point {
+  const cos = Math.cos(angleRad)
+  const sin = Math.sin(angleRad)
+  const dx = p.x - origin.x
+  const dy = p.y - origin.y
+  return {
+    x: origin.x + dx * cos - dy * sin,
+    y: origin.y + dx * sin + dy * cos,
+  }
+}
+
+/** Scale point `p` away from (or toward) `origin` by `factor`. Consumed by the Scale tool. */
+export function scalePointFromOrigin(p: Point, origin: Point, factor: number): Point {
+  return {
+    x: origin.x + (p.x - origin.x) * factor,
+    y: origin.y + (p.y - origin.y) * factor,
+  }
+}
+
+/** Arithmetic mean of a set of points (the centroid). Empty set → origin (0,0). */
+export function centroidOfPoints(points: Point[]): Point {
+  if (points.length === 0) return { x: 0, y: 0 }
+  let sx = 0
+  let sy = 0
+  for (const p of points) {
+    sx += p.x
+    sy += p.y
+  }
+  return { x: sx / points.length, y: sy / points.length }
+}
+
+/** True when `rad` is within ~0.57° of a multiple of 90°. */
+function isRightAngleRotation(rad: number): boolean {
+  const halfPi = Math.PI / 2
+  const eps = 0.01 // ~0.57°
+  const mod = ((rad % halfPi) + halfPi) % halfPi
+  return mod < eps || mod > halfPi - eps
+}
+
+// --- Arc / Circle ---
+
+/** Circle-circle intersection (up to 2 points) */
+export function circleCircleIntersection(c1: CircleDef, c2: CircleDef): Point[] {
+  const d = distance(c1.center, c2.center)
+  if (d > c1.radius + c2.radius + 1e-10) return []
+  if (d < Math.abs(c1.radius - c2.radius) - 1e-10) return []
+  if (d < 1e-10) return []
+
+  const a = (c1.radius * c1.radius - c2.radius * c2.radius + d * d) / (2 * d)
+  const hSq = c1.radius * c1.radius - a * a
+  if (hSq < -1e-10) return []
+  const h = Math.sqrt(Math.max(0, hSq))
+
+  const mid = lerp(c1.center, c2.center, a / d)
+  const perpDir = normal(direction(c1.center, c2.center))
+
+  if (h < 1e-10) return [mid]
+  return [
+    { x: mid.x + perpDir.x * h, y: mid.y + perpDir.y * h },
+    { x: mid.x - perpDir.x * h, y: mid.y - perpDir.y * h },
+  ]
+}
+
+/** Circle-line intersection (up to 2 points) */
+export function circleLineIntersection(
+  center: Point, radius: number,
+  lineA: Point, lineB: Point,
+): Point[] {
+  const nearest = projectPointOnLine(center, lineA, lineB)
+  const d = distance(center, nearest)
+  if (d > radius + 1e-10) return []
+
+  const along = direction(lineA, lineB)
+  const offset = Math.sqrt(Math.max(0, radius * radius - d * d))
+
+  if (offset < 1e-10) return [nearest]
+  return [
+    { x: nearest.x + along.x * offset, y: nearest.y + along.y * offset },
+    { x: nearest.x - along.x * offset, y: nearest.y - along.y * offset },
+  ]
+}
+
+// --- Fillet helpers ---
+
+/**
+ * Calculate fillet arc between two line segments.
+ * Returns the arc center, radius, tangent points on each segment, or null if not possible.
+ */
+export interface FilletResult {
+  center: Point
+  radius: number
+  tangentA: Point // point on segment A where fillet touches
+  tangentB: Point // point on segment B where fillet touches
+  newEndA: Point  // segment A should be shortened to this point
+  newStartB: Point // segment B should be shortened/extended to this point
+}
+
+export function calculateFillet(
+  a1: Point, a2: Point,
+  b1: Point, b2: Point,
+  radius: number,
+): FilletResult | null {
+  if (radius <= 0) return null
+
+  const dirA = direction(a1, a2)
+  const dirB = direction(b1, b2)
+  const intersection = lineLineIntersection(a1, dirA, b1, dirB)
+  if (!intersection) return null // lines are parallel
+
+  const nA = normal(dirA)
+  const nB = normal(dirB)
+  const eps = 0.5 // on-segment tolerance, in px
+
+  // Construct the (up to four) radius-r circles tangent to both lines by
+  // intersecting each line offset by ±radius. The correct corner is whichever
+  // candidate has both tangent feet landing on the input segments — this
+  // auto-selects the correct side and rejects radii too large for the segments.
+  const offsetsA = [nA, { x: -nA.x, y: -nA.y }]
+  const offsetsB = [nB, { x: -nB.x, y: -nB.y }]
+
+  let best: { center: Point; tangentA: Point; tangentB: Point } | null = null
+
+  for (const oa of offsetsA) {
+    for (const ob of offsetsB) {
+      const center = lineLineIntersection(
+        { x: a1.x + oa.x * radius, y: a1.y + oa.y * radius }, dirA,
+        { x: b1.x + ob.x * radius, y: b1.y + ob.y * radius }, dirB,
+      )
+      if (!center) continue
+
+      // Tangent points = perpendicular feet from the center onto each line.
+      const tangentA = projectPointOnLine(center, a1, a2)
+      const tangentB = projectPointOnLine(center, b1, b2)
+
+      // Both feet must lie within the input segments (not clamped past an end).
+      if (pointToSegmentDistance(tangentA, a1, a2) > eps) continue
+      if (pointToSegmentDistance(tangentB, b1, b2) > eps) continue
+
+      // Among qualifying corners prefer the one nearest the intersection.
+      if (!best || distance(center, intersection) < distance(best.center, intersection)) {
+        best = { center, tangentA, tangentB }
+      }
+    }
+  }
+
+  if (!best) return null // radius too large, or no valid corner on these segments
+
+  return {
+    center: best.center,
+    radius,
+    tangentA: best.tangentA,
+    tangentB: best.tangentB,
+    newEndA: best.tangentA,
+    newStartB: best.tangentB,
+  }
+}
+
+// --- Element geometry extraction helpers ---
+
+/** Get the geometric segments/curves of an element for intersection testing */
+export function getElementGeometry(element: any): {
+  type: 'line' | 'polyline' | 'circle' | 'rectangle' | 'arc'
+  segments?: LineSegment[]
+  circle?: CircleDef
+  points?: Point[]
+} | null {
+  const data = element.data
+  if (!data) return null
+
+  switch (element.type) {
+    case 'line':
+      return {
+        type: 'line',
+        segments: [{
+          start: { x: data.start[0], y: data.start[1] },
+          end: { x: data.end[0], y: data.end[1] },
+        }],
+      }
+    case 'polyline': {
+      const pts: Point[] = data.points.map((p: number[]) => ({ x: p[0], y: p[1] }))
+      const segs: LineSegment[] = []
+      for (let i = 0; i < pts.length - 1; i++) {
+        segs.push({ start: pts[i]!, end: pts[i + 1]! })
+      }
+      if (data.closed && pts.length > 2) {
+        segs.push({ start: pts[pts.length - 1]!, end: pts[0]! })
+      }
+      return { type: 'polyline', segments: segs, points: pts }
+    }
+    case 'rectangle': {
+      const { x, y, width, height } = data
+      const corners = [
+        { x, y },
+        { x: x + width, y },
+        { x: x + width, y: y + height },
+        { x, y: y + height },
+      ]
+      const segs: LineSegment[] = []
+      for (let i = 0; i < 4; i++) {
+        segs.push({ start: corners[i]!, end: corners[(i + 1) % 4]! })
+      }
+      return { type: 'rectangle', segments: segs, points: corners }
+    }
+    case 'circle':
+      return {
+        type: 'circle',
+        circle: { center: { x: data.cx, y: data.cy }, radius: data.radius },
+      }
+    case 'arc': {
+      // Approximate arc as polyline segments
+      const pts = arcToPolylinePoints(data.start, data.through, data.end, 32)
+      const segs: LineSegment[] = []
+      for (let i = 0; i < pts.length - 1; i++) {
+        segs.push({ start: pts[i]!, end: pts[i + 1]! })
+      }
+      return { type: 'arc', segments: segs, points: pts }
+    }
+    case 'ellipse': {
+      // Sample the ellipse boundary (center x,y; radii; rotation) into segments.
+      const cx = data.x
+      const cy = data.y
+      const cos = Math.cos(data.rotation || 0)
+      const sin = Math.sin(data.rotation || 0)
+      const N = 48
+      const pts: Point[] = []
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2
+        const ex = data.radiusX * Math.cos(a)
+        const ey = data.radiusY * Math.sin(a)
+        pts.push({ x: cx + ex * cos - ey * sin, y: cy + ex * sin + ey * cos })
+      }
+      const segs: LineSegment[] = []
+      for (let i = 0; i < N; i++) {
+        segs.push({ start: pts[i]!, end: pts[(i + 1) % N]! })
+      }
+      return { type: 'polyline', segments: segs, points: pts }
+    }
+    case 'arrow': {
+      const p = data.points
+      const s = { x: p[0][0], y: p[0][1] }
+      const e = { x: p[1][0], y: p[1][1] }
+      return { type: 'line', segments: [{ start: s, end: e }], points: [s, e] }
+    }
+    case 'dimension': {
+      const s = { x: data.start[0], y: data.start[1] }
+      const e = { x: data.end[0], y: data.end[1] }
+      return { type: 'line', segments: [{ start: s, end: e }], points: [s, e] }
+    }
+    case 'stroke': {
+      const pts: Point[] = data.points.map((p: number[]) => ({ x: p[0], y: p[1] }))
+      const segs: LineSegment[] = []
+      for (let i = 0; i < pts.length - 1; i++) {
+        segs.push({ start: pts[i]!, end: pts[i + 1]! })
+      }
+      return { type: 'polyline', segments: segs, points: pts }
+    }
+    case 'revision-cloud': {
+      const pts: Point[] = data.points.map((p: number[]) => ({ x: p[0], y: p[1] }))
+      const segs: LineSegment[] = []
+      for (let i = 0; i < pts.length - 1; i++) {
+        segs.push({ start: pts[i]!, end: pts[i + 1]! })
+      }
+      if (data.closed && pts.length > 2) {
+        segs.push({ start: pts[pts.length - 1]!, end: pts[0]! })
+      }
+      return { type: 'polyline', segments: segs, points: pts }
+    }
+    case 'fillet-arc': {
+      const cx = data.center[0]
+      const cy = data.center[1]
+      let sweep = data.endAngle - data.startAngle
+      if (sweep < 0) sweep += Math.PI * 2
+      const N = 32
+      const pts: Point[] = []
+      for (let i = 0; i <= N; i++) {
+        const a = data.startAngle + (sweep * i) / N
+        pts.push({ x: cx + data.radius * Math.cos(a), y: cy + data.radius * Math.sin(a) })
+      }
+      const segs: LineSegment[] = []
+      for (let i = 0; i < pts.length - 1; i++) {
+        segs.push({ start: pts[i]!, end: pts[i + 1]! })
+      }
+      return { type: 'arc', segments: segs, points: pts }
+    }
+    default:
+      return null
+  }
+}
+
+export interface TransformOptions {
+  /** Radians added to rotation-capable elements (ellipse). 0 for pure scale. */
+  rotationDelta?: number
+  /** Uniform scale applied to radii / stroke widths. 1 = unchanged. */
+  scaleFactor?: number
+}
+
+/**
+ * Apply an arbitrary point transform to an element's geometry, baking the result
+ * into element coordinates (mirror's approach — no per-type rotation fields).
+ *
+ * - Point-based shapes (line, polyline, arrow, stroke, revision-cloud, arc):
+ *   every defining point is run through `transformPoint`; stroke weights scale
+ *   by `scaleFactor`.
+ * - Circle: center transformed; radius scaled by `scaleFactor` (a circle is
+ *   rotation-invariant, so `rotationDelta` is irrelevant).
+ * - Ellipse: center transformed; radii scaled by `scaleFactor`; its `rotation`
+ *   field gets `rotationDelta` added (ellipses carry rotation, so it's faithful).
+ * - Rectangle:
+ *     * Pure scale, or a rotation that is a multiple of 90°, keeps the rectangle
+ *       axis-aligned (both preserve axis-alignment) — two opposite corners are
+ *       transformed and re-bounded.
+ *     * Any other rotation cannot stay axis-aligned, so the rectangle is returned
+ *       as a closed 4-vertex polyline (geometry preserved, type changed).
+ *
+ * `makeId` supplies a fresh id for the new element. Returns null for unsupported
+ * element types (text/stamp/dimension/fillet-arc — out of scope for these tools).
+ */
+export function transformElement(
+  element: CanvasElement,
+  transformPoint: (p: Point) => Point,
+  makeId: () => string,
+  opts: TransformOptions = {},
+): CanvasElement | null {
+  const scale = opts.scaleFactor ?? 1
+  const rot = opts.rotationDelta ?? 0
+  const tp = (pair: [number, number]): [number, number] => {
+    const q = transformPoint({ x: pair[0], y: pair[1] })
+    return [q.x, q.y]
+  }
+
+  const data = element.data as any
+
+  switch (element.type) {
+    case 'line':
+      return { ...element, id: makeId(), data: { ...data, start: tp(data.start), end: tp(data.end) } }
+    case 'polyline':
+      return { ...element, id: makeId(), data: { ...data, points: data.points.map(tp), size: data.size * scale } }
+    case 'arrow':
+      return { ...element, id: makeId(), data: { ...data, points: data.points.map(tp), strokeWidth: data.strokeWidth * scale, pointerLength: data.pointerLength * scale, pointerWidth: data.pointerWidth * scale } }
+    case 'stroke':
+      return {
+        ...element, id: makeId(),
+        data: {
+          ...data,
+          points: data.points.map((pt: [number, number, number]) => {
+            const q = transformPoint({ x: pt[0], y: pt[1] })
+            return [q.x, q.y, pt[2]] as [number, number, number]
+          }),
+          size: data.size * scale,
+        },
+      }
+    case 'revision-cloud':
+      return { ...element, id: makeId(), data: { ...data, points: data.points.map(tp), arcLength: data.arcLength * scale, size: data.size * scale } }
+    case 'arc':
+      return { ...element, id: makeId(), data: { ...data, start: tp(data.start), through: tp(data.through), end: tp(data.end), size: data.size * scale } }
+    case 'circle': {
+      const c = transformPoint({ x: data.cx, y: data.cy })
+      return { ...element, id: makeId(), data: { ...data, cx: c.x, cy: c.y, radius: data.radius * scale, strokeWidth: data.strokeWidth * scale } }
+    }
+    case 'ellipse': {
+      const c = transformPoint({ x: data.x, y: data.y })
+      // `data.rotation` is stored in degrees (Konva's convention — the select-tool
+      // transformer writes node.rotation() back in degrees), so convert the radian
+      // delta before adding.
+      return { ...element, id: makeId(), data: { ...data, x: c.x, y: c.y, radiusX: data.radiusX * scale, radiusY: data.radiusY * scale, rotation: data.rotation + (rot * 180 / Math.PI), strokeWidth: data.strokeWidth * scale } }
+    }
+    case 'rectangle': {
+      const tl = transformPoint({ x: data.x, y: data.y })
+      const br = transformPoint({ x: data.x + data.width, y: data.y + data.height })
+      if (rot === 0 || isRightAngleRotation(rot)) {
+        const minX = Math.min(tl.x, br.x)
+        const minY = Math.min(tl.y, br.y)
+        const maxX = Math.max(tl.x, br.x)
+        const maxY = Math.max(tl.y, br.y)
+        return { ...element, id: makeId(), data: { ...data, x: minX, y: minY, width: maxX - minX, height: maxY - minY, strokeWidth: data.strokeWidth * scale } }
+      }
+      // Non-right-angle rotation: the four corners no longer form an axis-aligned
+      // rect, so preserve the geometry exactly as a closed polyline.
+      const tr = transformPoint({ x: data.x + data.width, y: data.y })
+      const bl = transformPoint({ x: data.x, y: data.y + data.height })
+      const polyData: PolylineElement = {
+        points: [[tl.x, tl.y], [tr.x, tr.y], [br.x, br.y], [bl.x, bl.y]],
+        color: data.stroke,
+        size: data.strokeWidth * scale,
+        closed: true,
+      }
+      return { ...element, id: makeId(), type: 'polyline', data: polyData }
+    }
+    default:
+      return null
+  }
+}
+
+/** Convert 3-point arc to polyline points */
+export function arcToPolylinePoints(
+  start: [number, number], through: [number, number], end: [number, number],
+  numSegments: number = 32,
+): Point[] {
+  const s = { x: start[0], y: start[1] }
+  const t = { x: through[0], y: through[1] }
+  const e = { x: end[0], y: end[1] }
+
+  // Calculate circle center from three points
+  const mid1 = midpoint(s, t)
+  const mid2 = midpoint(t, e)
+  const d1 = direction(s, t)
+  const d2 = direction(t, e)
+  const n1 = normal(d1)
+  const n2 = normal(d2)
+
+  const center = lineLineIntersection(mid1, n1, mid2, n2)
+  if (!center) return [s, e]
+
+  const radius = distance(center, s)
+  const startAngle = Math.atan2(s.y - center.y, s.x - center.x)
+  const endAngle = Math.atan2(e.y - center.y, e.x - center.x)
+
+  // Determine sweep direction by checking which side 'through' is on
+  const cross = (t.x - s.x) * (e.y - s.y) - (t.y - s.y) * (e.x - s.x)
+  const ccw = cross > 0
+
+  let sweep = endAngle - startAngle
+  if (ccw && sweep < 0) sweep += 2 * Math.PI
+  if (!ccw && sweep > 0) sweep -= 2 * Math.PI
+
+  const points: Point[] = []
+  for (let i = 0; i <= numSegments; i++) {
+    const angle = startAngle + (sweep * i) / numSegments
+    points.push({
+      x: center.x + radius * Math.cos(angle),
+      y: center.y + radius * Math.sin(angle),
+    })
+  }
+  return points
+}
+
+/** Find the nearest element and segment to a point */
+export function findNearestElementSegment(
+  pos: Point,
+  elements: any[],
+  excludeIds: string[] = [],
+): { element: any; segmentIndex: number; distance: number; nearestPoint: Point } | null {
+  let best: { element: any; segmentIndex: number; distance: number; nearestPoint: Point } | null = null
+
+  for (const el of elements) {
+    if (excludeIds.includes(el.id)) continue
+    const geo = getElementGeometry(el)
+
+    // Handle circles: check if click is near perimeter or inside
+    if (geo?.circle) {
+      const toCenter = distance(pos, geo.circle.center)
+      const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
+      const d = Math.min(distToPerimeter, toCenter)
+      // For circles, use -1 as segmentIndex to indicate no segment
+      if (!best || d < best.distance) {
+        const angle = Math.atan2(pos.y - geo.circle.center.y, pos.x - geo.circle.center.x)
+        const nearestPoint = {
+          x: geo.circle.center.x + geo.circle.radius * Math.cos(angle),
+          y: geo.circle.center.y + geo.circle.radius * Math.sin(angle),
+        }
+        best = { element: el, segmentIndex: -1, distance: d, nearestPoint }
+      }
+      continue
+    }
+
+    if (!geo?.segments) continue
+
+    for (let i = 0; i < geo.segments.length; i++) {
+      const seg = geo.segments[i]!
+      const near = nearestPointOnSegment(seg.start, seg.end, pos)
+      const d = distance(pos, near)
+      if (!best || d < best.distance) {
+        best = { element: el, segmentIndex: i, distance: d, nearestPoint: near }
+      }
+    }
+  }
+
+  return best
+}
+
+/**
+ * Find the single nearest element at position using the standard tool
+ * selection hit-test (threshold = 8 / zoom; circles use threshold * 2).
+ * Returns null when nothing is close enough.
+ */
+export function findElementAtPosition(
+  pos: Point,
+  elements: CanvasElement[],
+  zoom: number,
+): CanvasElement | null {
+  const threshold = 8 / zoom
+  let best: { element: CanvasElement; dist: number } | null = null
+
+  for (const el of elements) {
+    const geo = getElementGeometry(el)
+
+    if (geo?.circle) {
+      const toCenter = distance(pos, geo.circle.center)
+      const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
+      const d = Math.min(distToPerimeter, toCenter)
+      if (d < threshold * 2 && (!best || d < best.dist)) {
+        best = { element: el, dist: d }
+      }
+      continue
+    }
+
+    if (!geo?.segments) continue
+
+    for (const seg of geo.segments) {
+      const near = nearestPointOnSegment(seg.start, seg.end, pos)
+      const d = distance(pos, near)
+      if (d < threshold && (!best || d < best.dist)) {
+        best = { element: el, dist: d }
+      }
+    }
+  }
+
+  return best?.element ?? null
+}
+
+/**
+ * Find up to `max` nearest elements at position. Collects every element within
+ * threshold, sorts by distance, and returns top N. Used by the Trim tool for
+ * "click on cutting edge → find next nearest element".
+ */
+export function findElementsAtPosition(
+  pos: Point,
+  elements: CanvasElement[],
+  zoom: number,
+  max: number = 1,
+): CanvasElement[] {
+  const threshold = 8 / zoom
+  const results: { element: CanvasElement; dist: number }[] = []
+
+  for (const el of elements) {
+    const geo = getElementGeometry(el)
+
+    if (geo?.circle) {
+      const toCenter = distance(pos, geo.circle.center)
+      const distToPerimeter = Math.abs(toCenter - geo.circle.radius)
+      const d = Math.min(distToPerimeter, toCenter)
+      if (d < threshold * 2) {
+        results.push({ element: el, dist: d })
+      }
+      continue
+    }
+
+    if (!geo?.segments) continue
+
+    for (const seg of geo.segments) {
+      const near = nearestPointOnSegment(seg.start, seg.end, pos)
+      const d = distance(pos, near)
+      if (d < threshold) {
+        results.push({ element: el, dist: d })
+        break
+      }
+    }
+  }
+
+  results.sort((a, b) => a.dist - b.dist)
+  return results.slice(0, max).map(r => r.element)
+}
+
+// --- Revision cloud ---
+
+/**
+ * Signed area of a polygon (shoelace). Positive = one winding, negative = the
+ * other; sign is used to pick the consistent outward-normal side for lobes.
+ */
+export function signedArea(points: Point[]): number {
+  let area = 0
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!
+    const b = points[(i + 1) % points.length]!
+    area += a.x * b.y - b.x * a.y
+  }
+  return area / 2
+}
+
+/**
+ * Generate a revision-cloud (puffy arc) path along a polyline.
+ *
+ * Walks each segment in steps of roughly `arcLength` (the chord length per
+ * lobe). Each step is a semicircle (radius = stepLen/2, centered at the step
+ * midpoint) bulging along the outward normal of the segment.
+ *
+ * Outward side:
+ *  - closed polygons: derived from the signed-area sign so every lobe bulges
+ *    away from the interior.
+ *  - open clouds: fixed +90° (left-hand) normal, matching AutoCAD.
+ *
+ * Returns a flat `[x0, y0, x1, y1, ...]` array for Konva `v-line` rendering.
+ */
+export function revisionCloudPath(
+  points: Point[],
+  arcLength: number,
+  closed: boolean,
+  samplesPerLobe = 12,
+): number[] {
+  if (points.length < 2) {
+    return points.flatMap(p => [p.x, p.y])
+  }
+
+  const chord = arcLength > 1 ? arcLength : 24
+
+  // Build the segment list (closing segment added for closed clouds)
+  const segs: [Point, Point][] = []
+  for (let i = 0; i < points.length - 1; i++) {
+    segs.push([points[i]!, points[i + 1]!])
+  }
+  if (closed && points.length >= 3) {
+    segs.push([points[points.length - 1]!, points[0]!])
+  }
+
+  // Outward-normal side: derived from the chain's winding (signed area) for
+  // 3+ points, so lobes stay on the same side while drawing (open preview) and
+  // after the cloud closes. Falls back to +90° (left-hand) for short chains.
+  let side = 1
+  if (points.length >= 3) {
+    side = signedArea(points) >= 0 ? -1 : 1
+  }
+
+  const out: number[] = []
+  let firstLobe = true
+
+  for (const [a, b] of segs) {
+    const segLen = distance(a, b)
+    if (segLen < 1e-6) continue
+
+    // Evenly divide the segment into whole lobes of ~arcLength chord
+    const lobeCount = Math.min(64, Math.max(1, Math.round(segLen / chord)))
+    const stepLen = segLen / lobeCount
+    const r = stepLen / 2
+
+    for (let i = 0; i < lobeCount; i++) {
+      const p0 = lerp(a, b, i / lobeCount)
+      const p1 = lerp(a, b, (i + 1) / lobeCount)
+      const mid = midpoint(p0, p1)
+
+      // alpha0 = angle from center(mid) to p0; sweep = -side*π picks the
+      // semicircle passing through the outward apex.
+      const alpha0 = Math.atan2(p0.y - mid.y, p0.x - mid.x)
+      const sweep = -side * Math.PI
+
+      const start = firstLobe ? 0 : 1 // skip shared endpoint with prior lobe
+      for (let j = start; j <= samplesPerLobe; j++) {
+        const t = j / samplesPerLobe
+        const angle = alpha0 + sweep * t
+        out.push(mid.x + r * Math.cos(angle), mid.y + r * Math.sin(angle))
+      }
+      firstLobe = false
+    }
+  }
+
+  return out
+}

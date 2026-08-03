@@ -1,0 +1,52 @@
+{
+  "name": "vp-whiteboard",
+  "version": "1.0.0",
+  "description": "VP Associates Collaborative Whiteboard Application",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "nuxt dev",
+    "dev:ws": "LARAVEL_URL=http://localhost:8002 node server/ws-server.js",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:ws\"",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "start": "node .output/server/index.mjs",
+    "start:ws": "node server/ws-server.js",
+    "start:all": "concurrently \"npm run start\" \"npm run start:ws\"",
+    "postinstall": "nuxt prepare",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:all": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "axios": "^1.13.5",
+    "jspdf": "^4.1.0",
+    "konva": "^9.3.15",
+    "nanoid": "^5.1.6",
+    "nuxt": "^3.15.0",
+    "pdfjs-dist": "^5.4.624",
+    "perfect-freehand": "^1.2.3",
+    "vue": "^3.5.0",
+    "vue-konva": "^3.3.0",
+    "ws": "^8.19.0",
+    "yjs": "^13.6.29"
+  },
+  "devDependencies": {
+    "@iconify-json/mdi": "^1.2.3",
+    "@nuxt/icon": "^1.0.0",
+    "@nuxtjs/tailwindcss": "^6.12.1",
+    "@pinia/nuxt": "^0.5.5",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^25.2.1",
+    "@types/ws": "^8.18.1",
+    "@vueuse/nuxt": "^12.0.1",
+    "concurrently": "^8.2.2",
+    "happy-dom": "^15.1.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9",
+    "vue-tsc": "^2.2.0"
+  }
+}

@@ -1,0 +1,453 @@
+// Whiteboard Types
+export interface Whiteboard {
+  id: string
+  project_id?: string
+  name: string
+  created_by: string
+  created_at: string
+  updated_at: string
+  canvas_state?: CanvasState
+}
+
+// Session Types
+export interface Session {
+  id: string
+  short_id: string
+  name: string
+  created_at: string
+  updated_at: string
+  expires_at: string
+  canvas_state?: CanvasState
+}
+
+export interface WhiteboardFile {
+  id: string
+  whiteboard_id: string
+  file_name: string
+  file_type: string
+  storage_path: string
+  file_size: number
+  metadata?: FileMetadata
+  created_at: string
+}
+
+export interface FileMetadata {
+  width?: number
+  height?: number
+  pageCount?: number
+  layer?: number
+  position?: { x: number; y: number }
+  scale?: number
+}
+
+export interface CanvasState {
+  version: number
+  elements: CanvasElement[]
+  viewport?: ViewportState
+  documentLayers?: DocumentLayer[]
+}
+
+export interface LayerDefinition {
+  id: string
+  name: string
+  color: string
+  visible: boolean
+  locked: boolean
+  order: number
+}
+
+export interface CanvasElement {
+  id: string
+  type: 'stroke' | 'line' | 'rectangle' | 'circle' | 'ellipse' | 'image' | 'text' | 'arrow' | 'stamp' | 'text-annotation' | 'measurement-distance' | 'measurement-area' | 'polyline' | 'arc' | 'fillet-arc' | 'dimension' | 'revision-cloud'
+  userId: string
+  userName: string
+  timestamp: number
+  layerId?: string
+  data: StrokeElement | LineElement | RectangleElement | CircleElement | EllipseElement | ImageElement | TextElement | ArrowElement | StampElement | TextAnnotationElement | MeasurementDistanceElement | MeasurementAreaElement | PolylineElement | ArcElement | FilletArcElement | DimensionElement | RevisionCloudElement
+}
+
+export interface StrokeElement {
+  points: [number, number, number][] // [x, y, pressure]
+  color: string
+  size: number
+  tool: 'pen' | 'highlighter'
+  smooth: boolean
+}
+
+export interface LineElement {
+  start: [number, number]
+  end: [number, number]
+  color: string
+  size: number
+}
+
+export interface RectangleElement {
+  x: number
+  y: number
+  width: number
+  height: number
+  stroke: string
+  strokeWidth: number
+  fill?: string
+}
+
+export interface CircleElement {
+  cx: number
+  cy: number
+  radius: number
+  stroke: string
+  strokeWidth: number
+  fill?: string
+}
+
+export interface EllipseElement {
+  x: number
+  y: number
+  radiusX: number
+  radiusY: number
+  rotation: number
+  stroke: string
+  strokeWidth: number
+  fill?: string
+}
+
+export interface PolylineElement {
+  points: [number, number][]
+  color: string
+  size: number
+  closed: boolean
+}
+
+export interface RevisionCloudElement {
+  points: [number, number][]
+  arcLength: number   // chord length per lobe
+  color: string
+  size: number
+  closed: boolean
+}
+
+export interface ArcElement {
+  start: [number, number]
+  through: [number, number]
+  end: [number, number]
+  color: string
+  size: number
+}
+
+export interface FilletArcElement {
+  center: [number, number]
+  radius: number
+  startAngle: number
+  endAngle: number
+  color: string
+  size: number
+}
+
+export interface DimensionElement {
+  start: [number, number]
+  end: [number, number]
+  offset: number // perpendicular distance from measured line to dimension line
+  pixelsPerInch: number
+  unit: 'inches' | 'feet'
+  precision: number
+  style: 'linear' | 'aligned'
+  color: string
+  size: number
+  value?: number
+}
+
+export interface ArrowElement {
+  points: [number, number][]  // [x1, y1, x2, y2] flattened
+  pointerLength: number
+  pointerWidth: number
+  stroke: string
+  strokeWidth: number
+  fill: string  // Arrow head color
+}
+
+export interface StampElement {
+  stampType: 'APPROVED' | 'REVISED' | 'NOTE' | 'FOR REVIEW'
+  text: string
+  x: number
+  y: number
+  width: number
+  height: number
+  backgroundColor: string
+  textColor: string
+  borderColor: string
+  fontSize: number
+  padding: number
+  borderRadius: number
+}
+
+export interface TextAnnotationElement {
+  text: string
+  x: number
+  y: number
+  fontSize: number
+  color: string
+  fontFamily: string
+  leaderLine: {
+    start: [number, number]
+    end: [number, number]
+  }
+}
+
+// Measurement element types
+export interface MeasurementDistanceElement {
+  start: [number, number]    // Canvas coordinates
+  end: [number, number]      // Canvas coordinates
+  pixelsPerInch: number       // Scale at creation time
+  unit: 'inches' | 'feet'   // Display unit
+  precision: number           // Decimal places (4 for .0001)
+  value?: number             // Calculated real-world distance (cached)
+}
+
+export interface MeasurementAreaElement {
+  targetElementId: string   // ID of shape being measured
+  pixelsPerInch: number
+  unit: 'sq-inches' | 'sq-feet'
+  precision: number
+  value?: number             // Calculated area
+}
+
+// Scale state for measurement tools
+export interface ScaleState {
+  pixelsPerInch: number      // e.g., 96 means 96px = 1 inch
+  unit: 'inches' | 'feet'    // Display unit preference
+  label: string               // e.g., '1" = 10'' - user-friendly format
+  lastUpdatedBy: string       // userId for conflict avoidance
+  timestamp: number          // For change detection
+}
+
+export interface ImageElement {
+  src: string
+  x: number
+  y: number
+  width: number
+  height: number
+  fileId?: string
+  // Document layer support
+  isDocument?: boolean
+  layer?: number  // Layer index for z-ordering
+  documentType?: 'pdf' | 'image'
+  pageNumber?: number  // For PDFs
+}
+
+export interface TextElement {
+  text: string
+  x: number
+  y: number
+  fontSize: number
+  color: string
+  fontFamily: string
+}
+
+export interface ViewportState {
+  x: number
+  y: number
+  zoom: number
+}
+
+export interface SharedViewportState extends ViewportState {
+  lastUpdatedBy: string  // userId of last updater
+  timestamp: number      // When viewport was last updated
+}
+
+// Drawing Tool Types
+export type DrawingTool = 'select' | 'pan' | 'pen' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'ellipse' | 'text' | 'text-annotation' | 'stamp' | 'eraser' | 'measure-distance' | 'measure-area' | 'polyline' | 'arc' | 'offset' | 'trim' | 'extend' | 'fillet' | 'mirror' | 'rotate' | 'scale' | 'dimension' | 'revision-cloud'
+
+export interface ToolSettings {
+  tool: DrawingTool
+  color: string
+  size: number
+  opacity: number
+}
+
+// User Presence
+export interface UserPresence {
+  id: string
+  name: string
+  color: string
+  cursor?: { x: number; y: number }
+  tool?: DrawingTool
+  lastSeen: number
+}
+
+// WebSocket Message Types
+export interface WSMessage {
+  type: 'cursor' | 'stroke' | 'element' | 'presence' | 'clear' | 'undo' | 'redo'
+  whiteboardId: string
+  userId: string
+  data: unknown
+}
+
+// API Response Types
+export interface ApiResponse<T> {
+  success: boolean
+  data?: T
+  error?: string
+}
+
+export interface WhiteboardListResponse {
+  whiteboards: Whiteboard[]
+  total: number
+}
+
+// File Upload Types
+export interface UploadOptions {
+  whiteboardId: string
+  file: File
+  onProgress?: (progress: number) => void
+}
+
+export interface UploadProgress {
+  loaded: number
+  total: number
+  percent: number
+}
+
+export interface UploadResult {
+  fileId: string
+  fileName: string
+  storagePath: string
+  url: string
+  fileRecord?: {
+    id: string
+    file_name: string
+    file_type: string
+    storage_path: string
+    file_size: number
+  }
+}
+
+// Color Palette — organized by family for the professional color picker
+export const COLORS = [
+  // Neutrals
+  '#000000', '#374151', '#6B7280',
+  // Warm
+  '#EF4444', '#F59E0B', '#84CC16',
+  // Cool
+  '#10B981', '#14B8A6', '#3B82F6',
+  // Purples / Pink
+  '#6366F1', '#8B5CF6', '#EC4899',
+] as const
+
+// Light/dark threshold helper for the color palette UI
+export function isLightColor(hex: string): boolean {
+  const c = hex.replace('#', '')
+  const r = parseInt(c.substring(0, 2), 16)
+  const g = parseInt(c.substring(2, 4), 16)
+  const b = parseInt(c.substring(4, 6), 16)
+  return (r * 0.299 + g * 0.587 + b * 0.114) > 160
+}
+
+const RECENT_COLORS_KEY = 'whiteboard-recent-colors'
+const MAX_RECENT = 6
+
+export function getRecentColors(): string[] {
+  if (import.meta.client) {
+    try {
+      const raw = localStorage.getItem(RECENT_COLORS_KEY)
+      return raw ? JSON.parse(raw) : []
+    } catch { /* ignore */ }
+  }
+  return []
+}
+
+export function addRecentColor(color: string) {
+  if (import.meta.client) {
+    try {
+      const recent = getRecentColors().filter(c => c !== color)
+      recent.unshift(color)
+      localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(recent.slice(0, MAX_RECENT)))
+    } catch { /* ignore */ }
+  }
+}
+
+export const TOOL_SIZES = [1, 2, 4, 8, 12, 16, 24, 32] as const
+
+// PDF.js Types
+export interface PDFDocumentProxy {
+  numPages: number
+  getPage: (pageNumber: number) => Promise<PDFPageProxy>
+  cleanup: () => void
+  destroy: () => void
+}
+
+export interface PDFRenderTask {
+  promise: Promise<void>
+  cancel: () => void
+}
+
+export interface PDFPageProxy {
+  getViewport: (options: { scale: number }) => PDFPageViewport
+  render: (options: {
+    canvasContext: CanvasRenderingContext2D
+    viewport: PDFPageViewport
+  }) => PDFRenderTask
+}
+
+export interface PDFPageViewport {
+  width: number
+  height: number
+}
+
+export interface PDFRenderOptions {
+  scale?: number
+  onProgress?: (percent: number) => void
+}
+
+export interface PDFLoadingState {
+  loading: boolean
+  loaded: number
+  total: number
+  percent: number
+  error?: string
+}
+
+// Document Layer Types
+export interface DocumentLayer {
+  id: string
+  type: 'pdf' | 'image'
+  fileId: string
+  src: string
+  x: number
+  y: number
+  width: number
+  height: number
+  scale: number
+  opacity: number
+  visible: boolean
+  pageNumber?: number
+  totalPages?: number
+}
+
+export interface DocumentLayerState {
+  layers: DocumentLayer[]
+  activeLayerId: string | null
+  loading: boolean
+  error: string | null
+}
+
+// Export Types
+export type ExportFormat = 'png' | 'pdf'
+
+export interface ExportOptions {
+  format: ExportFormat
+  pixelRatio?: number  // 1 for screen quality, 2+ for print
+  filename?: string     // Auto-generated if omitted
+  includeBackground?: boolean
+}
+
+export interface ExportState {
+  isExporting: boolean
+  progress: number  // 0-100
+  error: string | null
+}
+
+export interface ExportDialogState {
+  show: boolean
+  format: ExportFormat
+  previewUrl: string | null
+}

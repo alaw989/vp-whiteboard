@@ -1,0 +1,78 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  # Shared with deploy.yml so a staging build and a production build never
+  # overlap on the droplet (each build peaks ~2GB).
+  group: droplet-build
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Deploy staging via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -e
+            cd /var/www/vp-whiteboard-staging
+
+            # --- Latest code ---
+            git fetch origin
+            git checkout develop
+            git reset --hard origin/develop
+
+            # --- Laravel (repo root) ---
+            # .env is gitignored and persists on disk (DB creds, APP_KEY, etc.).
+            # Fail loudly rather than silently booting with no config.
+            if [ ! -f .env ]; then echo "ERROR: /var/www/vp-whiteboard-staging/.env missing"; exit 1; fi
+            php /usr/local/bin/composer-phar install --no-dev --optimize-autoloader --no-interaction
+            php artisan config:clear
+            php artisan migrate --force
+            php artisan storage:link 2>/dev/null || true   # recreate the public/storage symlink if missing
+            chown -R www-data:www-data storage bootstrap/cache
+            chown www-data:www-data .env && chmod 640 .env   # FPM must read .env
+
+            # --- Nuxt frontend (frontend/) ---
+            cd frontend
+            npm install --no-audit --no-fund
+            NODE_OPTIONS="--max-old-space-size=2048" npm run build
+
+            # --- PM2: re-create both processes with correct paths + env ---
+            # (delete+start, not restart, so a drifted saved config never wins)
+            cd /var/www/vp-whiteboard-staging
+            pm2 delete vp-whiteboard-staging 2>/dev/null || true
+            pm2 delete vp-ws-server-staging 2>/dev/null || true
+
+            PORT=3002 \
+              NUXT_PUBLIC_LARAVEL_URL=https://staging-whiteboard.vp-associates.com \
+              NUXT_PUBLIC_SITE_URL=https://staging-whiteboard.vp-associates.com \
+              NUXT_PUBLIC_WS_URL=wss://staging-whiteboard.vp-associates.com \
+              pm2 start .output/server/index.mjs \
+                --name vp-whiteboard-staging \
+                --cwd /var/www/vp-whiteboard-staging/frontend
+
+            # SESSION_COOKIE must match Laravel's Str::slug(APP_NAME).'-session'
+            # (APP_NAME=Laravel => "laravel-session").
+            WS_PORT=3003 \
+              LARAVEL_URL=https://staging-whiteboard.vp-associates.com \
+              SESSION_COOKIE=laravel-session \
+              pm2 start server/ws-server.js \
+                --name vp-ws-server-staging \
+                --cwd /var/www/vp-whiteboard-staging/frontend
+
+            pm2 save
+
+            echo "Staging deployment successful!"

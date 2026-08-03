@@ -1,0 +1,196 @@
+import { ref } from 'vue'
+import type { CanvasElement } from '~/types'
+import type { ToolHandler, ToolContext, PointerPosition } from '../useToolHandlers'
+import {
+  type Point,
+  distance,
+  scalePointFromOrigin,
+  centroidOfPoints,
+  transformElement,
+  findElementAtPosition,
+} from '~/utils/geometryUtils'
+
+/**
+ * Scale tool (AutoCAD `SCALE`).
+ *
+ * Flow: click elements to build a selection → Enter to confirm → click the
+ * scale base point (pivot) → move to preview, click to set the scale factor.
+ *
+ * The factor is `distance(base, cursor) / distance(base, centroid)` — i.e. the
+ * selection's own centroid radius from the pivot is the 1× reference, so the
+ * cursor at that radius leaves the shape unchanged; drag outward to enlarge,
+ * inward to shrink. Uniform scale preserves axis-alignment, so rectangles and
+ * circles stay their own type. The transform is baked into element coordinates
+ * (see `transformElement`).
+ */
+export function useScaleTool(ctx: ToolContext): ToolHandler {
+  const selectedIds = ref<string[]>([])
+  const basepoint = ref<Point | null>(null)
+  const currentCursor = ref<Point | null>(null)
+  const currentScale = ref(1)
+  const referenceDist = ref(1)
+  const previewElements = ref<CanvasElement[]>([])
+  const step = ref<'select' | 'basepoint' | 'scale'>('select')
+
+  function reset() {
+    selectedIds.value = []
+    basepoint.value = null
+    currentCursor.value = null
+    currentScale.value = 1
+    referenceDist.value = 1
+    previewElements.value = []
+    step.value = 'select'
+  }
+
+  function makeId(): string {
+    return `${ctx.userId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  }
+
+  /** Representative geometry points of an element, for centroid calculation. */
+  function elementPoints(el: CanvasElement): Point[] {
+    const geo = getElementGeometry(el)
+    if (!geo) return []
+    if (geo.points && geo.points.length) return geo.points
+    if (geo.circle) return [geo.circle.center]
+    if (geo.segments) return geo.segments.flatMap(s => [s.start, s.end])
+    return []
+  }
+
+  function selectionCentroid(): Point {
+    const pts: Point[] = []
+    for (const id of selectedIds.value) {
+      const el = ctx.elements.find(e => e.id === id)
+      if (el) pts.push(...elementPoints(el))
+    }
+    return centroidOfPoints(pts)
+  }
+
+  function selectionBBoxDiagonal(): number {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    let found = false
+    for (const id of selectedIds.value) {
+      const el = ctx.elements.find(e => e.id === id)
+      if (!el) continue
+      for (const p of elementPoints(el)) {
+        if (p.x < minX) minX = p.x
+        if (p.y < minY) minY = p.y
+        if (p.x > maxX) maxX = p.x
+        if (p.y > maxY) maxY = p.y
+        found = true
+      }
+    }
+    if (!found) return 1
+    return Math.hypot(maxX - minX, maxY - minY)
+  }
+
+  function scaleSelected(factor: number): CanvasElement[] {
+    const out: CanvasElement[] = []
+    const origin = basepoint.value!
+    for (const id of selectedIds.value) {
+      const el = ctx.elements.find(e => e.id === id)
+      if (!el) continue
+      const scaled = transformElement(
+        el,
+        p => scalePointFromOrigin(p, origin, factor),
+        makeId,
+        { scaleFactor: factor },
+      )
+      if (scaled) out.push(scaled)
+    }
+    return out
+  }
+
+  function updatePreview() {
+    if (step.value !== 'scale' || !basepoint.value || !currentCursor.value) {
+      previewElements.value = []
+      return
+    }
+    previewElements.value = scaleSelected(currentScale.value)
+  }
+
+  return {
+    state: { selectedIds, basepoint, currentCursor, currentScale, referenceDist, previewElements, step },
+    activate() {
+      reset()
+    },
+    onMouseDown(_event: any, pos: PointerPosition) {
+      if (step.value === 'select') {
+        const el = findElementAtPosition(pos, ctx.elements, ctx.viewport.value.zoom)
+        if (!el) {
+          // Empty click confirms selection if elements are selected
+          if (selectedIds.value.length > 0) {
+            step.value = 'basepoint'
+          }
+          return
+        }
+        const idx = selectedIds.value.indexOf(el.id)
+        if (idx >= 0) {
+          selectedIds.value.splice(idx, 1)
+        } else {
+          selectedIds.value.push(el.id)
+        }
+        return
+      }
+
+      if (step.value === 'basepoint') {
+        const snap = ctx.findSnapPoint(pos, ctx.elements)
+        basepoint.value = snap ? { x: snap.x, y: snap.y } : pos
+        // Use bounding-box diagonal as reference, with 5% minimum.
+        // This prevents extreme scale jumps when clicking near the centroid.
+        const bboxDiag = selectionBBoxDiagonal()
+        const ref = distance(pos, selectionCentroid())
+        referenceDist.value = Math.max(ref, bboxDiag * 0.05, 1)
+        step.value = 'scale'
+        return
+      }
+
+      if (step.value === 'scale') {
+        // Commit at the precise click point (don't trust the last move frame).
+        currentScale.value = distance(basepoint.value!, pos) / referenceDist.value
+        const originals = [...selectedIds.value]
+        for (const el of scaleSelected(currentScale.value)) {
+          ctx.emitElementAdd(el)
+        }
+        for (const id of originals) {
+          ctx.emitElementDelete(id)
+        }
+        reset()
+        return
+      }
+    },
+    onMouseMove(_event: any, pos: PointerPosition) {
+      if (step.value === 'scale' && basepoint.value) {
+        currentCursor.value = pos
+        currentScale.value = distance(basepoint.value, pos) / referenceDist.value
+        updatePreview()
+      }
+    },
+    onKeyDown(event: KeyboardEvent): boolean {
+      if (event.key === 'Escape') {
+        if (step.value === 'scale') {
+          step.value = 'basepoint'
+          currentCursor.value = null
+          currentScale.value = 1
+          previewElements.value = []
+          return true
+        } else if (step.value === 'basepoint') {
+          step.value = 'select'
+          basepoint.value = null
+          return true
+        } else if (selectedIds.value.length > 0) {
+          reset()
+          return true
+        }
+        return false
+      }
+      if (event.key === 'Enter' && step.value === 'select' && selectedIds.value.length > 0) {
+        step.value = 'basepoint'
+        return true
+      }
+      return false
+    },
+    deactivate() {
+      reset()
+    },
+  }
+}
