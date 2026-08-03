@@ -168,6 +168,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       ws.onmessage = async (event) => {
         try {
           const data = new Uint8Array(event.data)
+          console.log('[Yjs WS] RX typeof=', typeof event.data, 'ctor=', event.data && event.data.constructor && event.data.constructor.name, 'size=', event.data?.byteLength ?? event.data?.length ?? event.data?.size)
           if (event.data && (event.data.byteLength === 0 || event.data.length === 0 || event.data === '')) {
             console.warn('[Yjs WS] EMPTY message received, source check. typeof=', typeof event.data)
           }
