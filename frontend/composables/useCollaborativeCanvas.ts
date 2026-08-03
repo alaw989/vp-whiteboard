@@ -167,7 +167,19 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
 
       ws.onmessage = async (event) => {
         try {
-          const data = new Uint8Array(event.data)
+          let data: Uint8Array
+          if (typeof event.data === 'string') {
+            // Text frame (JSON control messages) — pass through as text
+            data = new TextEncoder().encode(event.data)
+          } else if (event.data instanceof ArrayBuffer) {
+            data = new Uint8Array(event.data)
+          } else if (ArrayBuffer.isView(event.data)) {
+            data = new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+          } else if (event.data instanceof Blob) {
+            data = new Uint8Array(await event.data.arrayBuffer())
+          } else {
+            data = new Uint8Array(0)
+          }
           await handleIncomingMessage(data)
         } catch (e) {
           console.error('[Yjs WS] Failed to handle message:', e)
