@@ -11,20 +11,25 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // session cookie (laravel_session) reaches the /api/user endpoint.
   // On the client, credentials: 'include' sends the cookie automatically.
   //
-  // Also forward Origin/Referer: Sanctum's EnsureFrontendRequestsAreStateful
-  // only runs session auth on requests whose Origin/Referer matches
+  // Also send Origin/Referer: Sanctum's EnsureFrontendRequestsAreStateful only
+  // runs session auth on requests whose Origin/Referer matches
   // SANCTUM_STATEFUL_DOMAINS. Browsers send these automatically, but the
-  // server-side fetch does not — without them /api/user returns 401 for a
-  // logged-in user, so a hard refresh redirected to /login. (Same bug fixed
-  // for the WS relay in b036f3d.)
+  // server-side fetch does not — and the browser's headers don't reliably
+  // survive the nginx→Nuxt proxy chain. Synthesize them from LARAVEL_URL so
+  // /api/user doesn't return 401 for a logged-in user on hard refresh (same
+  // fix applied to the WS relay in b036f3d).
   let cookie: string | undefined
   let origin: string | undefined
   let referer: string | undefined
   if (import.meta.server) {
-    const headers = useRequestHeaders(['cookie', 'origin', 'referer'])
+    const headers = useRequestHeaders(['cookie'])
     cookie = headers.cookie
-    origin = headers.origin
-    referer = headers.referer
+    try {
+      origin = new URL(laravelUrl).origin
+    } catch {
+      origin = laravelUrl
+    }
+    referer = `${laravelUrl}/`
   }
 
   try {
