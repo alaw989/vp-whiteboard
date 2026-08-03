@@ -236,6 +236,11 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       Y.applyUpdate(ydoc, data)
     } catch (e) {
       console.error('[Yjs WS] Failed to apply Yjs update:', e)
+      console.error('[Yjs WS] corrupt data:', {
+        byteLength: data.byteLength,
+        headHex: Array.from(data.slice(0, 32)).map(b => b.toString(16).padStart(2, '0')).join(' '),
+        text: new TextDecoder().decode(data.slice(0, 200)).replace(/[^\x20-\x7e]/g, '.'),
+      })
     }
   }
 
