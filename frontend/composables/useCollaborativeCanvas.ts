@@ -167,10 +167,18 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
 
       ws.onmessage = async (event) => {
         try {
-          const data = new Uint8Array(event.data)
-          console.log('[Yjs WS] RX typeof=', typeof event.data, 'ctor=', event.data && event.data.constructor && event.data.constructor.name, 'size=', event.data?.byteLength ?? event.data?.length ?? event.data?.size)
-          if (event.data && (event.data.byteLength === 0 || event.data.length === 0 || event.data === '')) {
-            console.warn('[Yjs WS] EMPTY message received, source check. typeof=', typeof event.data)
+          let data: Uint8Array
+          if (typeof event.data === 'string') {
+            // Text frame (JSON control messages) — pass through as text
+            data = new TextEncoder().encode(event.data)
+          } else if (event.data instanceof ArrayBuffer) {
+            data = new Uint8Array(event.data)
+          } else if (ArrayBuffer.isView(event.data)) {
+            data = new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+          } else if (event.data instanceof Blob) {
+            data = new Uint8Array(await event.data.arrayBuffer())
+          } else {
+            data = new Uint8Array(0)
           }
           await handleIncomingMessage(data)
         } catch (e) {
@@ -240,11 +248,6 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       Y.applyUpdate(ydoc, data)
     } catch (e) {
       console.error('[Yjs WS] Failed to apply Yjs update:', e)
-      console.error('[Yjs WS] corrupt data:', {
-        byteLength: data.byteLength,
-        headHex: Array.from(data.slice(0, 32)).map(b => b.toString(16).padStart(2, '0')).join(' '),
-        text: new TextDecoder().decode(data.slice(0, 200)).replace(/[^\x20-\x7e]/g, '.'),
-      })
     }
   }
 
