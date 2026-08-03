@@ -16,15 +16,20 @@
       <Icon name="mdi:cloud-upload" class="w-12 h-12 text-neutral-400 mx-auto mb-3" />
       <p class="text-neutral-600 mb-2">
         Drag & drop a file here, or
-        <label class="text-blue-600 hover:text-blue-700 cursor-pointer">
+        <button
+          type="button"
+          class="text-blue-600 hover:text-blue-700 cursor-pointer underline"
+          @click="openFilePicker"
+        >
           browse
-          <input
-            type="file"
-            class="hidden"
-            :accept="acceptedTypes"
-            @change="handleFileSelect"
-          />
-        </label>
+        </button>
+        <input
+          ref="fileInput"
+          type="file"
+          class="sr-only"
+          :accept="acceptedTypes"
+          @change="handleFileSelect"
+        />
       </p>
       <p class="text-sm text-neutral-400">
         Supports: JPEG, PNG, WebP, PDF (max 10MB)
@@ -136,8 +141,15 @@ const uploadProgress = ref<UploadProgress>({ loaded: 0, total: 0, percent: 0 })
 const uploadSuccess = ref(false)
 const uploadError = ref('')
 
+// File input ref for programmatic picker launch
+const fileInput = ref<HTMLInputElement | null>(null)
+
 // Accepts attribute for file input
 const acceptedTypes = 'image/jpeg,image/png,image/webp,application/pdf'
+
+function openFilePicker() {
+  fileInput.value?.click()
+}
 
 function handleFileSelect(event: Event) {
   const input = event.target as HTMLInputElement
