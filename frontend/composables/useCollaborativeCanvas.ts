@@ -168,6 +168,9 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       ws.onmessage = async (event) => {
         try {
           const data = new Uint8Array(event.data)
+          if (event.data && (event.data.byteLength === 0 || event.data.length === 0 || event.data === '')) {
+            console.warn('[Yjs WS] EMPTY message received, source check. typeof=', typeof event.data)
+          }
           await handleIncomingMessage(data)
         } catch (e) {
           console.error('[Yjs WS] Failed to handle message:', e)
