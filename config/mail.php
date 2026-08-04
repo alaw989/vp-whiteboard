@@ -115,4 +115,7 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    // Recipient of registration-approval notifications (the company owner).
+    'admin_email' => env('ADMIN_EMAIL'),
+
 ];

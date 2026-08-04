@@ -246,7 +246,7 @@
     <!-- Share Modal -->
     <WhiteboardShareModal
       :show="showShareModal"
-      :share-url="shareUrl"
+      :whiteboard-id="whiteboardId"
       @close="showShareModal = false"
     />
 
@@ -408,12 +408,7 @@ onMounted(async () => {
   }
 })
 
-// Share URL
-const shareUrl = computed(() => {
-  const config = useRuntimeConfig()
-  const baseUrl = config.public.siteUrl as string
-  return `${baseUrl}/whiteboard/${whiteboardId}`
-})
+// Share links are managed in WhiteboardShareModal (per-link /s/{token}).
 
 // Modal states
 const showShareModal = ref(false)

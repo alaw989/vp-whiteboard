@@ -14,7 +14,7 @@ class FileUploadApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_unauthenticated_user_cannot_upload_file(): void
+    public function test_unauthenticated_user_without_share_cannot_upload_file(): void
     {
         $whiteboard = Whiteboard::factory()->create();
 
@@ -23,14 +23,14 @@ class FileUploadApiTest extends TestCase
             'file' => UploadedFile::fake()->image('test.png'),
         ]);
 
-        $response->assertUnauthorized();
+        $response->assertForbidden();
     }
 
     public function test_authenticated_user_can_upload_file(): void
     {
         Storage::fake('public');
         $user = User::factory()->create();
-        $whiteboard = Whiteboard::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $user->id]);
 
         $response = $this->actingAs($user)->post('/api/files', [
             'whiteboard_id' => $whiteboard->id,

@@ -78,7 +78,7 @@ class WhiteboardApiTest extends TestCase
             ]);
     }
 
-    public function test_unauthenticated_user_cannot_update_whiteboard(): void
+    public function test_unauthenticated_user_without_share_cannot_update_whiteboard(): void
     {
         $whiteboard = Whiteboard::factory()->create();
 
@@ -86,13 +86,13 @@ class WhiteboardApiTest extends TestCase
             'name' => 'Hacked Name',
         ]);
 
-        $response->assertUnauthorized();
+        $response->assertForbidden();
     }
 
     public function test_authenticated_user_can_update_whiteboard_name(): void
     {
         $user = User::factory()->create();
-        $whiteboard = Whiteboard::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $user->id]);
 
         $response = $this->actingAs($user)->patchJson("/api/whiteboards/{$whiteboard->id}", [
             'name' => 'Updated Name',
@@ -105,7 +105,7 @@ class WhiteboardApiTest extends TestCase
     public function test_authenticated_user_can_update_canvas_state(): void
     {
         $user = User::factory()->create();
-        $whiteboard = Whiteboard::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $user->id]);
         $canvasState = ['version' => 2, 'elements' => [['id' => 'el1', 'type' => 'rectangle']]];
 
         $response = $this->actingAs($user)->patchJson("/api/whiteboards/{$whiteboard->id}", [

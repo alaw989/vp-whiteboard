@@ -3,12 +3,13 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Mail\NewRegistrationRequest;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 
@@ -17,9 +18,12 @@ class RegisteredUserController extends Controller
     /**
      * Handle an incoming registration request.
      *
+     * Creates the user in a 'pending' state and emails the owner for approval.
+     * The user cannot log in until an owner approves them.
+     *
      * @throws ValidationException
      */
-    public function store(Request $request): Response
+    public function store(Request $request): \Illuminate\Http\JsonResponse
     {
         $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -31,12 +35,46 @@ class RegisteredUserController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->string('password')),
+            'status' => 'pending',
         ]);
 
         event(new Registered($user));
 
-        Auth::login($user);
+        $this->notifyOwner($user);
 
-        return response()->noContent();
+        // 201 with a "pending" marker so the frontend shows the approval screen
+        // instead of navigating to the dashboard (no auto-login).
+        return response()->json([
+            'success' => true,
+            'message' => 'pending',
+            'data' => ['id' => $user->id],
+        ], 201);
+    }
+
+    private function notifyOwner(User $user): void
+    {
+        $ownerEmail = config('mail.admin_email');
+        if (! $ownerEmail) {
+            return;
+        }
+
+        $approveUrl = url('/approvals/'.$user->id.'/approve?'.http_build_query([
+            'signature' => $this->signedPayload($user, 'approve'),
+        ]));
+        $denyUrl = url('/approvals/'.$user->id.'/deny?'.http_build_query([
+            'signature' => $this->signedPayload($user, 'deny'),
+        ]));
+
+        Mail::to($ownerEmail)->send(new NewRegistrationRequest($user, $approveUrl, $denyUrl));
+    }
+
+    /**
+     * Build a stateless signature proving the link was generated for this user
+     * and action. (Kept simple — the confirmation page additionally requires an
+     * authenticated owner to act, so the link is just the discovery mechanism.)
+     */
+    private function signedPayload(User $user, string $action): string
+    {
+        return hash_hmac('sha256', $user->id.'|'.$action.'|'.$user->email, (string) config('app.key'));
     }
 }
