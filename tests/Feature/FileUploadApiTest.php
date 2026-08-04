@@ -89,4 +89,39 @@ class FileUploadApiTest extends TestCase
         $response->assertOk();
         $this->assertModelMissing($file);
     }
+
+    public function test_html_file_upload_is_rejected(): void
+    {
+        Storage::fake('public');
+        $user = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create();
+
+        $response = $this->actingAs($user)
+            ->postJson('/api/files', [
+                'whiteboard_id' => $whiteboard->id,
+                'file' => UploadedFile::fake()->create('evil.html', 100, 'text/html'),
+            ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseCount('whiteboard_files', 0);
+    }
+
+    public function test_serve_never_returns_client_supplied_content_type(): void
+    {
+        Storage::fake('public');
+        $whiteboard = Whiteboard::factory()->create();
+        $file = WhiteboardFile::factory()->create([
+            'whiteboard_id' => $whiteboard->id,
+            'file_type' => 'text/html', // hostile value
+            'storage_path' => 'uploads/evil.html',
+        ]);
+
+        Storage::disk('public')->put('uploads/evil.html', '<html><script>alert(1)</script></html>');
+
+        $response = $this->get("/api/files/{$file->id}/serve");
+
+        $response->assertOk();
+        $this->assertEquals('application/octet-stream', $response->headers->get('Content-Type'));
+        $this->assertEquals('nosniff', $response->headers->get('X-Content-Type-Options'));
+    }
 }
