@@ -1280,6 +1280,11 @@ const layerImageCache = new Map<string, HTMLImageElement>()
 const elementImageCache = new Map<string, HTMLImageElement>()
 
 function getLayerImage(src: string): HTMLImageElement | null {
+  // A layer with no src (PDFs restore with src stripped + needsRender:true, and
+  // the async re-render populates it shortly after) would produce a broken
+  // image that drawImage() throws on. Return null so the layer simply isn't
+  // drawn until a valid src arrives.
+  if (!src) return null
   if (layerImageCache.has(src)) {
     return layerImageCache.get(src)!
   }
@@ -1301,7 +1306,6 @@ watch(visibleLayers, (layers) => {
     }
   }
 }, { deep: true })
-
 // Bounding box cache for viewport clipping - use plain Map (non-reactive)
 // to avoid triggering re-renders when cache is updated
 const boundingBoxCache = new Map<string, { left: number; right: number; top: number; bottom: number }>()
