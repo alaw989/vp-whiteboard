@@ -84,7 +84,8 @@ async function handleLogin() {
     const redirect = (route.query.redirect as string) || '/'
     navigateTo(redirect, { replace: true })
   } catch (e: any) {
-    error.value = e?.data?.message || e?.message || 'Invalid credentials'
+    const msg = e?.data?.message || e?.message || 'Invalid credentials'
+    error.value = msg.includes('pending approval') ? 'Your account is pending approval. Please check back later.' : msg
   } finally {
     loading.value = false
   }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -9,7 +10,7 @@ class RegistrationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_new_users_can_register(): void
+    public function test_new_users_are_created_pending_and_not_authenticated(): void
     {
         $response = $this->post('/register', [
             'name' => 'Test User',
@@ -18,7 +19,13 @@ class RegistrationTest extends TestCase
             'password_confirmation' => 'password',
         ]);
 
-        $this->assertAuthenticated();
-        $response->assertNoContent();
+        $response->assertCreated();
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'test@example.com',
+            'status' => 'pending',
+        ]);
+
+        $this->assertGuest();
     }
 }
