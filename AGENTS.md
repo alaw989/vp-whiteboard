@@ -11,20 +11,22 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 1. **Local work** — branch off `develop` (e.g. `feat/...`, `fix/...`). Before pushing, run locally in `frontend/`:
    - `npm run typecheck` (must exit 0)
    - `npm test` (must pass — currently 320 tests)
+   - And at the repo root: `php artisan test` (must pass — currently 31 tests, no `.env` needed since `phpunit.xml` sets `APP_KEY`)
 2. **Open a PR** targeting **`develop`**.
-3. **CI auto-runs** typecheck + test (`.github/workflows/ci.yml`). Wait for the required `test` check to pass — branch protection on `develop` and `master` blocks the merge until it's green.
+3. **CI auto-runs** frontend typecheck + test and backend `php artisan test` (`.github/workflows/ci.yml`). Wait for the required `test` AND `backend-test` checks to pass — branch protection on `develop` and `master` blocks the merge until both are green.
 4. **Merge into `develop`** → triggers `.github/workflows/deploy-staging.yml` → pushes to the **staging droplet** (`staging-whiteboard.vp-associates.com`). `develop` always equals the staging server.
 5. **Monitor the deploy** (`gh run watch <id>` / `gh run list`).
 6. **Verify it reached staging**: `git -C /var/www/vp-whiteboard-staging rev-parse --short HEAD` matches the merge commit; `pm2 list` shows `vp-whiteboard-staging` + `vp-ws-server-staging` online.
 7. **Test on staging** — confirm the feature works and nothing is broken.
 8. **If OK, repeat for production**: open a PR `develop` → **`master`** (or merge), CI runs, merge → `.github/workflows/deploy.yml` → **production droplet** (`whiteboard.vp-associates.com`). Verify there too.
-9. Both `develop` and `master` have branch protection: required status check `test` (typecheck + vitest) must pass before merge.
+9. Both `develop` and `master` have branch protection: required status checks `test` (typecheck + vitest) and `backend-test` (Laravel `php artisan test`) must pass before merge.
 
 ### Test/CI facts
 
 - Test runner: vitest (`vitest.config.mts` inside `frontend/`, `@vitejs/plugin-vue` wired, `frontend/test/setup.ts` registers Nuxt-style Vue auto-imports).
 - `npm test` = `vitest run` (320 tests, 39 files). `npm run typecheck` = `vue-tsc --noEmit`.
-- CI workflow: `.github/workflows/ci.yml` (PR + push to develop/master). Deploys gate on the `test` job via `needs: test`.
+- Backend: `php artisan test` (31 tests). `phpunit.xml` sets `APP_KEY` + SQLite in-memory, so it runs without a `.env`.
+- CI workflow: `.github/workflows/ci.yml` (jobs `test` + `backend-test`, on PR + push to develop/master). Both deploy workflows gate on their `test` job via `needs: test`, and that job now also runs the backend tests.
 
 ## Fixes applied July 13, 2026 — Persistence & Upload
 
