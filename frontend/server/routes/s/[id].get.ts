@@ -1,34 +1,32 @@
-import { isValidSessionId } from '~/server/utils/session-id'
-
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
-  const laravelUrl = (config.laravelUrl as string) || 'http://localhost:8000'
-  const shortId = getRouterParam(event, 'id')
+  const laravelUrl = (config.public.laravelUrl as string) || 'http://localhost:8000'
+  const token = getRouterParam(event, 'id')
 
-  if (!shortId || !isValidSessionId(shortId)) {
+  if (!token) {
     return sendRedirect(event, '/', 302)
   }
 
   try {
-    // Look up whiteboard by share_token via Laravel API
-    const res = await $fetch<{ success: boolean; data?: { id: string } }>(
-      `${laravelUrl}/api/sessions/${shortId}`
+    // Resolve the share token via Laravel's public resolver.
+    const res = await $fetch<{ success: boolean; data?: { whiteboard_id: string } }>(
+      `${laravelUrl}/api/shares/${encodeURIComponent(token)}`
     )
 
-    if (!res.success || !res.data?.id) {
+    if (!res.success || !res.data?.whiteboard_id) {
       return sendRedirect(event, '/', 302)
     }
 
-    // Set a simple share cookie for WS relay auth bypass
-    setCookie(event, 'vp_share_token', shortId, {
+    // Set a share cookie so the WS relay and autosave authorize this client.
+    setCookie(event, 'vp_share_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 24 * 60 * 60,
+      maxAge: 7 * 24 * 60 * 60,
       path: '/',
     })
 
-    return sendRedirect(event, `/whiteboard/${res.data.id}`, 302)
+    return sendRedirect(event, `/whiteboard/${res.data.whiteboard_id}`, 302)
   } catch {
     return sendRedirect(event, '/', 302)
   }

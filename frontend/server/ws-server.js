@@ -105,9 +105,9 @@ async function isAuthed(cookieHeader, roomId) {
     const key = 'share:' + shareToken + ':' + roomId
     const cached = authCache.get(key)
     if (cached && cached.exp > now) return cached.ok
-    const url = `${LARAVEL_URL}/api/sessions/${encodeURIComponent(shareToken)}`
+    const url = `${LARAVEL_URL}/api/shares/${encodeURIComponent(shareToken)}`
     const { status, data } = await fetchJson(url, cookieHeader, AUTH_TIMEOUT_MS)
-    const ok = status === 200 && data && data.success && data.data && data.data.id === roomId
+    const ok = status === 200 && data && data.success && data.data && data.data.whiteboard_id === roomId
     authCache.set(key, { ok, exp: now + AUTH_CACHE_TTL_MS })
     if (ok) return true
   }
@@ -156,11 +156,12 @@ wss.on('connection', async (ws, req) => {
   const roomId = match && match[1] ? match[1] : 'default'
 
   // Validate auth against Laravel (Sanctum session OR scoped share token).
-  // Skipped when the WS server runs behind a reverse proxy (bound to 0.0.0.0
-  // with a full LARAVEL_URL like https://...) because the proxy/Nginx handles
-  // authentication at the HTTP level, and cookies aren't reliably forwarded on
-  // WebSocket upgrades through the proxy layer.
-  const skipAuth = HOST === '0.0.0.0'
+  // Auth is ON by default and only bypassed when explicitly allowed with
+  // WS_ALLOW_ANON=1. The previous `HOST === '0.0.0.0'` default effectively
+  // disabled auth in production (the relay bound to 0.0.0.0 behind nginx),
+  // letting anyone who knows a room UUID join. nginx forwards the Cookie
+  // header on WebSocket upgrades, so session/share cookies do reach us.
+  const skipAuth = process.env.WS_ALLOW_ANON === '1'
   if (!skipAuth) {
     const authed = await isAuthed(req.headers.cookie, roomId)
     if (!authed) {

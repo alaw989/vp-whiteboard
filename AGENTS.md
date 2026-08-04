@@ -11,20 +11,22 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 1. **Local work** — branch off `develop` (e.g. `feat/...`, `fix/...`). Before pushing, run locally in `frontend/`:
    - `npm run typecheck` (must exit 0)
    - `npm test` (must pass — currently 320 tests)
+   - And at the repo root: `php artisan test` (must pass — currently 31 tests, no `.env` needed since `phpunit.xml` sets `APP_KEY`)
 2. **Open a PR** targeting **`develop`**.
-3. **CI auto-runs** typecheck + test (`.github/workflows/ci.yml`). Wait for the required `test` check to pass — branch protection on `develop` and `master` blocks the merge until it's green.
+3. **CI auto-runs** frontend typecheck + test and backend `php artisan test` (`.github/workflows/ci.yml`). Wait for the required `test` AND `backend-test` checks to pass — branch protection on `develop` and `master` blocks the merge until both are green.
 4. **Merge into `develop`** → triggers `.github/workflows/deploy-staging.yml` → pushes to the **staging droplet** (`staging-whiteboard.vp-associates.com`). `develop` always equals the staging server.
 5. **Monitor the deploy** (`gh run watch <id>` / `gh run list`).
 6. **Verify it reached staging**: `git -C /var/www/vp-whiteboard-staging rev-parse --short HEAD` matches the merge commit; `pm2 list` shows `vp-whiteboard-staging` + `vp-ws-server-staging` online.
 7. **Test on staging** — confirm the feature works and nothing is broken.
 8. **If OK, repeat for production**: open a PR `develop` → **`master`** (or merge), CI runs, merge → `.github/workflows/deploy.yml` → **production droplet** (`whiteboard.vp-associates.com`). Verify there too.
-9. Both `develop` and `master` have branch protection: required status check `test` (typecheck + vitest) must pass before merge.
+9. Both `develop` and `master` have branch protection: required status checks `test` (typecheck + vitest) and `backend-test` (Laravel `php artisan test`) must pass before merge.
 
 ### Test/CI facts
 
 - Test runner: vitest (`vitest.config.mts` inside `frontend/`, `@vitejs/plugin-vue` wired, `frontend/test/setup.ts` registers Nuxt-style Vue auto-imports).
 - `npm test` = `vitest run` (320 tests, 39 files). `npm run typecheck` = `vue-tsc --noEmit`.
-- CI workflow: `.github/workflows/ci.yml` (PR + push to develop/master). Deploys gate on the `test` job via `needs: test`.
+- Backend: `php artisan test` (31 tests). `phpunit.xml` sets `APP_KEY` + SQLite in-memory, so it runs without a `.env`.
+- CI workflow: `.github/workflows/ci.yml` (jobs `test` + `backend-test`, on PR + push to develop/master). Both deploy workflows gate on their `test` job via `needs: test`, and that job now also runs the backend tests.
 
 ## Fixes applied July 13, 2026 — Persistence & Upload
 
@@ -84,7 +86,7 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 - Droplet prep: created `vp_whiteboard_production` DB + `vp_wb_prod` user (pw at `/root/.vp_wb_prod_dbpass`), wrote prod `.env` (APP_KEY, MySQL creds, `SESSION_COOKIE=laravel-session`, SANCTUM/FRONTEND URLs), rewrote prod nginx vhost mirroring staging (ports :3000/:3001, `/api/`+`/sanctum/` → PHP-FPM, `/api/_nuxt_icon/` → Nuxt, `/whiteboard:` → WS :3001).
 - Fixed `deploy.yml` PM2 double-prefix bug (Gotcha 11): paths are relative to `--cwd`, do NOT prefix with `frontend/`.
 - Rollback snapshot: nginx vhost backup `whiteboard.vp-associates.com.bak.1785794010`, old commit `dd613ff64261`, PM2 dump `dump.pm2.bak.1785794010`.
-- Seeded account: `vpassociates2025@vp-associates.com` / `password` (weak — user aware). Registration open via `/register`.
+- Seeded account `vpassociates2025@vp-associates.com` was created for login testing, then **deleted on Aug 4** (see Current production state). Registration open via `/register`.
 
 ### New: Register page
 
@@ -108,3 +110,46 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 - Replaced the three full-state observers with a single `ydoc.on('update')` handler broadcasting only the incremental delta, tagged `REMOTE_ORIGIN` on peer-applied updates so they're never echoed back.
 - Ignore peer `sync-state` entirely once local content exists (`yElements.length > 0 || yDocumentLayers.size > 0`) — DB is source of truth on load; live edits propagate via binary deltas.
 - `getLayerImage(src)` returns `null` when `src` is empty (skips draw until PDF re-render populates it).
+
+## Fixes applied Aug 4, 2026 — App audit + backend security + CI backend tests
+
+### App-wide audit (tools + backend)
+
+- Browser-tested on staging with real input: all draw tools (pen, highlighter, line, arrow, rectangle, circle, ellipse, polyline, arc, revision-cloud), annotate (stamp, text-annotation dialog, dimension), measure (distance), and eraser all create/persist elements with no console errors. Remaining modify tools (select, offset, mirror, rotate, scale, trim, extend, fillet) covered by the 320 unit tests.
+- Backend found 3 real issues (all fixed below). WS relay + persistence confirmed sound.
+
+### Fix: stored XSS via file upload (security)
+
+**Root cause:** `WhiteboardFileController@store` validated only `required|file|max:51200` — no MIME allowlist — and `serve()` returned the **client-supplied** `Content-Type` (`getClientMimeType()`). An authenticated user could upload an HTML/SVG file that executed as `text/html` in the app origin (stored XSS against any viewer of that board).
+
+**Fixes (in `app/Http/Controllers/Api/WhiteboardFileController.php`):**
+- Upload validates `mimes:pdf,jpeg,jpg,png,webp` (matches the client's allowlist in `useFileUpload.ts`).
+- `serve()` only ever returns an allowlisted content type (else `application/octet-stream`) + `X-Content-Type-Options: nosniff`.
+- Upload limit aligned: server now `max:10240` (10MB) to match the client.
+
+### Fix: no authorization on whiteboard mutations (security)
+
+**Root cause:** `WhiteboardController@update`/`destroy` had no ownership check — any authenticated user could edit/delete any whiteboard by ID; `store` accepted a client-supplied `created_by`.
+
+**Fixes (in `app/Http/Controllers/Api/WhiteboardController.php`):**
+- `store()` now records the authenticated `user_id`.
+- `update()`/`destroy()` return 403 for non-owners. Legacy boards without `user_id` remain editable (guest-created share boards).
+
+### Test suite green + CI gates
+
+- Fixed 30 real bugs (missing `import { ref } from 'vue'` in Extend/Fillet/Mirror tools, missing `getElementGeometry` in Scale tool, missing `deactivate()` in Measure-Distance tool — all masked by Nuxt auto-imports at runtime).
+- Fixed 5 stale test expectations (text-annotation needs `onMouseMove` before `onMouseUp`; geometryUtils fp-noise `toEqual`→`toBeCloseTo`; pass `rotationDelta`).
+- `vitest.config.ts` → `frontend/vitest.config.mts` + `@vitejs/plugin-vue` (ESM) + `frontend/test/setup.ts` (registers Nuxt-style Vue auto-imports) so SFCs parse in tests.
+- Fixed 320 `vue-tsc` errors (all in `.test.ts` files). Result: 320/320 frontend tests, 0 typecheck errors.
+- Added 5 backend tests (MIME rejection, safe serve content-type, ownership update/delete, owner update). Result: 31 backend tests.
+- **New `.github/workflows/ci.yml`** — `test` (frontend typecheck + vitest) + `backend-test` (PHP 8.4 + `composer install` + `php artisan test`) on every PR/push to develop/master.
+- Both deploy workflows gate the deploy job behind `needs: test`, and that `test` job now also runs the backend suite (PHP setup + composer + `php artisan test`), so a backend regression can't reach staging/prod.
+- `phpunit.xml` sets `APP_KEY` + SQLite in-memory so `php artisan test` runs without a `.env` (key:generate needs `.env`, which doesn't exist in CI).
+- Branch protection on `develop` + `master` requires BOTH `test` and `backend-test` checks. `strict: true` → when `master` has history `develop` lacks (merge commits from earlier promotions), merge `master` into `develop` first via a sync PR, then the promotion PR is CLEAN.
+- `.phpunit.result.cache` untracked + gitignored.
+
+### Current production state (Aug 4, 2026)
+
+- **Users:** `prod-smoke@vpdev.local` (test), `alaw989@gmail.com` (Austin Law). Seeded `vpassociates2025` account was deleted (strong pw was set, then removed entirely).
+- **Whiteboards:** `test1`, `test2` left in place (user chose to keep them).
+- **`gh` token** now has `workflow` scope (required to merge PRs that touch `.github/workflows/*`).

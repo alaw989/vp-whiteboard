@@ -41,6 +41,19 @@ class WhiteboardFileController extends Controller
             ], 404);
         }
 
+        // Authorize: owner OR a valid edit-role share for this board.
+        $share = $this->resolveShare($request, $whiteboard);
+        $user = $request->user();
+        $isOwner = $user && $whiteboard->user_id && (string) $whiteboard->user_id === (string) $user->id;
+        $isLegacyOwner = $user && !$whiteboard->user_id && ($user->isAdmin() || $whiteboard->created_by === $user->id);
+
+        if (! $isOwner && ! $isLegacyOwner && ! ($share && $share->role === 'edit')) {
+            return response()->json([
+                'success' => false,
+                'error' => 'You do not have permission to upload files',
+            ], 403);
+        }
+
         $file = $request->file('file');
         $fileName = $file->getClientOriginalName();
         $fileType = $file->getClientMimeType();
@@ -117,5 +130,23 @@ class WhiteboardFileController extends Controller
         return response()->json([
             'success' => true,
         ]);
+    }
+
+    /**
+     * Resolve a valid share credential for a whiteboard, if present.
+     */
+    private function resolveShare(Request $request, Whiteboard $whiteboard): ?\App\Models\WhiteboardShare
+    {
+        $token = $request->header('X-Share-Token')
+            ?? $request->query('share')
+            ?? $request->cookie('vp_share_token');
+
+        if (! is_string($token) || $token === '') {
+            return null;
+        }
+
+        $share = \App\Models\WhiteboardShare::findActiveByToken($token);
+
+        return $share && $share->whiteboard_id === $whiteboard->id ? $share : null;
     }
 }

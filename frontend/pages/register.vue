@@ -64,24 +64,33 @@
             />
           </div>
 
-          <div v-if="error" class="text-red-600 text-sm bg-red-50 rounded-lg px-3 py-2">
-            {{ error }}
-          </div>
+      <div v-if="error" class="text-red-600 text-sm bg-red-50 rounded-lg px-3 py-2">
+        {{ error }}
+      </div>
 
-          <button
-            type="submit"
-            class="btn-primary w-full"
-            :disabled="loading || !name || !email || !password || !passwordConfirmation"
-          >
-            <div v-if="loading" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-            <span v-else>Create Account</span>
-          </button>
-        </form>
+      <button
+        type="submit"
+        class="btn-primary w-full"
+        :disabled="loading || !name || !email || !password || !passwordConfirmation"
+      >
+        <div v-if="loading" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+        <span v-else>Request Access</span>
+      </button>
+    </form>
 
-        <p class="text-sm text-center text-gray-500 mt-6">
-          Already have an account?
-          <NuxtLink to="/login" class="text-blue-600 hover:underline font-medium">Sign in</NuxtLink>
-        </p>
+    <div v-if="registered" class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+      <Icon name="mdi:email-check-outline" class="w-10 h-10 text-blue-600 mx-auto mb-2" />
+      <h2 class="text-lg font-semibold text-blue-900">Request received</h2>
+      <p class="text-sm text-blue-700 mt-1">
+        Your access request has been sent to the account owner for approval.
+        You'll be able to sign in once your request is approved.
+      </p>
+    </div>
+
+    <p v-if="!registered" class="text-sm text-center text-gray-500 mt-6">
+      Already have an account?
+      <NuxtLink to="/login" class="text-blue-600 hover:underline font-medium">Sign in</NuxtLink>
+    </p>
       </div>
     </div>
   </div>
@@ -96,6 +105,7 @@ const password = ref('')
 const passwordConfirmation = ref('')
 const error = ref('')
 const loading = ref(false)
+const registered = ref(false)
 
 async function handleRegister() {
   error.value = ''
@@ -113,8 +123,8 @@ async function handleRegister() {
       },
     })
 
-    const redirect = (route.query.redirect as string) || '/'
-    navigateTo(redirect, { replace: true })
+    // No auto-login — the request goes to the owner for approval.
+    registered.value = true
   } catch (e: any) {
     const data = e?.data
     error.value =

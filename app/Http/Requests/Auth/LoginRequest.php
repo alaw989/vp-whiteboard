@@ -50,6 +50,16 @@ class LoginRequest extends FormRequest
             ]);
         }
 
+        // A pending/denied user can't log in — they must be approved first.
+        if (! Auth::user()->isApproved()) {
+            Auth::logout();
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'email' => __('auth.pending'),
+            ]);
+        }
+
         RateLimiter::clear($this->throttleKey());
     }
 
