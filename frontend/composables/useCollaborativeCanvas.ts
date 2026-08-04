@@ -230,12 +230,15 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         const state = exportState()
         ws?.send(JSON.stringify({ type: 'sync-state', state }))
       } else if (message.type === 'sync-state' && message.state) {
-        // Apply received state — but never let a stale/empty peer state clobber
-        // content we already have (e.g. freshly restored from the DB). A peer
-        // that hasn't loaded yet may respond to sync-request with an empty doc.
-        const incomingElements = Array.isArray(message.state.elements) ? message.state.elements : []
-        const hasLocalElements = yElements.length > 0
-        if (incomingElements.length > 0 || !hasLocalElements) {
+        // The DB is the source of truth on initial load. If we already have
+        // content (restored from the DB or from user edits), ignore a peer's
+        // sync-state entirely — a stale peer that joined before the PDF/layers
+        // were added would otherwise REPLACE our freshly-restored documentLayers
+        // with its older state ('flash then gone'). Live edits propagate via the
+        // binary Yjs deltas instead, so we only use sync-state when we have
+        // nothing yet.
+        const hasLocalContent = yElements.length > 0 || yDocumentLayers.size > 0
+        if (!hasLocalContent) {
           importState(message.state)
         }
       } else if (message.type === 'ping') {
