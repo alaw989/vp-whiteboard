@@ -29,7 +29,7 @@ class WhiteboardFileController extends Controller
     public function store(Request $request): JsonResponse
     {
         $request->validate([
-            'file' => 'required|file|max:51200', // 50MB max
+            'file' => ['required', 'file', 'max:10240', 'mimes:pdf,jpeg,jpg,png,webp'], // 10MB max (matches client)
             'whiteboard_id' => 'required|string',
         ]);
 
@@ -82,10 +82,18 @@ class WhiteboardFileController extends Controller
             abort(404);
         }
 
+        // Serve with the type recorded at upload (validated against an allowlist
+        // on store), never the client-supplied value, plus nosniff so a browser
+        // can't sniff a hostile file as HTML/script.
+        $safeType = in_array($file->file_type, ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'], true)
+            ? $file->file_type
+            : 'application/octet-stream';
+
         return response()->file($path, [
             'Access-Control-Allow-Origin' => env('FRONTEND_URL', 'http://localhost:3000'),
             'Access-Control-Allow-Credentials' => 'true',
-            'Content-Type' => $file->file_type,
+            'Content-Type' => $safeType,
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 

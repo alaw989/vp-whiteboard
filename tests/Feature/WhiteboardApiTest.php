@@ -142,11 +142,50 @@ class WhiteboardApiTest extends TestCase
     public function test_authenticated_user_can_list_whiteboards(): void
     {
         $user = User::factory()->create();
-        Whiteboard::factory()->count(3)->create();
+        Whiteboard::factory()->count(2)->create();
 
         $response = $this->actingAs($user)->getJson('/api/whiteboards');
 
         $response->assertOk()
-            ->assertJsonCount(3, 'data');
+            ->assertJsonCount(2, 'data');
+    }
+
+    public function test_user_cannot_update_whiteboard_they_do_not_own(): void
+    {
+        $owner = User::factory()->create();
+        $intruder = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id]);
+
+        $response = $this->actingAs($intruder)->patchJson("/api/whiteboards/{$whiteboard->id}", [
+            'name' => 'Hacked',
+        ]);
+
+        $response->assertForbidden();
+        $this->assertDatabaseHas('whiteboards', ['id' => $whiteboard->id, 'name' => $whiteboard->name]);
+    }
+
+    public function test_user_cannot_delete_whiteboard_they_do_not_own(): void
+    {
+        $owner = User::factory()->create();
+        $intruder = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id]);
+
+        $response = $this->actingAs($intruder)->deleteJson("/api/whiteboards/{$whiteboard->id}");
+
+        $response->assertForbidden();
+        $this->assertDatabaseHas('whiteboards', ['id' => $whiteboard->id]);
+    }
+
+    public function test_owner_can_update_whiteboard(): void
+    {
+        $owner = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id]);
+
+        $response = $this->actingAs($owner)->patchJson("/api/whiteboards/{$whiteboard->id}", [
+            'name' => 'Renamed',
+        ]);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('whiteboards', ['id' => $whiteboard->id, 'name' => 'Renamed']);
     }
 }
