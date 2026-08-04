@@ -29,7 +29,7 @@ describe('usePolylineTool', () => {
     const handled = tool.onKeyDown?.({ key: 'Enter' } as KeyboardEvent)
     expect(handled).toBe(true)
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    expect(ctx.emitElementAdd.mock.calls[0][0].type).toBe('polyline')
+    expect(vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!.type).toBe('polyline')
   })
 
   it('Escape key cancels without emitting', () => {
@@ -72,7 +72,7 @@ describe('usePolylineTool', () => {
     const handled = tool.onKeyDown?.({ key: 'c' } as KeyboardEvent)
     expect(handled).toBe(true)
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    expect(ctx.emitElementAdd.mock.calls[0][0].data.closed).toBe(true)
+    expect((vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]! as any).data.closed).toBe(true)
   })
 
   it('C key on <3 vertices does nothing', () => {

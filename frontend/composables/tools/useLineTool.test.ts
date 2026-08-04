@@ -36,10 +36,10 @@ describe('useLineTool', () => {
     tool.onMouseMove?.({}, { x: 200, y: 200 })
     tool.onMouseUp?.({}, { x: 200, y: 200 })
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    const el = ctx.emitElementAdd.mock.calls[0][0]
+    const el = vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!
     expect(el.type).toBe('line')
-    expect(el.data.start).toEqual([100, 100])
-    expect(el.data.end).toEqual([200, 200])
+    expect((el as any).data.start).toEqual([100, 100])
+    expect((el as any).data.end).toEqual([200, 200])
   })
 
   it('onMouseUp with zero-length does NOT emit', () => {

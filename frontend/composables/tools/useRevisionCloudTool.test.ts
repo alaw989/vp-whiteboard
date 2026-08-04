@@ -28,7 +28,7 @@ describe('useRevisionCloudTool', () => {
     const handled = tool.onKeyDown?.({ key: 'Enter' } as KeyboardEvent)
     expect(handled).toBe(true)
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    expect(ctx.emitElementAdd.mock.calls[0][0].type).toBe('revision-cloud')
+    expect(vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!.type).toBe('revision-cloud')
   })
 
   it('Escape cancels without emitting', () => {
@@ -78,7 +78,7 @@ describe('useRevisionCloudTool', () => {
     tool.onMouseDown?.({}, { x: 0, y: 0 })
     tool.onMouseDown?.({}, { x: 200, y: 200 })
     tool.onKeyDown?.({ key: 'Enter' } as KeyboardEvent)
-    expect(ctx.emitElementAdd.mock.calls[0][0].data.closed).toBe(true)
+    expect((vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]! as any).data.closed).toBe(true)
   })
 
   it('deactivate resets state', () => {

@@ -79,9 +79,9 @@ describe('useToolHandlers', () => {
   it('dispatch methods silently handle missing handlers', () => {
     const { dispatchMouseDown, dispatchMouseMove, dispatchMouseUp } = useToolHandlers()
     expect(() => {
-      dispatchMouseDown('x', {}, { x: 0, y: 0 })
-      dispatchMouseMove('x', {}, { x: 0, y: 0 })
-      dispatchMouseUp('x', {}, { x: 0, y: 0 })
+      dispatchMouseDown('x' as any, {}, { x: 0, y: 0 })
+      dispatchMouseMove('x' as any, {}, { x: 0, y: 0 })
+      dispatchMouseUp('x' as any, {}, { x: 0, y: 0 })
     }).not.toThrow()
   })
 

@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { useSelectTool } from './useSelectTool'
 import { createMockToolContext } from './__tests__/mockToolContext'
@@ -54,7 +55,7 @@ describe('useSelectTool', () => {
 
   it('onMouseMove while rubber banding calls updateRubberBand', () => {
     const ctx = createMockToolContext({
-      isRubberBanding: { value: true },
+      isRubberBanding: ref(true),
       getStagePointerPos: vi.fn(() => ({ x: 300, y: 400 })),
     })
     const handler = useSelectTool(ctx)
@@ -66,7 +67,7 @@ describe('useSelectTool', () => {
 
   it('onMouseMove while NOT rubber banding does nothing', () => {
     const ctx = createMockToolContext({
-      isRubberBanding: { value: false },
+      isRubberBanding: ref(false),
     })
     const handler = useSelectTool(ctx)
 
@@ -77,7 +78,7 @@ describe('useSelectTool', () => {
 
   it('onMouseUp while rubber banding calls endRubberBand', () => {
     const ctx = createMockToolContext({
-      isRubberBanding: { value: true },
+      isRubberBanding: ref(true),
     })
     const handler = useSelectTool(ctx)
 
@@ -88,7 +89,7 @@ describe('useSelectTool', () => {
 
   it('onMouseUp while NOT rubber banding does nothing', () => {
     const ctx = createMockToolContext({
-      isRubberBanding: { value: false },
+      isRubberBanding: ref(false),
     })
     const handler = useSelectTool(ctx)
 

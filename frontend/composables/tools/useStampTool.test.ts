@@ -34,7 +34,7 @@ describe('useStampTool', () => {
 
     handler.onMouseDown?.({}, { x: 200, y: 150 })
 
-    const emitted = ctx.emitElementAdd.mock.calls[0][0]
+    const emitted = vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!
     expect(emitted.type).toBe('stamp')
   })
 
@@ -44,9 +44,9 @@ describe('useStampTool', () => {
 
     handler.onMouseDown?.({}, { x: 200, y: 150 })
 
-    const emitted = ctx.emitElementAdd.mock.calls[0][0]
-    expect(emitted.data.stampType).toBe('REVISED')
-    expect(emitted.data.text).toBe('REVISED')
+    const emitted = vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!
+    expect((emitted as any).data.stampType).toBe('REVISED')
+    expect((emitted as any).data.text).toBe('REVISED')
   })
 
   it('default stampType APPROVED places APPROVED stamp', () => {
@@ -55,9 +55,9 @@ describe('useStampTool', () => {
 
     handler.onMouseDown?.({}, { x: 200, y: 150 })
 
-    const emitted = ctx.emitElementAdd.mock.calls[0][0]
-    expect(emitted.data.stampType).toBe('APPROVED')
-    expect(emitted.data.text).toBe('APPROVED')
+    const emitted = vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!
+    expect((emitted as any).data.stampType).toBe('APPROVED')
+    expect((emitted as any).data.text).toBe('APPROVED')
   })
 
   it('findSnapPoint is called', () => {
@@ -79,9 +79,9 @@ describe('useStampTool', () => {
 
     handler.onMouseDown?.({}, { x: 200, y: 150 })
 
-    const emitted = ctx.emitElementAdd.mock.calls[0][0]
-    expect(emitted.data.x).toBeLessThan(300)
-    expect(emitted.data.y).toBeLessThan(100)
+    const emitted = vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!
+    expect((emitted as any).data.x).toBeLessThan(300)
+    expect((emitted as any).data.y).toBeLessThan(100)
   })
 
   it('does nothing when currentStampType is not set', () => {

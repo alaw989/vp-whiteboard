@@ -11,8 +11,8 @@ describe('useFilletTool', () => {
     const ctx = createMockToolContext({ elements: [line1] })
     const tool = useFilletTool(ctx)
     tool.onMouseDown?.(null, { x: 100, y: 100 })
-    expect(tool.state.firstLineId.value).toBe('line1')
-    expect(tool.state.step.value).toBe('second-line')
+    expect(tool.state!.firstLineId.value).toBe('line1')
+    expect(tool.state!.step.value).toBe('second-line')
   })
 
   it('step 2: click near second line creates fillet-arc element and updates both lines', () => {
@@ -26,15 +26,15 @@ describe('useFilletTool', () => {
     })
     const ctx = createMockToolContext({ elements: [line1, line2] })
     const tool = useFilletTool(ctx)
-    tool.state.firstLineId.value = 'line1'
-    tool.state.step.value = 'second-line'
+    tool.state!.firstLineId.value = 'line1'
+    tool.state!.step.value = 'second-line'
     tool.onMouseDown?.(null, { x: 100, y: 0 })
     expect(ctx.emitElementUpdate).toHaveBeenCalledTimes(2)
     expect(ctx.emitElementAdd).toHaveBeenCalled()
     const arcEl = (ctx.emitElementAdd as any).mock.calls[0][0]
     expect(arcEl.type).toBe('fillet-arc')
-    expect(tool.state.firstLineId.value).toBeNull()
-    expect(tool.state.step.value).toBe('first-line')
+    expect(tool.state!.firstLineId.value).toBeNull()
+    expect(tool.state!.step.value).toBe('first-line')
   })
 
   it('lines that do not intersect create no fillet', () => {
@@ -48,8 +48,8 @@ describe('useFilletTool', () => {
     })
     const ctx = createMockToolContext({ elements: [line1, line2] })
     const tool = useFilletTool(ctx)
-    tool.state.firstLineId.value = 'line1'
-    tool.state.step.value = 'second-line'
+    tool.state!.firstLineId.value = 'line1'
+    tool.state!.step.value = 'second-line'
     tool.onMouseDown?.(null, { x: 100, y: 200 })
     expect(ctx.emitElementUpdate).not.toHaveBeenCalled()
     expect(ctx.emitElementAdd).not.toHaveBeenCalled()
@@ -58,34 +58,34 @@ describe('useFilletTool', () => {
   it('Escape from second-line goes back to first-line', () => {
     const ctx = createMockToolContext()
     const tool = useFilletTool(ctx)
-    tool.state.step.value = 'second-line'
+    tool.state!.step.value = 'second-line'
     const event = new KeyboardEvent('keydown', { key: 'Escape' })
     const result = tool.onKeyDown?.(event)
     expect(result).toBe(true)
-    expect(tool.state.step.value).toBe('first-line')
-    expect(tool.state.firstLineId.value).toBeNull()
+    expect(tool.state!.step.value).toBe('first-line')
+    expect(tool.state!.firstLineId.value).toBeNull()
   })
 
   it('Escape from first-line with line selected resets', () => {
     const ctx = createMockToolContext()
     const tool = useFilletTool(ctx)
-    tool.state.firstLineId.value = 'some-line'
+    tool.state!.firstLineId.value = 'some-line'
     const event = new KeyboardEvent('keydown', { key: 'Escape' })
     const result = tool.onKeyDown?.(event)
     expect(result).toBe(true)
-    expect(tool.state.firstLineId.value).toBeNull()
-    expect(tool.state.step.value).toBe('first-line')
+    expect(tool.state!.firstLineId.value).toBeNull()
+    expect(tool.state!.step.value).toBe('first-line')
   })
 
   it('deactivate resets all state', () => {
     const ctx = createMockToolContext()
     const tool = useFilletTool(ctx)
-    tool.state.firstLineId.value = 'some-line'
-    tool.state.step.value = 'second-line'
+    tool.state!.firstLineId.value = 'some-line'
+    tool.state!.step.value = 'second-line'
     tool.deactivate?.()
-    expect(tool.state.firstLineId.value).toBeNull()
-    expect(tool.state.step.value).toBe('first-line')
-    expect(tool.state.highlightId.value).toBeNull()
+    expect(tool.state!.firstLineId.value).toBeNull()
+    expect(tool.state!.step.value).toBe('first-line')
+    expect(tool.state!.highlightId.value).toBeNull()
   })
 
   it('preview/highlight on mouse move', () => {
@@ -96,7 +96,7 @@ describe('useFilletTool', () => {
     const ctx = createMockToolContext({ elements: [line1] })
     const tool = useFilletTool(ctx)
     tool.onMouseMove?.(null, { x: 100, y: 100 })
-    expect(tool.state.highlightId.value).toBe('line1')
+    expect(tool.state!.highlightId.value).toBe('line1')
   })
 
   it('state exposes filletRadius, firstLineId, step, highlightId', () => {
