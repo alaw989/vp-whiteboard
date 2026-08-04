@@ -230,8 +230,14 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         const state = exportState()
         ws?.send(JSON.stringify({ type: 'sync-state', state }))
       } else if (message.type === 'sync-state' && message.state) {
-        // Apply received state
-        importState(message.state)
+        // Apply received state — but never let a stale/empty peer state clobber
+        // content we already have (e.g. freshly restored from the DB). A peer
+        // that hasn't loaded yet may respond to sync-request with an empty doc.
+        const incomingElements = Array.isArray(message.state.elements) ? message.state.elements : []
+        const hasLocalElements = yElements.length > 0
+        if (incomingElements.length > 0 || !hasLocalElements) {
+          importState(message.state)
+        }
       } else if (message.type === 'ping') {
         // Server heartbeat — respond immediately so the relay knows we're alive
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -243,9 +249,10 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       // Not JSON - treat as binary Yjs update
     }
 
-    // Apply binary Yjs update (CRDT sync)
+    // Apply binary Yjs update (CRDT sync) — tag with REMOTE_ORIGIN so the
+    // ydoc 'update' handler above doesn't echo it back to peers.
     try {
-      Y.applyUpdate(ydoc, data)
+      Y.applyUpdate(ydoc, data, REMOTE_ORIGIN)
     } catch (e) {
       console.error('[Yjs WS] Failed to apply Yjs update:', e)
     }
@@ -673,36 +680,22 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     ydoc.destroy()
   }
 
-  /**
-   * Broadcast Yjs document update to all connected clients
-   */
-  function broadcastUpdate(update: Uint8Array) {
-    sendBinary(update)
-  }
+  // Origin used to tag updates we receive from a peer so we don't re-broadcast
+  // them back (which caused an infinite echo storm: A applies B's full-state
+  // update -> A's observers fire -> A broadcasts full state back -> B applies
+  // -> B's observers fire -> ... payloads growing, duplicates accumulating, and
+  // the corrupted doc's autosave PATCHing the DB with wiped state).
+  const REMOTE_ORIGIN = 'remote'
 
-  /**
-   * Observe Yjs document changes and broadcast them
-   */
-  yElements.observe((event) => {
-    // Get the update and broadcast it
-    const update = Y.encodeStateAsUpdate(ydoc)
-    sendBinary(update)
-  })
-
-  /**
-   * Observe yMeta changes (viewport, scale, document layers)
-   */
-  yMeta.observe((event) => {
-    const update = Y.encodeStateAsUpdate(ydoc)
-    sendBinary(update)
-  })
-
-  /**
-   * Observe yDocumentLayers changes
-   */
-  yDocumentLayers.observe(() => {
-    const update = Y.encodeStateAsUpdate(ydoc)
-    sendBinary(update)
+  // Observe Yjs document updates and broadcast only the delta to peers.
+  // ydoc.on('update') fires with the incremental update (not the full state)
+  // and its origin, so a change we apply from a peer (origin 'remote') is
+  // never echoed back. Local edits / imports (any other origin) broadcast.
+  ydoc.on('update', (update: Uint8Array, origin: unknown) => {
+    if (origin === REMOTE_ORIGIN) return
+    if (update && update.byteLength > 0) {
+      sendBinary(update)
+    }
   })
 
   /**
