@@ -21,18 +21,18 @@ describe('Select tool — nav workflow', () => {
       .mockReturnValueOnce(true)
       .mockReturnValue(false)
 
-    tool.onMouseDown({}, { x: 150, y: 150 })
+    tool.onMouseDown!({}, { x: 150, y: 150 })
     expect(ctx.selectElementAtPosition).toHaveBeenCalledWith(150, 150, false)
     expect(ctx.startRubberBand).not.toHaveBeenCalled()
 
-    tool.onMouseDown({}, { x: 10, y: 10 })
+    tool.onMouseDown!({}, { x: 10, y: 10 })
     expect(ctx.startRubberBand).toHaveBeenCalledWith(10, 10)
 
     ctx.isRubberBanding.value = true
-    tool.onMouseMove({}, { x: 300, y: 300 })
+    tool.onMouseMove!({}, { x: 300, y: 300 })
     expect(ctx.updateRubberBand).toHaveBeenCalledWith(300, 300)
 
-    tool.onMouseUp({}, { x: 300, y: 300 })
+    tool.onMouseUp!({}, { x: 300, y: 300 })
     expect(ctx.endRubberBand).toHaveBeenCalled()
   })
 })

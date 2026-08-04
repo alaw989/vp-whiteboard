@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createMockToolContext } from './__tests__/mockToolContext'
 import { useCircleTool } from './useCircleTool'
 
@@ -18,11 +18,11 @@ describe('useCircleTool', () => {
     tool.onMouseMove?.({}, { x: 130, y: 100 })
     tool.onMouseUp?.({}, { x: 130, y: 100 })
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    const el = ctx.emitElementAdd.mock.calls[0][0]
+    const el = vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!
     expect(el.type).toBe('circle')
-    expect(el.data.cx).toBe(100)
-    expect(el.data.cy).toBe(100)
-    expect(el.data.radius).toBe(30)
+    expect((el as any).data.cx).toBe(100)
+    expect((el as any).data.cy).toBe(100)
+    expect((el as any).data.radius).toBe(30)
   })
 
   it('min-radius guard (5px) does NOT emit', () => {

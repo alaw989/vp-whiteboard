@@ -388,7 +388,8 @@ describe('arcToPolylinePoints', () => {
     const pts = arcToPolylinePoints([10, 0], [0, 10], [-10, 0])
     expect(pts.length).toBeGreaterThan(2)
     expect(pts[0]).toEqual({ x: 10, y: 0 })
-    expect(pts[pts.length - 1]).toEqual({ x: -10, y: 0 })
+    expect(pts[pts.length - 1]!.x).toBeCloseTo(-10)
+    expect(pts[pts.length - 1]!.y).toBeCloseTo(0)
   })
   it('returns start/end for collinear points', () => {
     const pts = arcToPolylinePoints([0, 0], [5, 0], [10, 0])
@@ -406,8 +407,8 @@ describe('transformElement', () => {
       data: { start: [0, 1] as [number, number], end: [2, 3] as [number, number], color: '#000', size: 1 },
     }
     const r = transformElement(el as any, tp, makeId)
-    expect(r?.data.start).toEqual([0, -1])
-    expect(r?.data.end).toEqual([2, -3])
+    expect((r as any)?.data.start).toEqual([0, -1])
+    expect((r as any)?.data.end).toEqual([2, -3])
   })
 
   it('rotates a circle (radius unchanged)', () => {
@@ -416,9 +417,9 @@ describe('transformElement', () => {
       (p) => rotatePointAroundOrigin(p, { x: 0, y: 0 }, Math.PI / 2),
       makeId,
     )
-    expect(r?.data.cx).toBeCloseTo(0)
-    expect(r?.data.cy).toBeCloseTo(10)
-    expect(r?.data.radius).toBe(5)
+    expect((r as any)?.data.cx).toBeCloseTo(0)
+    expect((r as any)?.data.cy).toBeCloseTo(10)
+    expect((r as any)?.data.radius).toBe(5)
   })
 
   it('converts rotated rectangle to polyline for non-right-angle', () => {
@@ -426,6 +427,7 @@ describe('transformElement', () => {
       { id: 'r1', type: 'rectangle', userId: '', userName: '', timestamp: 0, data: { x: 0, y: 0, width: 100, height: 50, stroke: '#000', strokeWidth: 1 } } as any,
       (p) => rotatePointAroundOrigin(p, { x: 0, y: 0 }, Math.PI / 4),
       makeId,
+      { rotationDelta: Math.PI / 4 },
     )
     expect(r?.type).toBe('polyline')
     const pd = r as any

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createMockToolContext } from './__tests__/mockToolContext'
 import { useHighlighterTool } from './useHighlighterTool'
 
@@ -25,7 +25,7 @@ describe('useHighlighterTool', () => {
     tool.onMouseMove?.({}, { x: 30, y: 40 })
     tool.onMouseUp?.({}, { x: 30, y: 40 })
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    expect(ctx.emitElementAdd.mock.calls[0][0].data.tool).toBe('highlighter')
+    expect((vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]! as any).data.tool).toBe('highlighter')
   })
 
   it('onMouseUp with single point does NOT emit', () => {

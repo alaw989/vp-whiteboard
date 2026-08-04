@@ -40,5 +40,11 @@ export function useMeasureDistanceTool(ctx: ToolContext): ToolHandler {
       ctx.updateMeasurementPreview(updatePos)
       ctx.currentSnapPoint.value = snap || null
     },
+    deactivate() {
+      // Abort any in-progress measurement so switching tools doesn't leave
+      // stale isMeasuring state behind.
+      ctx.cancelMeasurement()
+      startPoint.value = null
+    },
   }
 }

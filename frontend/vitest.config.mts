@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config'
+import vue from '@vitejs/plugin-vue'
 import { fileURLToPath } from 'node:url'
 
 // Nuxt maps `~` to the frontend root; mirror that so tests can import
@@ -7,11 +8,13 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: ['**/*.test.ts'],
-    root: fileURLToPath(new URL('./frontend', import.meta.url)),
+    root: fileURLToPath(new URL('./', import.meta.url)),
+    setupFiles: [fileURLToPath(new URL('./test/setup.ts', import.meta.url))],
   },
+  plugins: [vue() as any],
   resolve: {
     alias: {
-      '~': fileURLToPath(new URL('./frontend', import.meta.url)),
+      '~': fileURLToPath(new URL('./', import.meta.url)),
     },
   },
 })

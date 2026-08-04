@@ -23,7 +23,7 @@ describe('usePenTool', () => {
     const tool = usePenTool(ctx)
     tool.onMouseDown?.({}, { x: 10, y: 20 })
     expect(startActiveStroke).toHaveBeenCalledOnce()
-    expect(startActiveStroke.mock.calls[0][0]).toMatch(/^test-user-\d+$/)
+    expect(startActiveStroke.mock.calls[0]![0]!).toMatch(/^test-user-\d+$/)
   })
 
   it('onMouseMove appends point when drawing', () => {
@@ -62,8 +62,8 @@ describe('usePenTool', () => {
     tool.onMouseMove?.({}, { x: 30, y: 40 })
     tool.onMouseUp?.({}, { x: 30, y: 40 })
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    expect(ctx.emitElementAdd.mock.calls[0][0].type).toBe('stroke')
-    expect(ctx.emitElementAdd.mock.calls[0][0].data.tool).toBe('pen')
+    expect(vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!.type).toBe('stroke')
+    expect((vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]! as any).data.tool).toBe('pen')
   })
 
   it('onMouseUp with 2+ points calls endActiveStroke', () => {
@@ -75,7 +75,7 @@ describe('usePenTool', () => {
     tool.onMouseMove?.({}, { x: 30, y: 40 })
     tool.onMouseUp?.({}, { x: 30, y: 40 })
     expect(endActiveStroke).toHaveBeenCalledOnce()
-    expect(endActiveStroke.mock.calls[0][1].type).toBe('stroke')
+    expect(endActiveStroke.mock.calls[0]![1]!.type).toBe('stroke')
   })
 
   it('onMouseUp with single point does NOT emit', () => {

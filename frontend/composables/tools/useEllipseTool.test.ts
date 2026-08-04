@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createMockToolContext } from './__tests__/mockToolContext'
 import { useEllipseTool } from './useEllipseTool'
 
@@ -18,7 +18,7 @@ describe('useEllipseTool', () => {
     tool.onMouseMove?.({}, { x: 100, y: 200 })
     tool.onMouseUp?.({}, { x: 100, y: 200 })
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    expect(ctx.emitElementAdd.mock.calls[0][0].type).toBe('ellipse')
+    expect(vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!.type).toBe('ellipse')
   })
 
   it('min-size guard does NOT emit', () => {

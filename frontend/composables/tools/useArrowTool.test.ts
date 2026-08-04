@@ -26,7 +26,7 @@ describe('useArrowTool', () => {
     tool.onMouseMove?.({}, { x: 300, y: 300 })
     tool.onMouseUp?.({}, { x: 300, y: 300 })
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    expect(ctx.emitElementAdd.mock.calls[0][0].type).toBe('arrow')
+    expect(vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!.type).toBe('arrow')
   })
 
   it('zero-length guard does not emit', () => {

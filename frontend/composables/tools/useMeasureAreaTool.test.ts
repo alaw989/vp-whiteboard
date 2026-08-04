@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { useMeasureAreaTool } from './useMeasureAreaTool'
 import { createMockToolContext, createSampleElement } from './__tests__/mockToolContext'
@@ -6,7 +7,7 @@ function createStageMock(intersectingShapes: any[] = []) {
   const stage = {
     getAllIntersections: vi.fn(() => intersectingShapes),
     container: vi.fn(() => ({ style: { cursor: '' } })),
-    getNode: vi.fn(function () { return this }),
+    getNode: vi.fn(function (this: unknown) { return this }),
   }
   return stage
 }
@@ -31,7 +32,7 @@ describe('useMeasureAreaTool', () => {
     const shape = createShapeMock()
     const stage = createStageMock([shape])
     const ctx = createMockToolContext({
-      stageRef: { value: stage },
+      stageRef: ref(stage),
       getStagePointerPos: vi.fn(() => ({ x: 100, y: 200 })),
       elements: [createSampleElement({ id: 'el-1', type: 'rectangle' })],
       measureArea: vi.fn(() => true),
@@ -47,7 +48,7 @@ describe('useMeasureAreaTool', () => {
 
   it('does nothing when stageRef is null', () => {
     const ctx = createMockToolContext({
-      stageRef: { value: null },
+      stageRef: ref(null),
     })
     const handler = useMeasureAreaTool(ctx)
 
@@ -60,7 +61,7 @@ describe('useMeasureAreaTool', () => {
     const shape = createShapeMock()
     const stage = createStageMock([shape])
     const ctx = createMockToolContext({
-      stageRef: { value: stage },
+      stageRef: ref(stage),
       getStagePointerPos: vi.fn(() => ({ x: 100, y: 200 })),
       elements: [createSampleElement({ id: 'el-1', type: 'rectangle' })],
       measureArea: vi.fn(() => true),
@@ -76,7 +77,7 @@ describe('useMeasureAreaTool', () => {
     const shape = createShapeMock()
     const stage = createStageMock([shape])
     const ctx = createMockToolContext({
-      stageRef: { value: stage },
+      stageRef: ref(stage),
       getStagePointerPos: vi.fn(() => ({ x: 100, y: 200 })),
       elements: [createSampleElement({ id: 'el-1', type: 'rectangle' })],
       measureArea: vi.fn(() => false),
