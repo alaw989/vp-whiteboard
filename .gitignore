@@ -69,3 +69,4 @@ IMPLEMENTATION_PLAN.md
 
 # Laravel storage symlink (env-specific; created per-env by php artisan storage:link)
 public/storage
+.phpunit.result.cache

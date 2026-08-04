@@ -42,6 +42,7 @@ class WhiteboardController extends Controller
             'name' => $validated['name'],
             'project_id' => $validated['project_id'] ?? null,
             'created_by' => $validated['created_by'],
+            'user_id' => $request->user()?->id,
             'canvas_state' => ['version' => 1, 'elements' => []],
             'share_token' => Str::random(8),
         ]);
@@ -80,6 +81,19 @@ class WhiteboardController extends Controller
             ], 404);
         }
 
+        // Only the board owner can mutate it. Boards created before user_id was
+        // set (legacy/guest boards) are editable by the authenticated creator
+        // string match, otherwise reject.
+        $user = $request->user();
+        if ($user && $whiteboard->user_id) {
+            if ((string) $whiteboard->user_id !== (string) $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'You do not have permission to edit this whiteboard',
+                ], 403);
+            }
+        }
+
         $validated = $request->validate([
             'name' => 'sometimes|string',
             'canvas_state' => 'sometimes|array',
@@ -94,7 +108,7 @@ class WhiteboardController extends Controller
         ]);
     }
 
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
         $whiteboard = Whiteboard::find($id);
 
@@ -103,6 +117,16 @@ class WhiteboardController extends Controller
                 'success' => false,
                 'error' => 'Whiteboard not found',
             ], 404);
+        }
+
+        $user = $request->user();
+        if ($user && $whiteboard->user_id) {
+            if ((string) $whiteboard->user_id !== (string) $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'You do not have permission to delete this whiteboard',
+                ], 403);
+            }
         }
 
         $whiteboard->delete();
