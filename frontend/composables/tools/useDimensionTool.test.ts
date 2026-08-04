@@ -9,8 +9,8 @@ describe('useDimensionTool', () => {
 
     handler.onMouseDown?.({}, { x: 100, y: 200 })
 
-    expect(handler.state.startPoint.value).toEqual([100, 200])
-    expect(handler.state.step.value).toBe('end')
+    expect(handler.state!.startPoint.value).toEqual([100, 200])
+    expect(handler.state!.step.value).toBe('end')
     expect(ctx.isDrawing.value).toBe(true)
   })
 
@@ -21,8 +21,8 @@ describe('useDimensionTool', () => {
     handler.onMouseDown?.({}, { x: 100, y: 200 })
     handler.onMouseDown?.({}, { x: 400, y: 200 })
 
-    expect(handler.state.endPoint.value).toEqual([400, 200])
-    expect(handler.state.step.value).toBe('offset')
+    expect(handler.state!.endPoint.value).toEqual([400, 200])
+    expect(handler.state!.step.value).toBe('offset')
   })
 
   it('click 3 sets offset distance and emits dimension element', () => {
@@ -31,16 +31,16 @@ describe('useDimensionTool', () => {
 
     handler.onMouseDown?.({}, { x: 100, y: 200 })
     handler.onMouseDown?.({}, { x: 400, y: 200 })
-    handler.state.previewOffset.value = 50
+    handler.state!.previewOffset.value = 50
     handler.onMouseDown?.({}, { x: 250, y: 100 })
 
     expect(ctx.emitElementAdd).toHaveBeenCalledTimes(1)
-    const emitted = ctx.emitElementAdd.mock.calls[0][0]
+    const emitted = vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!
     expect(emitted.type).toBe('dimension')
-    expect(emitted.data.start).toEqual([100, 200])
-    expect(emitted.data.end).toEqual([400, 200])
-    expect(emitted.data.offset).toBe(50)
-    expect(emitted.data.style).toBe('linear')
+    expect((emitted as any).data.start).toEqual([100, 200])
+    expect((emitted as any).data.end).toEqual([400, 200])
+    expect((emitted as any).data.offset).toBe(50)
+    expect((emitted as any).data.style).toBe('linear')
   })
 
   it('zero-length guard on start→end resets to start step', () => {
@@ -50,8 +50,8 @@ describe('useDimensionTool', () => {
     handler.onMouseDown?.({}, { x: 100, y: 200 })
     handler.onMouseDown?.({}, { x: 100, y: 200 })
 
-    expect(handler.state.step.value).toBe('start')
-    expect(handler.state.startPoint.value).toBeNull()
+    expect(handler.state!.step.value).toBe('start')
+    expect(handler.state!.startPoint.value).toBeNull()
     expect(ctx.isDrawing.value).toBe(false)
   })
 
@@ -61,13 +61,13 @@ describe('useDimensionTool', () => {
 
     handler.onMouseDown?.({}, { x: 0, y: 0 })
     handler.onMouseDown?.({}, { x: 300, y: 0 })
-    handler.state.previewOffset.value = 20
+    handler.state!.previewOffset.value = 20
     handler.onMouseDown?.({}, { x: 150, y: 50 })
 
-    const emitted = ctx.emitElementAdd.mock.calls[0][0]
-    expect(emitted.data.pixelsPerInch).toBe(300)
-    expect(emitted.data.unit).toBe('feet')
-    expect(emitted.data.value).toBeCloseTo(0.0833, 4)
+    const emitted = vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!
+    expect((emitted as any).data.pixelsPerInch).toBe(300)
+    expect((emitted as any).data.unit).toBe('feet')
+    expect((emitted as any).data.value).toBeCloseTo(0.0833, 4)
   })
 
   it('deactivate resets state', () => {
@@ -75,11 +75,11 @@ describe('useDimensionTool', () => {
     const handler = useDimensionTool(ctx)
 
     handler.onMouseDown?.({}, { x: 100, y: 200 })
-    handler.deactivate()
+    handler.deactivate!()
 
-    expect(handler.state.step.value).toBe('start')
-    expect(handler.state.startPoint.value).toBeNull()
-    expect(handler.state.endPoint.value).toBeNull()
+    expect(handler.state!.step.value).toBe('start')
+    expect(handler.state!.startPoint.value).toBeNull()
+    expect(handler.state!.endPoint.value).toBeNull()
     expect(ctx.isDrawing.value).toBe(false)
   })
 
@@ -89,13 +89,13 @@ describe('useDimensionTool', () => {
 
     handler.onMouseDown?.({}, { x: 100, y: 200 })
     handler.onMouseDown?.({}, { x: 400, y: 200 })
-    expect(handler.state.step.value).toBe('offset')
+    expect(handler.state!.step.value).toBe('offset')
 
     const consumed = handler.onKeyDown?.({ key: 'Escape' } as KeyboardEvent)
     expect(consumed).toBe(true)
-    expect(handler.state.step.value).toBe('start')
-    expect(handler.state.startPoint.value).toBeNull()
-    expect(handler.state.endPoint.value).toBeNull()
+    expect(handler.state!.step.value).toBe('start')
+    expect(handler.state!.startPoint.value).toBeNull()
+    expect(handler.state!.endPoint.value).toBeNull()
   })
 
   it('findSnapPoint called on both first and second click', () => {

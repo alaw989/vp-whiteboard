@@ -26,7 +26,7 @@ describe('useRectangleTool', () => {
     tool.onMouseMove?.({}, { x: 100, y: 200 })
     tool.onMouseUp?.({}, { x: 100, y: 200 })
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    expect(ctx.emitElementAdd.mock.calls[0][0].type).toBe('rectangle')
+    expect(vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!.type).toBe('rectangle')
   })
 
   it('zero-size guard (drag < 5px) does NOT emit', () => {

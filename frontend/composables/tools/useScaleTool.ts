@@ -7,6 +7,7 @@ import {
   scalePointFromOrigin,
   centroidOfPoints,
   transformElement,
+  getElementGeometry,
   findElementAtPosition,
 } from '~/utils/geometryUtils'
 

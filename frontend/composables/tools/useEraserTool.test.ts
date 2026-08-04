@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { createMockToolContext } from './__tests__/mockToolContext'
 import { useEraserTool } from './useEraserTool'
@@ -32,9 +33,7 @@ function makeDocLayerShape(id: string) {
 
 describe('useEraserTool', () => {
   it('onMouseDown sets isDrawing=true and calls emitElementDelete if element at position', () => {
-    const stageRef = {
-      value: { getNode: vi.fn(() => ({ getAllIntersections: vi.fn(() => [makeCanvasShape('el-1')]) })) },
-    }
+    const stageRef = ref({ getNode: vi.fn(() => ({ getAllIntersections: vi.fn(() => [makeCanvasShape('el-1')]) })) })
     const ctx = createMockToolContext({
       stageRef,
       getStagePointerPos: vi.fn(() => ({ x: 100, y: 100 })),
@@ -46,9 +45,7 @@ describe('useEraserTool', () => {
   })
 
   it('onMouseMove while drawing erases element at position', () => {
-    const stageRef = {
-      value: { getNode: vi.fn(() => ({ getAllIntersections: vi.fn(() => [makeCanvasShape('el-2')]) })) },
-    }
+    const stageRef = ref({ getNode: vi.fn(() => ({ getAllIntersections: vi.fn(() => [makeCanvasShape('el-2')]) })) })
     const ctx = createMockToolContext({
       stageRef,
       getStagePointerPos: vi.fn(() => ({ x: 200, y: 200 })),
@@ -61,9 +58,7 @@ describe('useEraserTool', () => {
 
   it('onMouseMove while NOT drawing does nothing', () => {
     const getAllIntersections = vi.fn()
-    const stageRef = {
-      value: { getNode: vi.fn(() => ({ getAllIntersections })) },
-    }
+    const stageRef = ref({ getNode: vi.fn(() => ({ getAllIntersections })) })
     const ctx = createMockToolContext({
       stageRef,
       getStagePointerPos: vi.fn(() => ({ x: 100, y: 100 })),
@@ -98,9 +93,7 @@ describe('useEraserTool', () => {
   })
 
   it('filters out document layer shapes', () => {
-    const stageRef = {
-      value: { getNode: vi.fn(() => ({ getAllIntersections: vi.fn(() => [makeDocLayerShape('doc-shape')]) })) },
-    }
+    const stageRef = ref({ getNode: vi.fn(() => ({ getAllIntersections: vi.fn(() => [makeDocLayerShape('doc-shape')]) })) })
     const ctx = createMockToolContext({
       stageRef,
       getStagePointerPos: vi.fn(() => ({ x: 100, y: 100 })),

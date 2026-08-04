@@ -26,7 +26,7 @@ describe('useArcTool', () => {
     tool.onMouseDown?.({}, { x: 150, y: 200 })
     tool.onMouseDown?.({}, { x: 300, y: 100 })
     expect(ctx.emitElementAdd).toHaveBeenCalledOnce()
-    expect(ctx.emitElementAdd.mock.calls[0][0].type).toBe('arc')
+    expect(vi.mocked(ctx.emitElementAdd).mock.calls[0]![0]!.type).toBe('arc')
   })
 
   it('collinear guard keeps first 2 points and does not emit', () => {

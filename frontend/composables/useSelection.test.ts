@@ -32,7 +32,7 @@ function createMockStage() {
   const transformerNode = {
     nodes: vi.fn(),
     moveToTop: vi.fn(),
-    getNode: vi.fn(function () { return this }),
+    getNode: vi.fn(function (this: unknown) { return this }),
   }
 
   const stage = {
@@ -52,7 +52,7 @@ function createMockStage() {
       return []
     }),
     forEach: vi.fn((fn: any) => { [shape1, shape2].forEach(fn) }),
-    getNode: vi.fn(function () { return this }),
+    getNode: vi.fn(function (this: unknown) { return this }),
   }
 
   return { shape1, shape2, transformerNode, stage }
@@ -75,7 +75,7 @@ describe('useSelection', () => {
   it('selectElementAtPosition with no elements near position returns false', () => {
     const stage = {
       getAllIntersections: vi.fn(() => []),
-      getNode: vi.fn(function () { return this }),
+      getNode: vi.fn(function (this: unknown) { return this }),
     }
     const elements = ref<CanvasElement[]>([])
     const { selectElementAtPosition, selectedId } = useSelection(ref(stage), elements)

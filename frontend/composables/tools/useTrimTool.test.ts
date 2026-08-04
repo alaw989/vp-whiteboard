@@ -8,8 +8,8 @@ describe('useTrimTool', () => {
     const ctx = createMockToolContext({ elements: [el] })
     const tool = useTrimTool(ctx)
     tool.onMouseDown?.(null, { x: 150, y: 150 })
-    expect(tool.state.cuttingEdgeId.value).toBe('cut-line')
-    expect(tool.state.step.value).toBe('trim')
+    expect(tool.state!.cuttingEdgeId.value).toBe('cut-line')
+    expect(tool.state!.step.value).toBe('trim')
   })
 
   it('step 2 (side to trim): click near element trims it and calls emitElementUpdate', () => {
@@ -23,8 +23,8 @@ describe('useTrimTool', () => {
     })
     const ctx = createMockToolContext({ elements: [cuttingEdge, toTrim] })
     const tool = useTrimTool(ctx)
-    tool.state.cuttingEdgeId.value = 'cut-edge'
-    tool.state.step.value = 'trim'
+    tool.state!.cuttingEdgeId.value = 'cut-edge'
+    tool.state!.step.value = 'trim'
     tool.onMouseDown?.(null, { x: 100, y: 50 })
     expect(ctx.emitElementUpdate).toHaveBeenCalledWith('to-trim', expect.objectContaining({
       data: expect.objectContaining({ start: [100, 100] }),
@@ -43,8 +43,8 @@ describe('useTrimTool', () => {
     }
     const ctx = createMockToolContext({ elements: [cuttingEdge, rect] })
     const tool = useTrimTool(ctx)
-    tool.state.cuttingEdgeId.value = 'cut-edge'
-    tool.state.step.value = 'trim'
+    tool.state!.cuttingEdgeId.value = 'cut-edge'
+    tool.state!.step.value = 'trim'
     const update = ctx.emitElementUpdate
     tool.onMouseDown?.(null, { x: 25, y: 25 })
     expect(update).not.toHaveBeenCalled()
@@ -53,34 +53,34 @@ describe('useTrimTool', () => {
   it('Escape from trim goes back to cutting-edge step', () => {
     const ctx = createMockToolContext()
     const tool = useTrimTool(ctx)
-    tool.state.step.value = 'trim'
+    tool.state!.step.value = 'trim'
     const event = new KeyboardEvent('keydown', { key: 'Escape' })
     const result = tool.onKeyDown?.(event)
     expect(result).toBe(true)
-    expect(tool.state.step.value).toBe('cutting-edge')
-    expect(tool.state.cuttingEdgeId.value).toBeNull()
+    expect(tool.state!.step.value).toBe('cutting-edge')
+    expect(tool.state!.cuttingEdgeId.value).toBeNull()
   })
 
   it('Escape from cutting-edge step resets', () => {
     const ctx = createMockToolContext()
     const tool = useTrimTool(ctx)
-    tool.state.cuttingEdgeId.value = 'some-edge'
+    tool.state!.cuttingEdgeId.value = 'some-edge'
     const event = new KeyboardEvent('keydown', { key: 'Escape' })
     const result = tool.onKeyDown?.(event)
     expect(result).toBe(true)
-    expect(tool.state.cuttingEdgeId.value).toBeNull()
-    expect(tool.state.step.value).toBe('cutting-edge')
+    expect(tool.state!.cuttingEdgeId.value).toBeNull()
+    expect(tool.state!.step.value).toBe('cutting-edge')
   })
 
   it('deactivate resets all state', () => {
     const ctx = createMockToolContext()
     const tool = useTrimTool(ctx)
-    tool.state.cuttingEdgeId.value = 'some-edge'
-    tool.state.step.value = 'trim'
+    tool.state!.cuttingEdgeId.value = 'some-edge'
+    tool.state!.step.value = 'trim'
     tool.deactivate?.()
-    expect(tool.state.cuttingEdgeId.value).toBeNull()
-    expect(tool.state.step.value).toBe('cutting-edge')
-    expect(tool.state.highlightId.value).toBeNull()
+    expect(tool.state!.cuttingEdgeId.value).toBeNull()
+    expect(tool.state!.step.value).toBe('cutting-edge')
+    expect(tool.state!.highlightId.value).toBeNull()
   })
 
   it('preview/highlight on mouse move', () => {
@@ -88,7 +88,7 @@ describe('useTrimTool', () => {
     const ctx = createMockToolContext({ elements: [el] })
     const tool = useTrimTool(ctx)
     tool.onMouseMove?.(null, { x: 150, y: 150 })
-    expect(tool.state.highlightId.value).toBe('e1')
+    expect(tool.state!.highlightId.value).toBe('e1')
   })
 
   it('state exposes cuttingEdgeId, step, highlightId', () => {
