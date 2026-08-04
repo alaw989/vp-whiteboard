@@ -11,7 +11,7 @@ export default defineConfig({
     root: fileURLToPath(new URL('./', import.meta.url)),
     setupFiles: [fileURLToPath(new URL('./test/setup.ts', import.meta.url))],
   },
-  plugins: [vue()],
+  plugins: [vue() as any],
   resolve: {
     alias: {
       '~': fileURLToPath(new URL('./', import.meta.url)),
