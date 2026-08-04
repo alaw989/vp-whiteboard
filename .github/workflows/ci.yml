@@ -55,5 +55,8 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
 
+      - name: Generate app key
+        run: php artisan key:generate --force
+
       - name: Run Laravel tests
         run: php artisan test
