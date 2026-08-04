@@ -13,7 +13,7 @@
 | Env | Domain | Stack | Branch / commit | Status |
 |-----|--------|-------|-----------------|--------|
 | **Staging** | `staging-whiteboard.vp-associates.com` | Laravel 12 + MySQL + Breeze + Nuxt (`frontend/`) + Yjs WS relay | `develop` (deploys via GitHub Actions) | ✅ Live, fully off Supabase |
-| **Production** | `whiteboard.vp-associates.com` | Old Nuxt + Supabase | `master` | ⏸️ Untouched — not migrated yet |
+| **Production** | `whiteboard.vp-associates.com` | Laravel 12 + MySQL + Breeze + Nuxt (`frontend/`) + Yjs WS relay | `master` (deploys via GitHub Actions) | ✅ **Migrated 2026-08-03** — live on Laravel+MySQL, off Supabase |
 | **Droplet** | `165.245.141.179` (old `165.245.131.61` destroyed) | PHP 8.4 + composer-phar + MariaDB + PHP-FPM 8.4 + nginx + PM2 | — | Hosts staging, prod, + other sites |
 
 - **Migration code** lives on `feat/autocad-tools` = `develop` (rebased, 7 migration
@@ -161,10 +161,13 @@ SSH to droplet → `git reset --hard origin/develop` → Laravel `composer insta
 with `LARAVEL_URL` + `SESSION_COOKIE=laravel-session`). Concurrency group
 `droplet-build` prevents overlap with production builds.
 
-**Production** — `.github/workflows/deploy.yml` (triggers on `master`) is **still
-the old Nuxt-at-root structure and will fail the same way.** It must be rewritten
-to match `deploy-staging.yml` (different domain/DB/ports) before the production
-deploy. See `PRODUCTION-DEPLOY.md`.
+**Production** — `.github/workflows/deploy.yml` (triggers on `master`) mirrors
+`deploy-staging.yml` for the new stack: `git reset --hard origin/master` → Laravel
+`composer install` + `migrate` + `storage:link` + perms → `frontend/` `npm install`
++ `build` → PM2 `delete+start` (`vp-whiteboard` on :3000, `vp-ws-server` on :3001
+with `LARAVEL_URL` + `SESSION_COOKIE=laravel-session`). Concurrency group
+`droplet-build` prevents overlap with staging builds. PM2 paths are relative to
+`--cwd` (the `frontend/` directory) — do NOT prefix them with `frontend/`.
 
 **Watch a run:** `gh run list --workflow=deploy-staging.yml --limit 3` then
 `gh run watch <id> --exit-status`.
@@ -177,8 +180,8 @@ deploy. See `PRODUCTION-DEPLOY.md`.
   in-memory but **not** included in `exportState()`/`canvas_state`, and there's no
   `GET /api/files` to reload them on mount. Fix: persist `documentLayers` in
   `canvas_state` (layers are self-contained dataUrls), or add file reload on mount.
-- **`deploy.yml` (production) is outdated** — rewrite to the Laravel+frontend
-  structure (mirror `deploy-staging.yml`) before migrating production.
+- **`deploy.yml` (production) outdated** — RESOLVED 2026-08-03: rewritten to the
+  Laravel+frontend structure (mirrors `deploy-staging.yml`, ports :3000/:3001).
 - **`SESSION_COOKIE=laravel-session` is `APP_NAME`-dependent** — fragile if
   `APP_NAME` changes. Consider setting `SESSION_COOKIE` explicitly in Laravel `.env`.
 - **`GET /api/login` → 405** — a spurious GET to a POST-only route (login works
@@ -187,22 +190,26 @@ deploy. See `PRODUCTION-DEPLOY.md`.
   not yet end-to-end tested in a browser.
 - **Autosave has no failure feedback** — silent if the PATCH fails
   (`pages/whiteboard/[id].vue:743`).
-- **Production auth accounts** — shared `AUTH_PASSWORD` → Breeze accounts; seed
-  real users before prod (see `UserSeeder` + `PRODUCTION-DEPLOY.md`).
+- **Production auth accounts** — RESOLVED 2026-08-03: shared `AUTH_PASSWORD`
+  replaced by Breeze accounts; `vpassociates2025@vp-associates.com` seeded,
+  registration open via `/register`.
 
 ---
 
 ## 7. Key facts
 
-- **Branch tips:** `develop` = `feat/autocad-tools` = `25626812` (CI-fixed workflow).
-  `master` = old Nuxt+Supabase (untouched).
+- **Branch tips:** `develop` = `feat/autocad-tools` (CI-fixed workflow).
+  `master` = Laravel+MySQL stack (migrated 2026-08-03).
 - **Staging login (test):** `staging-test@vpdev.local` / `testpass123`.
 - **Staging DB:** MySQL `vp_whiteboard_staging`, user `vp_wb_staging`; password at
   `/root/.vp_wb_staging_dbpass` on the droplet.
-- **Droplet SSH:** `ssh -i ~/.ssh/id_ed25519_nopass root@165.245.141.179`.
+- **Production DB:** MySQL `vp_whiteboard_production`, user `vp_wb_prod`; password at
+  `/root/.vp_wb_prod_dbpass` on the droplet. Seeded login: `vpassociates2025@vp-associates.com`.
+- **Droplet SSH:** `ssh -i ~/.ssh/droplet-vp-nuxt root@165.245.141.179`.
 - **Staging nginx vhost:** `/etc/nginx/sites-available/staging-whiteboard.vp-associates.com`.
-- **Supabase (legacy, prod only):** project `qhoeiectyttqifzjabck`; staging no longer
-  references it (verified 0 runtime calls).
+- **Production nginx vhost:** `/etc/nginx/sites-available/whiteboard.vp-associates.com`.
+- **Supabase (legacy, decommissioned):** project `qhoeiectyttqifzjabck`; both staging
+  and production reference it zero times. Supabase keep-alive workflow removed.
 
 ### Commits this session (on `develop` / `feat/autocad-tools`)
 Rebase resolution → migration-onto-develop rebase → `4d1e915c` zero-length guard →
