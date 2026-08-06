@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 
@@ -53,8 +54,11 @@ class RegisteredUserController extends Controller
 
     private function notifyOwner(User $user): void
     {
-        $ownerEmail = config('mail.admin_email');
-        if (! $ownerEmail) {
+        $ownerEmails = array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) config('mail.admin_email'))
+        )));
+        if ($ownerEmails === []) {
             return;
         }
 
@@ -65,7 +69,11 @@ class RegisteredUserController extends Controller
             'signature' => $this->signedPayload($user, 'deny'),
         ]));
 
-        Mail::to($ownerEmail)->send(new NewRegistrationRequest($user, $approveUrl, $denyUrl));
+        try {
+            Mail::to($ownerEmails)->send(new NewRegistrationRequest($user, $approveUrl, $denyUrl));
+        } catch (\Throwable $e) {
+            Log::warning('Failed to send registration-approval email: '.$e->getMessage());
+        }
     }
 
     /**

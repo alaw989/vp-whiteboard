@@ -150,6 +150,33 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 
 ### Current production state (Aug 4, 2026)
 
-- **Users:** `prod-smoke@vpdev.local` (test), `alaw989@gmail.com` (Austin Law). Seeded `vpassociates2025` account was deleted (strong pw was set, then removed entirely).
+- **Users:** `prod-smoke@vpdev.local` (test), `alaw989@gmail.com` (Austin Law, **is_admin=true**). Seeded `vpassociates2025` account was deleted (strong pw was set, then removed entirely).
 - **Whiteboards:** `test1`, `test2` left in place (user chose to keep them).
 - **`gh` token** now has `workflow` scope (required to merge PRs that touch `.github/workflows/*`).
+
+## Fixes applied Aug 4, 2026 (2nd session) — Owner-approval registration + per-link share links
+
+### Registration is no longer open signup
+
+- `/register` creates the user as `status = pending` — **no auto-login**. The frontend shows a "Request received" screen.
+- A synchronous mail to the owner (config `mail.admin_email` / env `ADMIN_EMAIL`) includes signed approve/deny links.
+- Links open `resources/views/approvals/confirm.blade.php` (a Laravel blade page at `/approvals/{id}/{action}`) which requires the owner to be signed in (`is_admin`) before the approve/deny POST executes.
+- Login is gated in `LoginRequest::authenticate()` — pending/denied users get `auth.pending` ("Your account is pending approval…"). The `lang/en/auth.php` file defines the message.
+- Users table gained `status` (pending|approved|denied), `approved_at`, `is_admin`. Backfill approved all pre-existing users. `UserFactory` defaults to approved; add `pending()` / `admin()` states.
+- Admin API: `GET /api/approvals` (pending list), `POST /api/approvals/{id}/approve`, `POST /api/approvals/{id}/deny`. `ApprovalController` checks `$request->user()?->isAdmin()`.
+- Owner identity = `users.is_admin`. Set the owner: `alaw989@gmail.com` is admin on prod; `staging-test@vpdev.local` is admin on staging.
+
+### Per-link share links (anonymous real-time collaboration)
+
+- New `whiteboard_shares` table: `token_hash` (sha256), `role` (view|edit), `label`, `expires_at`. `WhiteboardShare::make()` stores only the hash; the raw 40-char token is returned once.
+- Share modal (`WhiteboardShareModal.vue`) creates/copies/revokes links: owner picks role (Can edit / View only), label, and expiry (never/7/30/90 days). Link URL = `/s/{rawToken}`.
+- Share API (owner-only create/list/revoke): `GET/POST /api/whiteboards/{id}/shares`, `DELETE /api/whiteboards/{id}/shares/{shareId}`; public resolver `GET /api/shares/{token}` returns `{whiteboard_id, role, expires_at}`.
+- `WhiteboardController@update` + `WhiteboardFileController@store` accept a share credential (cookie `vp_share_token`, header `X-Share-Token`, or `?share=` query) in place of auth. View-role shares can't rename. Public `GET /api/whiteboards/{id}` no longer leaks `share_token`.
+- `/s/{token}` Nitro route resolves via `/api/shares/{token}` and sets an httpOnly `vp_share_token` cookie (7 days).
+- WS relay (`frontend/server/ws-server.js`) checks the share token against `/api/shares/{token}` (expects `data.whiteboard_id`). **Auth is now ON by default** — the old `HOST === '0.0.0.0'` default silently disabled it in prod. Set `WS_ALLOW_ANON=1` to bypass (don't).
+- **Deploy-time requirements:** add `proxy_set_header Cookie $http_cookie;` to the nginx `/whiteboard:` location (done on staging + prod); set `ADMIN_EMAIL` + real `MAIL_*` SMTP in the env (prod still needs this); `MAIL_MAILER` is `log` until then, so approval emails go to the log file only.
+
+### Tests
+
+- New: `tests/Feature/ApprovalApiTest.php` (6 tests), `tests/Feature/ShareApiTest.php` (7 tests). Registration test updated for pending flow. Backend suite now 43 assertions of tests / 92 assertions. Frontend 320 tests still green.
+- Verified live on staging: pending register → login blocked → admin approve → login works; share create in UI; `/s/{token}` redirect; anonymous autosave persists (share token only); WS relay accepts valid token, rejects invalid with 4001.
