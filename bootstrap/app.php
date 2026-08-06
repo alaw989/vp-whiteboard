@@ -16,6 +16,12 @@ return Application::configure(basePath: dirname(__DIR__))
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
 
+        // The share-token cookie is set by the Nitro server (plaintext, not
+        // Laravel-encrypted). Sanctum routes stateful browser requests through
+        // EncryptCookies, which would otherwise fail to decrypt it and null the
+        // cookie — breaking share-link autosave/uploads with a 403. Exempt it.
+        $middleware->encryptCookies(except: ['vp_share_token']);
+
         $middleware->alias([
             'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
         ]);
