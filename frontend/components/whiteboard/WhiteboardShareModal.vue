@@ -73,6 +73,10 @@
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-neutral-900 truncate">
                   {{ share.label || (share.role === 'view' ? 'View-only link' : 'Edit link') }}
+                  <span
+                    v-if="share.id === justCreatedId"
+                    class="ml-1 text-[10px] uppercase tracking-wide text-blue-600 bg-blue-50 rounded px-1 py-0.5 align-middle"
+                  >New</span>
                 </p>
                 <p class="text-xs text-neutral-500">
                   {{ share.role === 'view' ? 'View only' : 'Can edit' }}
@@ -81,12 +85,20 @@
                 </p>
               </div>
               <button
+                v-if="shareCopyUrl(share)"
                 class="px-2 py-1 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded transition-colors"
                 title="Copy link"
                 @click="copyShare(share)"
               >
                 <Icon name="mdi:content-copy" class="w-4 h-4" />
               </button>
+              <span
+                v-else
+                class="px-2 py-1 text-neutral-300 cursor-not-allowed"
+                title="URL is only shown when this link is created"
+              >
+                <Icon name="mdi:content-copy" class="w-4 h-4" />
+              </span>
               <button
                 class="px-2 py-1 text-red-500 hover:bg-red-50 rounded transition-colors"
                 title="Revoke link"
@@ -121,7 +133,8 @@
 </template>
 
 <script setup lang="ts">
-import { toastSuccess } from '~/composables/useToast'
+import { toastSuccess, toastError } from '~/composables/useToast'
+import { shareCopyUrl } from '~/composables/useShareLink'
 
 const props = defineProps<{
   show: boolean
@@ -143,10 +156,12 @@ const shares = ref<any[]>([])
 const loading = ref(false)
 const creating = ref(false)
 const createError = ref('')
+// The link created in this session — the only one whose raw URL is known.
+const justCreatedId = ref<string | null>(null)
 
 interface ShareLink {
   id: string
-  url: string
+  url?: string
   label?: string
   role: string
   expires_at?: string
@@ -184,6 +199,7 @@ async function createShare() {
     })
     if (res.success && res.data) {
       shares.value.unshift(res.data)
+      justCreatedId.value = res.data.id
       label.value = ''
       toastSuccess('Share link created')
     }
@@ -195,11 +211,16 @@ async function createShare() {
 }
 
 async function copyShare(share: any) {
+  const url = shareCopyUrl(share)
+  if (!url) {
+    toastError("This link's URL is only available when it is created")
+    return
+  }
   try {
-    await navigator.clipboard.writeText(share.url)
+    await navigator.clipboard.writeText(url)
     toastSuccess('Link copied to clipboard')
   } catch {
-    toastSuccess(share.url)
+    toastSuccess(url)
   }
 }
 
