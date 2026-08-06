@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+import { shouldReconnectOnClose } from './useCollaborativeCanvas'
+
+describe('useCollaborativeCanvas — WebSocket reconnect policy', () => {
+  it('reconnects on ordinary close codes', () => {
+    expect(shouldReconnectOnClose(1006)).toBe(true)
+    expect(shouldReconnectOnClose(1000)).toBe(true)
+    expect(shouldReconnectOnClose(undefined)).toBe(true)
+  })
+
+  it('does NOT reconnect when the relay rejects with 4001 (auth required)', () => {
+    // 4001 = "Authentication required": a logged-out viewer of a raw link or
+    // an expired/revoked share token. Auto-retrying just hammers the relay.
+    expect(shouldReconnectOnClose(4001)).toBe(false)
+  })
+})
 
 describe('useCollaborativeCanvas — persistence helpers', () => {
   function createTestDoc() {

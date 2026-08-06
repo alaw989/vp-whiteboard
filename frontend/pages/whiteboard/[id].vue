@@ -84,6 +84,39 @@
       </div>
     </header>
 
+    <!-- Anonymous / unauthenticated notice -->
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 -translate-y-1"
+      enter-to-class="opacity-100 translate-y-0"
+      leave-active-class="transition duration-150 ease-in"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="collabBlocked && !bannerDismissed"
+        class="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between gap-3 text-sm text-amber-300 z-20"
+        role="status"
+      >
+        <div class="flex items-center gap-2 min-w-0">
+          <Icon name="mdi:account-lock-outline" class="w-4 h-4 flex-shrink-0" />
+          <span class="truncate">
+            You're viewing this whiteboard without an account, so real-time collaboration is off.
+            <NuxtLink to="/login" class="underline font-medium hover:text-amber-200">Log in</NuxtLink>
+            or open a <span class="font-medium">Share link</span> (Share button → create link) to collaborate live.
+          </span>
+        </div>
+        <button
+          class="p-1 rounded hover:bg-amber-500/20 flex-shrink-0"
+          title="Dismiss"
+          aria-label="Dismiss notice"
+          @click="bannerDismissed = true"
+        >
+          <Icon name="mdi:close" class="w-4 h-4" />
+        </button>
+      </div>
+    </Transition>
+
     <!-- Main Content -->
     <div class="flex-1 flex overflow-hidden">
       <!-- Layer Panel (between toolbar and canvas) -->
@@ -517,6 +550,15 @@ const activeStrokes = computed(() => {
   const inst = instance.value
   return inst ? inst.activeStrokes : {}
 })
+
+// Anonymous/unauth notice — the WS relay rejected us with 4001 (no valid
+// session or share token). Reconnect is stopped, so this explains why real-time
+// collaboration is off and how to enable it.
+const collabBlocked = computed(() => {
+  const inst = instance.value
+  return inst ? (inst.authRejected === true) : false
+})
+const bannerDismissed = ref(false)
 
 // Tool state
 const currentTool = ref<DrawingTool>('select')

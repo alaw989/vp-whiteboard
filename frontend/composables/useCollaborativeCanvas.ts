@@ -131,6 +131,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         console.log('[Yjs WS] ✅ Connected to room:', whiteboardId)
         connectionStatus.value = 'connected'
         isConnected.value = true
+        authRejected.value = false
         reconnectBackoff.reset()
 
         // Request initial sync state from server
@@ -151,11 +152,21 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         }, 25000)
       }
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         console.log('[Yjs WS] ❌ Disconnected')
         connectionStatus.value = 'disconnected'
         isConnected.value = false
         yCursors.delete(userId)
+
+        // The relay closes with 4001 when we carry no valid credential
+        // (logged-out viewer of a raw link, or an expired/revoked share
+        // token). Retrying is futile until the user logs in or opens a share
+        // link, so stop the reconnect loop (which otherwise hammered the
+        // relay with ~1/sec rejected handshakes) and let the UI explain.
+        if (!shouldReconnectOnClose(event.code)) {
+          authRejected.value = true
+          return
+        }
 
         // Schedule reconnection with exponential backoff
         scheduleReconnect()
@@ -318,6 +329,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   // Local state
   const isConnected = ref(false)
   const connectionStatus = ref<'connecting' | 'connected' | 'disconnected'>('disconnected')
+  const authRejected = ref(false)
   const currentUser = ref({ id: userId, name: userName, color: getUserColor(userId) })
   const connectedUsers = ref<Map<string, UserPresence>>(new Map())
 
@@ -814,6 +826,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     // State
     isConnected,
     connectionStatus,
+    authRejected,
     currentUser,
     connectedUsers,
     elements,
@@ -861,6 +874,18 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     yDocumentLayers,
     wsProvider,
   }
+}
+
+/**
+ * Decide whether the WebSocket should auto-reconnect after a close.
+ *
+ * A close code of 4001 means the relay rejected us for lack of a valid
+ * credential (logged-out viewer of a raw whiteboard link, or an expired /
+ * revoked share token). Reconnecting is futile until the user logs in or
+ * opens a share link, so the caller stops the loop instead.
+ */
+export function shouldReconnectOnClose(code?: number): boolean {
+  return code !== 4001
 }
 
 // Helper: Get consistent color for user

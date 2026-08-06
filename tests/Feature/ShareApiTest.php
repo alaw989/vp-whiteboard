@@ -86,6 +86,32 @@ class ShareApiTest extends TestCase
         $this->assertEquals(2, $board->fresh()->canvas_state['version']);
     }
 
+    public function test_share_cookie_survives_stateful_encrypted_request(): void
+    {
+        $owner = User::factory()->create();
+        $board = Whiteboard::factory()->create(['user_id' => $owner->id]);
+        $result = WhiteboardShare::make($board->id, 'edit');
+
+        // A real browser sends Origin/Referer, which makes Sanctum treat the
+        // request as "stateful" and pipe it through EncryptCookies. The
+        // vp_share_token cookie is set by Nitro (not Laravel-encrypted), so
+        // EncryptCookies used to null it out, breaking share-link autosave
+        // with a 403. It must survive.
+        $response = $this
+            ->withCredentials()
+            ->withServerVariables([
+                'HTTP_ORIGIN' => 'http://localhost',
+                'HTTP_REFERER' => 'http://localhost/',
+            ])
+            ->withUnencryptedCookie('vp_share_token', $result['token'])
+            ->patchJson("/api/whiteboards/{$board->id}", [
+                'canvas_state' => ['version' => 3, 'elements' => [['id' => 'el1']]],
+            ]);
+
+        $response->assertOk();
+        $this->assertEquals(3, $board->fresh()->canvas_state['version']);
+    }
+
     public function test_view_role_share_cannot_change_name(): void
     {
         $owner = User::factory()->create();
