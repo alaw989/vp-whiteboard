@@ -331,25 +331,27 @@ function broadcastToRoom(roomId, msg, exclude) {
   })
 }
 
-// Server-side heartbeat — ping every 30s, disconnect clients unresponsive for 60s
-const HEARTBEAT_INTERVAL = 30000
-const HEARTBEAT_TIMEOUT = 60000
-setInterval(() => {
-  const now = Date.now()
-  wss.clients.forEach((ws) => {
-    if (ws.readyState !== 1) return
-    if (now - ws.lastPong > HEARTBEAT_TIMEOUT) {
-      console.log(`[Yjs WS] 💔 Heartbeat timeout: room=${ws.roomId || '?'}, user=${ws.userName || '?'}`)
-      ws.terminate()
-      return
-    }
-    sendJson(ws, { type: 'ping' })
-  })
-}, HEARTBEAT_INTERVAL)
-
-// Start the server (skip when imported for tests, e.g. to unit-test helpers).
+// Start the server + heartbeat only when run directly (skip when imported for
+// tests, e.g. to unit-test helpers — the module-scope heartbeat interval would
+// otherwise keep the vitest/node process alive).
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`
 if (isMain) {
+  // Server-side heartbeat — ping every 30s, disconnect clients unresponsive for 60s
+  const HEARTBEAT_INTERVAL = 30000
+  const HEARTBEAT_TIMEOUT = 60000
+  setInterval(() => {
+    const now = Date.now()
+    wss.clients.forEach((ws) => {
+      if (ws.readyState !== 1) return
+      if (now - ws.lastPong > HEARTBEAT_TIMEOUT) {
+        console.log(`[Yjs WS] 💔 Heartbeat timeout: room=${ws.roomId || '?'}, user=${ws.userName || '?'}`)
+        ws.terminate()
+        return
+      }
+      sendJson(ws, { type: 'ping' })
+    })
+  }, HEARTBEAT_INTERVAL)
+
   server.listen(PORT, HOST, () => {
     console.log(`
 ╔══════════════════════════════════════════════════════════╗
