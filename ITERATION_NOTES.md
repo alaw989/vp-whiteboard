@@ -1,75 +1,102 @@
 # Iteration Notes
 
 ## Goal
-Add an admin approval UI to the frontend: a page (e.g. /approvals) that lists pending registrations from GET /api/approvals with Approve/Deny buttons calling POST /api/approvals/{id}/approve and POST /api/approvals/{id}/deny, restricted to admins (backend already enforces isAdmin; add frontend middleware so non-admins can't open it, and show an Approvals link/nav only for admins), and covered by an e2e test (admin logs in, sees a pending user, approves, the pending user can then log in) plus unit tests for any new frontend logic. Keep npm run typecheck + npm test green and the existing e2e suite passing.
+Harden PNG/PDF export with regression tests and fix any bugs they surface: unit tests for the export logic (frontend/composables/useExport.ts — filename generation, PNG via Konva stage toDataURL, PDF via jsPDF embedding) and e2e coverage that opens a whiteboard, draws content, triggers the export dialog, and intercepts the download to verify a real non-empty PNG and PDF are produced. Cover the edge cases: exporting an EMPTY canvas, a canvas with strokes/shapes, a canvas with PDF/image document layers (must not taint — the code already catches the tainted-canvas error), and a large canvas. Fix anything broken (empty-canvas export must not produce a corrupt/blank file, tainted canvas should show a clear error, PDF page should size to the canvas). Keep npm run typecheck + npm test green and the existing e2e suite passing.
 
 ## State
-Iteration 3 (Aug 7, 2026) — e2e spec for the approvals flow added; the Goal is now fully implemented end-to-end.
+### Iteration 6 (2026-08-07) — goal fully achieved, verified green
+- Re-verified the complete state: `npm run typecheck` exit 0; `npm test` → 438 passed (44 files). Git tree clean (all 5 prior iterations committed on `dc08435`).
+- Audited the goal's edge cases against the committed tests — every one is covered:
+  - EMPTY canvas → `export.spec.ts` test #1 (valid PNG magic + `%PDF`, size > 100).
+  - Strokes/shapes → `export.spec.ts` test #3 (real mouse-drawn pen stroke, fingerprint-confirmed render).
+  - PDF/image document layers → `export.spec.ts` test #2 (real image upload via UI, no taint crash, no cross-origin toast) + `useExport.test.ts` tainted-canvas → clear toast for both PNG & PDF.
+  - Large canvas → `useExport.test.ts` PNG (4096×3072 full-size `toDataURL`) + PDF (page `format:[4096,3072]`, below jsPDF's 14400 limit).
+  - Filename generation + PDF page-sizing + `generateFilename` trailing-dash bug → fixed in Iteration 3, unit-tested.
+- No code change this iteration — nothing to improve remains within the stated goal.
+- Next: none within the goal; future work (e.g. exporting drawn vector shapes to a real SVG layer in the PDF, streaming large exports, or per-format DPI settings) is beyond the stated scope.
+- Gotcha: e2e spec is ESM (`import.meta.url`) and requires a cold `TEST=1` full-stack boot — do not re-run casually; the prior-iteration run (3/3 export tests, 25/25 full suite) plus this green unit/typecheck pass is sufficient evidence for the loop gate.
 
-**Changed this iteration:**
-- `frontend/e2e/global-setup.ts`: seeds the accounts the suite needs — approved NON-admin owner (now forces `is_admin => false`; a stale row had left it `true`, silently turning the guard test into an admin test because the page loaded the list instead of showing "Admins Only"), approved admin `e2e-admin@test.local`, and two pending users `e2e-pending@test.local` / `e2e-deny@test.local` whose `status` is reset to `pending` on every run (re-runnable despite approve/deny mutating them).
-- `frontend/e2e/helpers.ts`: new `seedPendingUser(email)` — re-seeds a pending fixture via `php artisan tinker` at the start of each mutating test, making the approvals tests independent and retry-safe.
-- `frontend/e2e/approvals.spec.ts` (new, 3 tests): (1) pending login is rejected → admin signs in, sees the dashboard "Approvals" nav link, approves via the UI, signs out → the now-approved user signs in; (2) admin deny removes the row and the deleted user can no longer authenticate; (3) non-admin (owner) gets no Approvals nav link (asserted only after the client `/api/user` check resolves) and direct `/approvals` navigation shows the "Admins Only" state, never the pending list.
-- Verified: `npm run typecheck` exit 0; `npm test` 420/420; full `npx playwright test` 23/23 (3 new approvals + 20 existing smoke/collab/mobile-touch). Backend untouched.
+### Iteration 5 (2026-08-07) — e2e for PDF/image document layers (upload → export, no taint crash)
+- Added `frontend/e2e/export.spec.ts` test #3: "canvas with an uploaded image document layer exports without a taint crash". Covers the goal's LAST remaining edge case (canvas with PDF/image document layers must not taint).
+- Flow: login → create board → wait for canvas → baseline fingerprint → click `title="Upload file"` → `setInputFiles` a real 64×64 PNG fixture (`frontend/e2e/fixtures/export-upload.png`, 179 bytes, generated) → click `upload-submit` → poll `canvasFingerprint` until the image layer commits (proves it rendered) → export PNG + PDF → assert magic bytes + size > 100 (a tainted canvas would throw and produce NO download) → assert no `cross-origin image` toast.
+- Why no taint: the serve endpoint returns ACAO for the e2e origin and the image loads with `crossOrigin='anonymous'`, so the Konva stage stays clean — this verifies the happy path end-to-end (the SecurityError → toast path stays covered by the unit tests in `useExport.test.ts`).
+- Added `data-testid="upload-file-input"` + `data-testid="upload-submit"` to `WhiteboardUpload.vue` (the upload flow had no testids — unlike the export dialog, which got them in Iteration 2).
+- Verified: `npm run typecheck` exit 0; `npm test` → 438 passed (44 files); `npx playwright test e2e/export.spec.ts` → 3/3 passed; full `npx playwright test` → 25 passed (1 flaky = the pre-existing cold-boot collab.spec login hydration race, unrelated). Fixture validated as a real PNG (`file` → PNG 64x64, magic `89504e470d0a1a0a`).
+- Next: no remaining goal edge cases — the goal is fully covered (unit + e2e for empty/strokes/document-layers/large canvas, filename sanitization, PDF page geometry). Any future work is beyond the stated goal.
+- Gotcha: the export spec is ESM (`"type": "module"`), so `__dirname` doesn't exist — use `fileURLToPath(new URL('./fixtures/...', import.meta.url))` for the fixture path (initial `node:path` + `__dirname` version would fail at runtime).
 
-**Goal status: fully implemented.** Page, admin gate, nav link, unit tests (iter 1–2) + e2e coverage (this iter) all in place and green.
+### Iteration 4 (2026-08-07) — large-canvas export regression tests
+- Added 2 unit tests to `frontend/composables/useExport.test.ts` covering the goal's remaining unit-level edge case (large canvas):
+  - PNG: a 4096×3072 stage exports at full pixel size — `toDataURL` called with `{pixelRatio:1, x:0, y:0, width:4096, height:3072}`, `.png` download fires, no error, `isExporting` resets.
+  - PDF: same large stage → `toDataURL` at 2x, jsPDF page sized `format:[4096,3072]` landscape, `addImage` embeds at full dims, `.pdf` download fires, no error.
+- Verified against real jsPDF 4.1.0 (`node -e` probe): jsPDF only **warns** above 14400 userUnit (`A page in a PDF can not be wider or taller than 14400`) and still emits a valid PDF — no crash, so a large canvas is safe without code changes; the tests lock in the "page sized to canvas" behavior for a dimension well below that limit.
+- TDD: wrote the tests first (they pass against existing code — no bug surfaced, as with the empty-canvas case).
+- Verified: `npm run typecheck` exit 0; `npm test` → 438 passed (44 files). No e2e re-run needed (no export-code change).
+- Next: the only remaining goal edge case is e2e for PDF/image document layers (upload an image, export, confirm no taint crash / clear error toast) — that needs the full stack (`TEST=1` boot) + a fixture image upload via `useFileUpload`; worth doing as its own iteration since the loop gate can't run e2e.
+- Gotcha: the large-canvas PDF test asserts `instances[0]` is the mock captured by THIS `useExport()` call — keep the pattern of a fresh `useExport()` per large-canvas test (the shared `instances` array is cleared in `beforeEach`).
 
-**Next iterations (optional polish, nothing required):**
-- `deny` hard-deletes with no confirm dialog; a confirm step / per-row spinner could be added, but would need e2e updates.
-- The `/approvals` guard is page-level (not a route-middleware rule); fine as-is — the backend 403s non-admins and the page never calls the API for them.
+### Iteration 3 (2026-08-07) — `generateFilename` trailing-dash bug fix
+- Fixed the gotcha flagged in Iteration 1: `generateFilename('My Design v2!', 'png')` now yields `my-design-v2-<timestamp>.png` instead of `my-design-v2--<timestamp>.png`. `useExport.ts` now collapses consecutive dashes, trims leading/trailing dashes, and falls back to `whiteboard` when the sanitized base is empty/all-symbols (previously an empty board name produced a filename starting with a bare `-`).
+- TDD: updated/extended `useExport.test.ts` `generateFilename` block first — sanitization test now asserts single-dash, new tests for dash-collapse/trim and the `whiteboard` fallback (empty, whitespace, all-symbols bases).
+- Verified: `npm run typecheck` exit 0; `npm test` → 436 passed (44 files). Default `whiteboard-<timestamp>.<ext>` and custom-filename paths unchanged, so the existing e2e download assertions are unaffected (no e2e re-run needed — full-stack boot required only if export code path changed).
+- Next: the remaining goal edge case is e2e for PDF/image document layers (upload an image, export, confirm no taint crash / clear error toast). That one needs the full stack (`TEST=1` boot) + a fixture image upload via `useFileUpload`; alternatively a large-canvas unit case.
+- Gotcha: board titles are passed straight into `generateFilename` from `ExportDialog.vue` (`filename || 'whiteboard'`), so real-world titles like `My Design v2!` were the trigger — the fallback also protects the all-symbols edge.
 
-**Gotchas:**
-- `updateOrCreate` does NOT clear fields omitted from the update array — a stale `is_admin=true` on the owner row silently changed guard-test behavior. Always force `is_admin => false` on non-admin fixtures.
-- `global-setup` runs once per Playwright invocation; mutating specs must re-seed their own fixtures (`seedPendingUser`) to survive retries/reordering.
-- Backend `GET /api/approvals` already 403s non-admins; the page guard is UX only. Don't weaken the backend.
-- Test env note: `useApprovals` uses `ref` and `useApi` (via `useNuxtApp`), both available in vitest via setup.ts + global stub.
-- Dashboard nav link has `data-testid="nav-approvals"` for the e2e spec's visibility/absence assertions.
+### Iteration 2 (2026-08-07) — e2e coverage for real PNG/PDF downloads
+- Added `frontend/e2e/export.spec.ts` (2 tests, both passing against the full stack): Playwright intercepts the REAL browser download via `page.waitForEvent('download')`, then verifies the file on disk — PNG magic bytes `89 50 4E 47 0D 0A 1A 0A`, PDF `%PDF` header, and size > 100 bytes (non-corrupt/non-empty). Covers the empty-canvas case AND a canvas with a committed pen stroke (drawn via the desktop mouse path, rendered confirmed via `canvasFingerprint`).
+- Added `data-testid` selectors to `ExportDialog.vue` (`export-format-png`, `export-format-pdf`, `export-submit`) so the spec targets the dialog buttons unambiguously (the desktop + mobile toolbars both carry a `title="Export canvas"` button, so a bare `getByTitle` would trip strict-mode).
+- No export-code bugs surfaced: empty-canvas export produces a valid PNG/PDF (page geometry + Konva `toDataURL` both fine), the drawn-canvas download is non-empty, and the tainted-canvas path is already covered by the unit tests.
+- Verified: `npm run typecheck` exit 0; `npm test` → 435 passed; `npx playwright test` → 25 passed (3 flagged flaky on COLD first boot — login-button hydration race in smoke/approvals/mobile-touch, pre-existing, all green on re-run).
+- Next: the e2e goal for PDF/image document layers (upload an image, export, confirm no taint crash) is the remaining edge case; alternatively fold the `generateFilename` trailing-dash gotcha (noted in Iteration 1) into the implementation.
+- Gotcha: e2e stack must boot cold with `TEST=1`; the first `playwright test` run has a warm-up cost (Nuxt dev SSR) that can make login-button hydration assertions flaky — re-run to confirm, don't chase.
+
+### Iteration 1 (2026-08-07) — unit tests for export logic
+- Added `frontend/composables/useExport.test.ts` (15 tests, all passing):
+  - `getTimestamp` format (YYYY-MM-DDTHH-mm-ss).
+  - `generateFilename`: default png/pdf ext, sanitization (lowercase + non-alnum → dash, incl. trailing-dash edge), empty/whitespace base survives.
+  - `exportAsPNG`: happy path calls `toDataURL` at 1x with x/y/width/height and downloads auto-named `.png`; custom filename + pixelRatio option; null stage → 'Canvas not available' + no download/toast; tainted SecurityError → cross-origin toast message; generic error → 'Export failed'.
+  - `exportAsPDF`: happy path calls `toDataURL` at 2x, `addImage(dataUrl,'PNG',0,0,w,h)`, `output('blob')`, downloads `.pdf` via blob URL; page sized to canvas + landscape/portrait from aspect ratio; null stage; tainted + generic errors.
+- Refactor in `useExport.ts`: `getTimestamp`/`generateFilename` are now **named module exports** (were closed over inside `useExport()`) so the pure functions are unit-testable. No behavior change. (Mirrors `useShareLink.ts` `shareCopyUrl` pattern.)
+- Tests mock: `jspdf` default export (vi.hoisted class w/ shared addImage/output fns + instance tracker), `~/composables/useToast` `toastError`, `URL.createObjectURL/revokeObjectURL`, and `HTMLAnchorElement.prototype.click` to capture the download `<a>`.
+- Verified: `npm run typecheck` exit 0; `npm test` → 435 passed (44 files).
+- Next: e2e spec `frontend/e2e/export.spec.ts` — real PNG + PDF download interception (`page.waitForEvent('download')`), empty-canvas export, drawn-content export. Inspect `ExportDialog.vue` buttons for selectors (no testids yet — may need to add).
+- Gotcha: `generateFilename('My Design v2!','png')` yields `my-design-v2--...` (trailing dash from `!`) — test asserts the actual output; consider trimming trailing dashes in a later iteration if desired.
 
 ## Context (from prior code review — read before changing code)
 
-### Backend is DONE (do not duplicate)
-- `routes/api.php` ~line 19: `Route::middleware(['auth:sanctum'])->prefix('approvals')` group exposing:
-  - `GET /api/approvals` → `ApprovalController@pending` (admin-only, returns `{success:true, data:[...]}`).
-  - `POST /api/approvals/{id}/approve` → admin-only, sets user status approved + approved_at.
-  - `POST /api/approvals/{id}/deny` → admin-only, sets status denied.
-- All three check `$request->user()?->isAdmin()` (403 otherwise). `App\Models\User::isAdmin()` returns `$this->is_admin === true`. Users have `status` (pending|approved|denied), `approved_at`, `is_admin` (fillable).
-- The email-link blade flow (`resources/views/approvals/confirm.blade.php`, `/approvals/{id}/{action}`) stays as-is; this UI is a supplement.
-- Backend tests exist: `tests/Feature/ApprovalApiTest.php`.
+### Current export code
+- `frontend/composables/useExport.ts` (147 lines, NO existing tests):
+  - `getTimestamp()`, `generateFilename(baseName, format)`.
+  - `exportAsPNG(...)`: `stage.toDataURL({ pixelRatio, mimeType, quality })` → `triggerDownload(dataUrl, filename)`.
+  - `exportAsPDF(...)`: `stage.toDataURL({ pixelRatio: 2 })` → `new jsPDF({ orientation, unit, format })` → `pdf.addImage(dataUrl, 'PNG', 0, 0, width, height)` → `pdf.output('blob')` → download.
+  - Catch blocks: PNG error → toastError; PDF error → distinguishes the **tainted canvas** case: `'Export blocked by cross-origin image. Try removing uploaded images first.'`.
+- UI: `frontend/components/whiteboard/ExportDialog.vue`, wired in `frontend/pages/whiteboard/[id].vue` via `@open-export="openExportDialog"`, `const { isExporting, progress, exportAsPNG, exportAsPDF } = useExport()`.
 
-### Frontend gaps to fill
-- No frontend page for approvals. No user-auth state exposing `is_admin` to the client (the only `/api/user` fetch is in `frontend/middleware/auth.global.ts`, which is purely a route guard — it redirects to /login when 401). The admin UI needs to know whether the current user is admin:
-  - Options: (a) fetch `/api/user` on the approvals page and 403/navigate away if `!is_admin`; (b) expose an auth composable/store. Prefer the smallest correct approach; the page must 404/redirect for non-admins (don't leak the endpoint existence beyond the 403 the API already gives).
-- Auth middleware `frontend/middleware/auth.global.ts` whitelists public routes (`/login`, `/register`, `/s/...`); `/approvals` should require auth (redirect to /login when logged out) AND admin (redirect away or show "forbidden" when not admin).
+### Edge cases to cover + expected behavior
+1. **Empty canvas** — exporting a blank board must produce a valid (non-corrupt) file: a PNG/PDF with the stage background. Verify it downloads and is non-trivial in size.
+2. **Canvas with strokes/shapes** — export reflects the drawn content (e2e can draw a stroke, export, and assert the download exists + is non-empty).
+3. **Canvas with PDF/image document layers** — the layer re-renders to a data-URL `src`; if any cross-origin image taints the Konva stage, `toDataURL` throws. The code handles it with a clear message — regression-test that path.
+4. **Large canvas** — export must not hang/crash (timeout/CPU; may be a unit-level concern with a mocked stage).
+5. **PDF page geometry** — page dimensions should match the canvas aspect ratio; `addImage` uses width/height from `stage.getSize()`.
+6. **Filename/timestamp** — unit-test `generateFilename` (e.g. `whiteboard-YYYY-MM-DD-HHmmss.png` style) and timestamp format.
 
-### Suggested shape (use judgement)
-- `frontend/pages/approvals.vue` (or `frontend/pages/admin/approvals.vue`): lists pending users (name, email, registered date), Approve + Deny buttons per row, calls the API via the `$api` composable (`const { $api } = useApi()`), shows empty state when none pending, and success/error feedback (use the existing toast composable if present).
-- A nav link (e.g. in the header/dashboard) shown only to admins, linking to `/approvals`.
-- Keep it consistent with existing page styling/patterns in the app.
-
-### E2E coverage (extend frontend/e2e/)
-- Use the existing Playwright stack (Laravel :8002 + Nuxt :3000 with TEST=1 + WS relay :3001; `frontend/e2e/global-setup.ts` seeds an approved owner — extend it to also seed an **admin** user, e.g. `is_admin => true`, and/or a helper to create a **pending** user).
-- Test: seed a pending user (e.g. `User::create([... 'status' => 'pending'])` via tinker or a global-setup helper) → admin logs in → visits `/approvals` → sees the pending user → clicks Approve → the user's status flips to approved → (optionally) the pending user can now log in.
-- Also test the guard: a non-admin logged-in user visiting `/approvals` is redirected/forbidden.
-- Follow the existing helper style (`frontend/e2e/helpers.ts`: `login`, `createWhiteboard`, `canvasFingerprint`, etc.).
-
-### Unit tests
-- Any new frontend logic (e.g. an approval-list composable or the page's approve/deny handler) should get unit tests where sensible, consistent with existing `.test.ts` files.
+### How to test
+- **Unit** (`frontend/composables/useExport.test.ts`, new): mock the Konva stage (`toDataURL` resolves a data URL) and jsPDF (`addImage`/`output` spy) — verify PNG returns/triggers a download with the right filename; PDF calls `addImage` with the data URL + page dims; empty/stage-throw cases surface the right toast error. Check how `triggerDownload` creates an `<a>` + clicks it — mock `URL.createObjectURL`/`revokeObjectURL`.
+- **E2E** (`frontend/e2e/export.spec.ts`, new): login, create board, draw a stroke, open Export, click PNG → use Playwright's `page.waitForEvent('download')` to intercept and assert `suggestedFilename` ends in `.png` and the download path size > 0 (read the file); same for PDF (`.pdf`). Also an empty-canvas export case. Use the existing helpers (`frontend/e2e/helpers.ts`: `login`, `createWhiteboard`, `waitForCanvas`, touch/mouse draw). ExportDialog buttons need accessible selectors — inspect `ExportDialog.vue` for its button labels/testids and use them.
+- Playwright download handling: `const [download] = await Promise.all([page.waitForEvent('download'), btn.click()])` then `download.path()` → check file size. `triggerDownload` uses `URL.createObjectURL` + `a.click()` + `a.remove()` — the download event should fire.
 
 ### Verification (do end-to-end before DONE)
-1. `cd frontend && npm run typecheck && npm test` green (currently 407 tests).
-2. `npm run test:e2e` green: existing suite (smoke + collab + mobile-touch, 20 tests) still passes, plus the new approvals spec.
-3. `php artisan test` green (47) if Laravel touched (shouldn't be needed).
-4. Manual/headless check: admin sees the pending list + can approve; non-admin is blocked.
+1. `cd frontend && npm run typecheck && npm test` green (currently 420 tests).
+2. `npm run test:e2e` green: existing suite (23 tests) + new export spec.
+3. If export code changed, the e2e must prove real downloads (PNG + PDF) are produced for a drawn board.
+4. `php artisan test` only if Laravel touched (shouldn't be).
 
 ### Gotchas
-- The API is already admin-gated — the frontend guard is UX, not security. Don't weaken the backend.
-- `useApi` `$api` exists (see `frontend/composables/useApi.ts`); verify how it sends the session cookie/XSRF for POSTs.
-- `status` values are `pending|approved|denied`; `GET /api/approvals` returns only pending.
+- Konva `toDataURL` throws on a tainted canvas (SecurityError) — the existing catch maps it to a clear toast. Don't weaken that.
+- In headless Chromium, canvas `toDataURL` works; but Konva layers with cross-origin images taint it — the e2e should use only local drawing (no uploaded images) for the happy-path download tests.
+- `stage.toDataURL` is async in some Konva versions — await it.
+- jsPDF is imported as `import jsPDF from 'jspdf'` — mock the module in unit tests (`vi.mock('jspdf')`).
 - Do not touch the Goal section. Update the State section every iteration.
-- e2e stack: if a stale Nuxt holds :3000, a fresh one falls back to :3001 and collides with the WS relay (documented gotcha). Run the stack cleanly with `TEST=1`.
+- e2e stack: boot cleanly with `TEST=1` (stale Nuxt on :3000 collides with the WS relay — documented gotcha).
 
 ## Log
-
-- 2026-08-07 (iter 1): Added `useApprovals` composable + 13 unit tests + `/approvals` page (admin-gated, list + approve/deny). Typecheck + 420 tests green.
-- 2026-08-07 (iter 2): Dashboard (`index.vue`) header shows "Approvals" nav link only for admins via `useApprovals().checkAdmin()`. Typecheck + 420 tests green.
-- 2026-08-07 (iter 3): E2E `approvals.spec.ts` (3 tests: approve flow, deny flow, non-admin guard) + `global-setup.ts` seeds admin/pending/deny fixtures (owner forced non-admin) + `seedPendingUser` helper. Typecheck + 420 vitest + 23 e2e green.
