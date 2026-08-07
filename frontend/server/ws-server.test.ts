@@ -1078,3 +1078,132 @@ describe('ws-server — live wire integration (spawned relay + real WS clients, 
     }
   }, 20000)
 })
+
+describe('ws-server — live auth-reject (4001) + accept over the wire against a mock Laravel', () => {
+  // The spawn-based suites above run the relay with WS_ALLOW_ANON=1, so the
+  // REAL auth gate (`isAuthed` → `/api/user`/`/api/shares`) is only unit-tested.
+  // This suite spawns the relay with auth ON and points LARAVEL_URL at a local
+  // mock Laravel, proving end-to-end that an unauthenticated socket is rejected
+  // with close code 4001 while a valid session is admitted — and that a
+  // rejection does not wedge the relay (a follow-up valid connection works).
+
+  function startMockLaravel(): Promise<{ port: number; close: () => Promise<void> }> {
+    return new Promise((resolve, reject) => {
+      const server = http.createServer((req, res) => {
+        const url = new URL(req.url || '/', 'http://localhost')
+        if (url.pathname === '/api/user') {
+          const session = (req.headers.cookie || '').match(/laravel_session=([^;]+)/)
+          if (session && session[1] === 'valid-session') {
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ id: 1 }))
+          } else {
+            res.writeHead(401, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ message: 'Unauthenticated.' }))
+          }
+          return
+        }
+        res.writeHead(404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ message: 'Not found' }))
+      })
+      server.on('error', reject)
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address() as { port: number }
+        resolve({
+          port: address.port,
+          close: () => new Promise((r) => server.close(() => r())),
+        })
+      })
+    })
+  }
+
+  async function spawnRelayWithAuth(laravelUrl: string) {
+    const port = await freePort()
+    const child = spawn(process.execPath, [SERVER_PATH], {
+      env: {
+        ...process.env,
+        WS_PORT: String(port),
+        WS_HOST: '127.0.0.1',
+        LARAVEL_URL: laravelUrl,
+        // No WS_ALLOW_ANON — auth must be ON for this suite.
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const exited = new Promise<void>((resolve) => {
+      if (child.exitCode !== null) return resolve()
+      child.once('exit', () => resolve())
+    })
+    await waitForBanner(port, 5000)
+    return { port, child, exited }
+  }
+
+  function connectExpectReject(port: number, roomId: string): Promise<{ code?: number }> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/whiteboard:${roomId}?userId=anon&userName=Anon`)
+      ws.on('open', () => {
+        // The upgrade completes before the relay's async auth resolves, so
+        // `open` fires first; the reject arrives as the follow-up close 4001.
+      })
+      ws.on('error', reject)
+      ws.on('close', (code) => resolve({ code }))
+    })
+  }
+
+  function connectExpectConnected(port: number, roomId: string, cookie: string): Promise<{ messages: Record<string, unknown>[]; ws: WebSocket }> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/whiteboard:${roomId}?userId=user-1&userName=Alice`, {
+        headers: { cookie },
+      })
+      const messages: Record<string, unknown>[] = []
+      ws.on('message', (data) => messages.push(JSON.parse(data.toString()) as Record<string, unknown>))
+      ws.on('error', reject)
+      ws.on('open', () => {})
+      // Resolve once the relay admits us (connected frame) or the socket dies.
+      const timer = setInterval(() => {
+        const connected = messages.find((m) => m.type === 'connected')
+        if (connected) {
+          clearInterval(timer)
+          resolve({ messages, ws })
+        }
+      }, 20)
+      ws.on('close', () => {
+        clearInterval(timer)
+        reject(new Error('socket closed before the connected frame arrived'))
+      })
+    })
+  }
+
+  it('rejects an unauthenticated socket with 4001, admits a valid session, and stays healthy', async () => {
+    const mock = await startMockLaravel()
+    const { port, child, exited } = await spawnRelayWithAuth(`http://127.0.0.1:${mock.port}`)
+    const sockets: WebSocket[] = []
+    try {
+      // 1. No session cookie → the relay must close with 4001 (Authentication required).
+      const rejected = await connectExpectReject(port, 'room-auth')
+      expect(rejected.code).toBe(4001)
+
+      // 2. A valid session → admitted, hears `connected` with itself counted.
+      const valid = await connectExpectConnected(port, 'room-auth', 'laravel_session=valid-session')
+      sockets.push(valid.ws)
+      const connected = valid.messages.find((m) => m.type === 'connected')
+      expect(connected).toBeDefined()
+      expect(connected!.roomId).toBe('room-auth')
+      expect(connected!.userId).toBe('user-1')
+
+      // 3. The rejected connection did not leak a room slot: the admitted client
+      //    is the room's only occupant (userCount 1, not 2).
+      expect(connected!.userCount).toBe(1)
+
+      // 4. The relay stayed healthy after the rejection — a second valid session
+      //    is still admitted (no wedged/leaked totalConnections).
+      const second = await connectExpectConnected(port, 'room-auth', 'laravel_session=valid-session')
+      sockets.push(second.ws)
+      const connected2 = second.messages.find((m) => m.type === 'connected')
+      expect(connected2!.userCount).toBe(2)
+    } finally {
+      for (const s of sockets) s.close()
+      child.kill('SIGTERM')
+      await exited
+      await mock.close()
+    }
+  }, 20000)
+})

@@ -4,31 +4,31 @@
 Extract the WS relay connection close/error/cleanup logic in frontend/server/ws-server.js into exported, testable helpers and add regression tests: close removes the client from its room and decrements totalConnections, user-left broadcasts to remaining peers only, the 60s delayed empty-room cleanup deletes the room only if still empty when it fires, the error path must not leak (currently never decrements totalConnections, never broadcasts user-left, never schedules cleanup), and heartbeat-termination must drive the close path. Decide and implement whether the relay's user-joined/user-left presence broadcasts are consumed by the client (useCollaborativeCanvas.ts handleIncomingMessage ignores them today) or removed. Keep npm run typecheck + npm test green.
 
 ## State
-Iteration complete: made teardown idempotent across the error→close double-fire. A real `ws` socket that errors ALWAYS also emits `close` afterwards, so both lifecycle handlers ran `removeClientFromRoom` twice for one departure — the second pass double-decremented `totalConnections` and re-broadcast `user-left` to remaining peers (and, had the first pass emptied the room, would have scheduled a duplicate cleanup timer). `removeClientFromRoom` now guards on `ws.lifecycleHandled`: the first pass un-accounts + broadcasts + (if empty) schedules cleanup; repeat passes return the real room size with `alreadyHandled: true` and no decrement/broadcast. `handleClientClose` skips `scheduleEmptyRoomCleanup` on a repeat pass so a live peer's room can never be erroneously deleted by a redundant timer.
+Iteration complete: closed the last relay end-to-end gap — the auth-reject (4001) path is now proven over a real wire against a mock Laravel, not just via unit tests. Previously every spawn-based suite ran the relay with `WS_ALLOW_ANON=1`, so the real `isAuthed` gate (Sanctum session + share-token lookup) was only unit-tested. The new live suite spawns the relay with auth ON pointing `LARAVEL_URL` at an in-process mock Laravel: an unauthenticated socket is closed with code 4001, a valid `laravel_session` is admitted (hears `connected`), the rejected socket does NOT leak a room slot (admitted client's `userCount` is 1, not 2), and a follow-up valid session is still admitted (totalConnections not leaked/wedged).
 
 ### What changed
-- `frontend/server/ws-server.js`:
-  - `removeClientFromRoom(ws, rooms, totalConnectionsRef, broadcastToRoomFn, now)` — added `ws.lifecycleHandled` idempotency guard. Repeat pass: returns `{ roomId, roomSize, broadcastUserLeft: false, alreadyHandled: true }` WITHOUT decrementing the counter or broadcasting. Return type now includes `alreadyHandled: boolean`.
-  - `handleClientClose(...)` — schedules `scheduleEmptyRoomCleanup` only when `roomSize === 0 && !alreadyHandled` (a repeat error-then-close pass no longer schedules a second timer).
-  - `registerLifecycleHandlers` JSDoc now documents the double-fire contract (error → close) and the guard.
-- `frontend/server/ws-server.test.ts`: 3 new regression tests in the lifecycle describe:
-  - `error then close (real ws fires both) teardowns ONCE` — counter 2→1 (not 0), user-left broadcast once (not twice), b receives one frame, and the still-occupied room survives the cleanup delay (no erroneous deletion).
-  - `error then close on a solo client schedules the empty-room cleanup exactly once` — error empties room + schedules one timer; the follow-up close pass schedules no second timer; room still deleted once when it fires.
-  - `close fired twice (duplicate close event) is idempotent` — no double-decrement, no re-broadcast to the remaining peer.
+- `frontend/server/ws-server.test.ts`: new describe `ws-server — live auth-reject (4001) + accept over the wire against a mock Laravel`:
+  - `startMockLaravel()` — in-process `http` server answering `/api/user` (200 for `laravel_session=valid-session`, else 401) and 404 for everything else.
+  - `spawnRelayWithAuth(laravelUrl)` — spawns the relay WITHOUT `WS_ALLOW_ANON` so the real auth gate runs.
+  - `connectExpectReject(port, roomId)` — returns the close code observed by an unauthenticated client.
+  - `connectExpectConnected(port, roomId, cookie)` — sends the session cookie in the WS handshake headers and resolves on the `connected` frame.
+  - 1 test (`rejects an unauthenticated socket with 4001, admits a valid session, and stays healthy`) asserting close code 4001; `connected` frame for the valid session (roomId + userId echo); `userCount === 1` proving the rejected socket never occupied a room slot; second valid session still admitted with `userCount === 2`.
+- No change to `frontend/server/ws-server.js` — the production code already converged on the correct reject/accept behavior; this locks it end-to-end.
 
 ### Tests
-- `npm run typecheck` 0 errors; `npm test` 386 passed (was 383; +3 relay lifecycle tests, 50 total in ws-server.test.ts). Wire/banner spawn suites still green.
+- `npm run typecheck` 0 errors; `npm test` 387 passed (was 386; +1 live auth-reject test, 51 total in ws-server.test.ts). All wire/banner/lifecycle suites green.
 
 ### What is next
-- All lifecycle paths now converge on testable, idempotent helpers: join (`announceJoin`), close/error double-fire (`handleClientClose`/`handleClientError`/`removeClientFromRoom`, guarded), empty-room cleanup (`scheduleEmptyRoomCleanup`), reject (`rejectConnection`). A spawn-based 4001-reject test would need the relay to consult a local mock Laravel (low value; covered by unit tests).
-- Presence broadcasts are consumed by the client via `applyPresenceMessage` (Iter 1) — decision implemented, not half-wired.
-- Push branch off `develop`, open PR, run through CI (per AGENTS.md protocol) when asked.
+- Every relay path is now covered at both unit AND (where feasible) wire level: join presence, close/error/cleanup (idempotent), empty-room rejoin survival, heartbeat→close, 4001-reject, and accept-with-valid-session.
+- Remaining open item is operational, not code: branch off `develop` is already `fix/relay-close-path` — push, open PR, run through CI (per AGENTS.md protocol) when asked.
+- Presence broadcasts: consumed by the client via `applyPresenceMessage` (Iter 1) — decision implemented, not half-wired.
 
 ### Gotchas
 - The auth-reject socket never joins a room and never gets lifecycle handlers, so its accounting must happen at reject time — do NOT fix it by registering handlers early (the roomId/identity aren't set yet).
 - `removeClientFromRoom`'s idempotency is per-socket (`ws.lifecycleHandled`), NOT a counter-floor check — a floor alone stops negative counts but still lets a second pass decrement a positive counter and re-broadcast. Keep the flag.
 - Repeat passes still return the REAL `roomSize` (not 0) so `handleClientClose`'s log and the `alreadyHandled` check see reality — returning a fake 0 there would re-trigger cleanup.
 - `fakeSocket` in the tests has no `close()` method by default — assign `a.close = closeSpy` before calling `rejectConnection`.
+- The mock Laravel in the new live suite must answer `/api/user` from the relay's `req.headers.cookie` — the relay forwards the handshake Cookie header verbatim. Use `http.createServer` (namespace import), NOT a bare `createServer` (the test file's other import is `createTcpServer` from `net`).
 
 ## Context (from prior code review — read before changing code)
 
@@ -67,6 +67,7 @@ Extract helpers that the connection handler calls, keeping the handler thin:
 - Do not touch the Goal section. Update the State section every iteration.
 
 ## Log
+- Iter 6 (2026-08-07): Added live wire-level auth-reject coverage — spawned the relay with auth ON (no WS_ALLOW_ANON) against an in-process mock Laravel: unauthenticated socket closed with 4001, valid session admitted (`connected` frame), rejected socket leaves no room slot (userCount 1 not 2), relay healthy for a follow-up session. +1 test (387 total, 51 in ws-server.test.ts). typecheck 0 errors.
 - Iter 5 (2026-08-07): Made lifecycle teardown idempotent across the error→close double-fire (a real ws socket that errors always also emits close). `removeClientFromRoom` now guards on `ws.lifecycleHandled`; repeat passes skip decrement/broadcast and return `alreadyHandled` so `handleClientClose` never double-schedules empty-room cleanup. +3 lifecycle tests (error→close once, solo error→close single cleanup, duplicate close idempotent). typecheck 0 errors, 386 tests green.
 - Iter 4 (2026-08-07): Fixed the auth-reject count leak — extracted `rejectConnection(ws, totalConnectionsRef, code, reason)` and wired the connection handler's reject branch to it (previously inline `ws.close(4001)` never decremented the pre-auth increment). +2 lifecycle tests. typecheck 0 errors, 383 tests green.
 - Iter 3 (2026-08-07): Added live wire-integration test (spawned relay + 2 real WS clients, `WS_ALLOW_ANON=1`) covering the full lifecycle end-to-end: connected userCount, user-joined to peer only, binary Yjs verbatim relay, JSON cursor relay, user-left on close. Moved spawn helpers to module scope. typecheck 0 errors, 381 tests green.
