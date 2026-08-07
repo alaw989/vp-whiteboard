@@ -11,10 +11,15 @@ export function getTimestamp(): string {
 
 // Generate filename from document name or default
 export function generateFilename(baseName: string, format: ExportFormat): string {
-  const sanitized = baseName.replace(/[^a-z0-9]/gi, '-').toLowerCase()
+  const sanitized = baseName
+    .replace(/[^a-z0-9]/gi, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+  const base = sanitized || 'whiteboard'
   const timestamp = getTimestamp()
   const ext = format === 'pdf' ? 'pdf' : 'png'
-  return `${sanitized}-${timestamp}.${ext}`
+  return `${base}-${timestamp}.${ext}`
 }
 
 export function useExport() {

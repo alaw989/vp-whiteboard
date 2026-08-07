@@ -63,12 +63,18 @@ describe('generateFilename', () => {
   })
 
   it('sanitizes the base name: lowercases and replaces non-alphanumerics with dashes', () => {
-    expect(generateFilename('My Design v2!', 'png')).toMatch(/^my-design-v2--\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.png$/)
+    expect(generateFilename('My Design v2!', 'png')).toMatch(/^my-design-v2-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.png$/)
   })
 
-  it('survives an empty or whitespace base name without crashing', () => {
-    expect(generateFilename('', 'png')).toMatch(/^-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.png$/)
-    expect(generateFilename('   ', 'pdf')).toMatch(/\.pdf$/)
+  it('collapses consecutive dashes and trims leading/trailing dashes', () => {
+    expect(generateFilename('foo!!bar', 'png')).toMatch(/^foo-bar-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.png$/)
+    expect(generateFilename('!leading and trailing!', 'png')).toMatch(/^leading-and-trailing-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.png$/)
+  })
+
+  it('falls back to the whiteboard default when the base name is empty or all symbols', () => {
+    expect(generateFilename('', 'png')).toMatch(/^whiteboard-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.png$/)
+    expect(generateFilename('   ', 'pdf')).toMatch(/^whiteboard-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.pdf$/)
+    expect(generateFilename('!!!', 'png')).toMatch(/^whiteboard-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.png$/)
   })
 })
 
