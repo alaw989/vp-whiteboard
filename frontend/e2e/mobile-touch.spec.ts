@@ -60,6 +60,30 @@ function canvasFingerprint(page: Page): Promise<string> {
 }
 
 /**
+ * Sample a single RGBA pixel from the largest Konva layer canvas at a CSS
+ * (viewport) coordinate, mapping through the canvas's own devicePixelRatio.
+ * The highlighter renders at globalAlpha 0.5, so a black highlight over the
+ * #f5f5f5 background blends to ~mid-gray while a pen stroke is opaque black —
+ * pixel color distinguishes which tool actually rendered.
+ */
+function pixelAt(page: Page, point: { x: number; y: number }): Promise<[number, number, number, number]> {
+  return page.evaluate(({ x, y }) => {
+    const container = document.querySelector('.whiteboard-container')
+    if (!container) return [0, 0, 0, 0]
+    const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
+    if (canvases.length === 0) return [0, 0, 0, 0]
+    const main = canvases.reduce((a, b) =>
+      a.width * a.height >= b.width * b.height ? a : b,
+    )
+    const rect = main.getBoundingClientRect()
+    const px = Math.round((x - rect.left) * (main.width / rect.width))
+    const py = Math.round((y - rect.top) * (main.height / rect.height))
+    const d = main.getContext('2d')!.getImageData(px, py, 1, 1).data
+    return [d[0], d[1], d[2], d[3]]
+  }, point)
+}
+
+/**
  * Dispatch a real PointerEvent sequence (pointerType 'touch') on the Konva
  * stage content element. Playwright's mouse API always emits pointerType
  * 'mouse' and touchscreen.tap() fires no pointermove, so neither can drive a
@@ -156,6 +180,60 @@ test('mobile toolbar selects pen; a touch pen stroke lands on the canvas', async
   await expect
     .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
     .not.toBe(baseline)
+})
+
+test('mobile toolbar selects the highlighter; a touch highlight renders as a translucent stroke', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+
+  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
+  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+
+  // Highlighter (B) is in the collapsed primary strip, like the pen.
+  await mobileToolbar.getByTitle('Highlighter (B)').click()
+  await expect(mobileToolbar.getByTitle('Highlighter (B)')).toHaveClass(/bg-blue-100/)
+
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+
+  // One diagonal for the highlighter, a parallel one for the pen, so each
+  // tool's stroke can be sampled at its own midpoint (the two never overlap).
+  const hlStart = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.2 }
+  const hlEnd = { x: box.x + box.width * 0.6, y: box.y + box.height * 0.35 }
+  const hlMid = { x: box.x + box.width * 0.45, y: box.y + box.height * 0.275 }
+  const penStart = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.35 }
+  const penEnd = { x: box.x + box.width * 0.6, y: box.y + box.height * 0.5 }
+  const penMid = { x: box.x + box.width * 0.45, y: box.y + box.height * 0.425 }
+
+  // A touch highlight lands on the canvas (a real stroke is committed)…
+  await touchStroke(page, hlStart, hlEnd)
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+
+  // …and it renders at 50% alpha: black over the #f5f5f5 background blends to
+  // ~mid-gray at the stroke center. This proves the highlighter's translucent
+  // rendering (globalAlpha 0.5) actually ran, not just "some stroke landed".
+  const hlPx = await pixelAt(page, hlMid)
+  for (const ch of hlPx.slice(0, 3)) {
+    expect(ch).toBeGreaterThan(60)
+    expect(ch).toBeLessThan(200)
+  }
+
+  // The pen over the same canvas at its own midpoint is opaque black — the
+  // contrast confirms the sampled translucency is highlighter-specific.
+  await mobileToolbar.getByTitle('Pen (P)').click()
+  await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+  await touchStroke(page, penStart, penEnd)
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+
+  const penPx = await pixelAt(page, penMid)
+  for (const ch of penPx.slice(0, 3)) {
+    expect(ch).toBeLessThan(80)
+  }
 })
 
 test('two-finger pan moves the viewport without committing a stroke', async ({ page }) => {

@@ -2642,7 +2642,10 @@ function buildStrokeConfig(outline: number[][], data: StrokeElement) {
     stroke: data.color,
     strokeWidth: 1,
     fill: data.color,
-    globalAlpha: data.tool === 'highlighter' ? 0.5 : 1,
+    // Konva has no `globalAlpha` node property (it only reads `opacity` when
+    // setting the canvas context alpha), so highlighter translucency must use
+    // `opacity` — `globalAlpha: 0.5` was silently ignored → opaque highlights.
+    opacity: data.tool === 'highlighter' ? 0.5 : 1,
     lineCap: 'round',
     lineJoin: 'round',
     closed: true,
@@ -2675,7 +2678,7 @@ function getActiveStrokeConfig(strokeId: string, points: [number, number, number
     stroke: userColor,
     strokeWidth: 1,
     fill: userColor,
-    globalAlpha: 0.7,  // Slightly transparent to show in-progress state
+    opacity: 0.7,  // Slightly transparent to show in-progress state
     lineCap: 'round',
     lineJoin: 'round',
     closed: true,
@@ -3279,7 +3282,7 @@ const currentStrokeConfig = computed(() => {
     stroke: props.currentColor,
     strokeWidth: 1,  // Outline is filled, so stroke width doesn't matter
     fill: props.currentColor,
-    globalAlpha: props.currentTool === 'highlighter' ? 0.5 : 1,
+    opacity: props.currentTool === 'highlighter' ? 0.5 : 1,
     lineCap: 'round',
     lineJoin: 'round',
     closed: true,
