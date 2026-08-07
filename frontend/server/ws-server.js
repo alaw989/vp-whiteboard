@@ -23,6 +23,7 @@
 
 import { WebSocketServer } from 'ws'
 import { createServer } from 'http'
+import { pathToFileURL } from 'url'
 
 const PORT = process.env.WS_PORT || 3001
 const HOST = process.env.WS_HOST || '0.0.0.0'
@@ -399,10 +400,40 @@ function broadcastToRoom(roomId, msg, exclude) {
   })
 }
 
+/**
+ * Decide whether this process was launched as the entry-point script (so it
+ * must bind the port and start the heartbeat) rather than merely imported as a
+ * module (e.g. by vitest, which unit-tests the exported helpers below).
+ *
+ * Two launch modes are treated as "entry point":
+ * 1. Direct `node server/ws-server.js` — process.argv[1] is our own file.
+ * 2. pm2 fork mode — pm2 executes our script via its ProcessContainerFork.js
+ *    loader, so process.argv[1] is THAT container's path
+ *    (/usr/lib/node_modules/pm2/lib/ProcessContainerFork.js), never ours. The
+ *    naive `import.meta.url === file://${process.argv[1]}` comparison then
+ *    returns false and the relay never binds — nginx 502s every WS upgrade and
+ *    live sharing breaks until a refresh. pm2 always sets `pm_id` on every
+ *    managed child, so that is the reliable signal for the pm2 case.
+ *
+ * @param {string|undefined} [argv1] override process.argv[1] (tests)
+ * @param {string|undefined} [pmId]  override process.env.pm_id (tests)
+ * @returns {boolean}
+ */
+export function isEntryPoint(argv1 = process.argv[1], pmId = process.env.pm_id) {
+  if (argv1) {
+    try {
+      if (import.meta.url === pathToFileURL(argv1).href) return true
+    } catch {
+      // unparsable argv[1] — fall through to the pm2 check
+    }
+  }
+  return typeof pmId !== 'undefined' && pmId !== ''
+}
+
 // Start the server + heartbeat only when run directly (skip when imported for
 // tests, e.g. to unit-test helpers — the module-scope heartbeat interval would
 // otherwise keep the vitest/node process alive).
-const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`
+const isMain = isEntryPoint()
 if (isMain) {
   // Server-side heartbeat — ping every 30s, disconnect clients unresponsive for 60s
   setInterval(() => {

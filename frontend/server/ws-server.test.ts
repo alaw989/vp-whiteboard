@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { spawn } from 'child_process'
+import http from 'http'
+import { createServer as createTcpServer } from 'net'
+import { fileURLToPath } from 'url'
+import path from 'path'
 import {
   resolveStatefulOrigin,
   relayClientMessage,
   runHeartbeat,
   isAuthed,
   clearAuthCache,
+  isEntryPoint,
   HEARTBEAT_TIMEOUT_MS,
 } from './ws-server'
 
@@ -46,6 +52,39 @@ describe('ws-server — resolveStatefulOrigin (Sanctum session auth)', () => {
   it('strips a path from the fallback LARAVEL_URL origin', () => {
     const { origin } = resolveStatefulOrigin(undefined, undefined, 'http://localhost:8002/api')
     expect(origin).toBe('http://localhost:8002')
+  })
+})
+
+describe('ws-server — isEntryPoint (bind decision: direct node run AND pm2 fork)', () => {
+  // The real filesystem path of ws-server.js — argv[1] as `node server/ws-server.js`
+  // would produce. pathToFileURL(serverPath).href === ws-server.js's import.meta.url.
+  const serverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ws-server.js')
+  // What pm2 fork mode actually puts in argv[1] (the relay's root cause).
+  const PM2_FORK_LOADER = '/usr/lib/node_modules/pm2/lib/ProcessContainerFork.js'
+
+  it('returns true for a direct `node server/ws-server.js` run', () => {
+    expect(isEntryPoint(serverPath, undefined)).toBe(true)
+  })
+
+  it('returns true under pm2 fork mode — regression: argv[1] is pm2\'s loader, not ours', () => {
+    // Under pm2, process.argv[1] is ProcessContainerFork.js, so the naive
+    // `import.meta.url === file://${process.argv[1]}` check is false and the
+    // relay never binds (nginx 502s every WS upgrade). pm2 always sets pm_id on
+    // managed children — that must flip the decision to true.
+    expect(isEntryPoint(PM2_FORK_LOADER, '0')).toBe(true)
+    expect(isEntryPoint(PM2_FORK_LOADER, '1')).toBe(true)
+  })
+
+  it('returns true when only pm_id is present (pm2 without a parseable argv[1])', () => {
+    expect(isEntryPoint(undefined, '3')).toBe(true)
+    expect(isEntryPoint('not a real path/…', '3')).toBe(true)
+  })
+
+  it('returns false when merely imported as a module (vitest/test process)', () => {
+    // vitest's own bin is argv[1] and pm_id is unset → no bind, so unit tests
+    // never leave a stray port open or a heartbeat interval alive.
+    expect(isEntryPoint('/usr/lib/node_modules/vitest/vitest.mjs', undefined)).toBe(false)
+    expect(isEntryPoint(undefined, undefined)).toBe(false)
   })
 })
 
@@ -339,4 +378,78 @@ describe('ws-server — isAuthed (connection gate: owners + share viewers)', () 
 
     expect(calls).toHaveLength(1)
   })
+})
+
+describe('ws-server — actually listens when launched as the entry point (regression for pm2 never binding)', () => {
+  const SERVER_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ws-server.js')
+
+  function freePort(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const srv = createTcpServer()
+      srv.unref()
+      srv.on('error', reject)
+      srv.listen(0, '127.0.0.1', () => {
+        const port = (srv.address() as { port: number }).port
+        srv.close(() => resolve(port))
+      })
+    })
+  }
+
+  // Poll the relay's HTTP endpoint until it answers with its banner (proves the
+  // listen() actually happened), or reject after timeoutMs.
+  function waitForBanner(port: number, timeoutMs: number): Promise<string> {
+    const deadline = Date.now() + timeoutMs
+    return new Promise((resolve, reject) => {
+      const attempt = () => {
+        if (Date.now() > deadline) {
+          reject(new Error(`relay did not answer on :${port} within ${timeoutMs}ms`))
+          return
+        }
+        const req = http.get({ host: '127.0.0.1', port, path: '/', timeout: 500 }, (res) => {
+          let body = ''
+          res.on('data', (c) => (body += c))
+          res.on('end', () => {
+            if (res.statusCode === 200 && body.includes('VP Whiteboard Yjs WebSocket Server')) {
+              resolve(body)
+            } else {
+              setTimeout(attempt, 200)
+            }
+          })
+        })
+        req.on('timeout', () => {
+          req.destroy()
+          setTimeout(attempt, 200)
+        })
+        req.on('error', () => setTimeout(attempt, 200))
+      }
+      attempt()
+    })
+  }
+
+  it('spawns `node server/ws-server.js` on a free port and serves the banner', async () => {
+    const port = await freePort()
+    const child = spawn(process.execPath, [SERVER_PATH], {
+      env: {
+        ...process.env,
+        WS_PORT: String(port),
+        WS_HOST: '127.0.0.1',
+        // No connections in this test, so auth is never consulted; set an
+        // unreachable Laravel URL so nothing hangs if a stray connection fires.
+        LARAVEL_URL: 'http://127.0.0.1:9',
+        WS_ALLOW_ANON: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const exited = new Promise<void>((resolve) => {
+      if (child.exitCode !== null) return resolve()
+      child.once('exit', () => resolve())
+    })
+    try {
+      const body = await waitForBanner(port, 5000)
+      expect(body).toContain('VP Whiteboard Yjs WebSocket Server')
+    } finally {
+      child.kill('SIGTERM')
+      await exited
+    }
+  }, 15000)
 })
