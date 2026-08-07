@@ -50,6 +50,7 @@ export interface ToolContext {
   startActiveStroke?: ((strokeId: string) => void) | null
   broadcastStrokePoint?: ((strokeId: string, point: [number, number, number]) => void) | null
   endActiveStroke?: ((strokeId: string, element: CanvasElement) => void) | null
+  cancelActiveStroke?: ((strokeId: string) => void) | null
   // Measurement
   isMeasuring: Ref<boolean>
   measurementStart: Ref<[number, number] | null>
@@ -85,6 +86,10 @@ export interface ToolHandler {
   onMouseDown?: (event: any, pos: PointerPosition) => void
   onMouseMove?: (event: any, pos: PointerPosition) => void
   onMouseUp?: (event: any, pos: PointerPosition) => void
+  // Abort an in-progress operation WITHOUT committing (e.g. a two-finger
+  // gesture interrupts a stroke). Tools without an explicit cancel fall back
+  // to deactivate() (which most tools implement to reset their state).
+  cancel?: () => void
   // Return true when the tool consumes the event (handled it). The canvas keydown
   // listener uses this to stopImmediatePropagation so the page-level shortcut
   // handler doesn't also act (e.g. switch tools, deselect).
@@ -101,6 +106,7 @@ export interface ToolHandlerRegistry {
   dispatchMouseDown: (tool: DrawingTool, event: any, pos: PointerPosition) => void
   dispatchMouseMove: (tool: DrawingTool, event: any, pos: PointerPosition) => void
   dispatchMouseUp: (tool: DrawingTool, event: any, pos: PointerPosition) => void
+  dispatchCancel: (tool: DrawingTool) => void
   dispatchKeyDown: (tool: DrawingTool, event: KeyboardEvent) => boolean
   activateTool: (tool: DrawingTool) => void
   deactivateTool: (tool: DrawingTool) => void
@@ -138,6 +144,16 @@ export function useToolHandlers(): ToolHandlerRegistry {
     wrapError(() => handlers.get(tool)?.onMouseUp?.(event, pos), `${tool}.onMouseUp`)
   }
 
+  function dispatchCancel(tool: DrawingTool) {
+    const handler = handlers.get(tool)
+    if (!handler) return
+    if (handler.cancel) {
+      wrapError(() => handler.cancel!(), `${tool}.cancel`)
+    } else {
+      wrapError(() => handler.deactivate?.(), `${tool}.cancel(deactivate fallback)`)
+    }
+  }
+
   function dispatchKeyDown(tool: DrawingTool, event: KeyboardEvent): boolean {
     const handler = handlers.get(tool)
     if (!handler?.onKeyDown) return false
@@ -158,6 +174,7 @@ export function useToolHandlers(): ToolHandlerRegistry {
     dispatchMouseDown,
     dispatchMouseMove,
     dispatchMouseUp,
+    dispatchCancel,
     dispatchKeyDown,
     activateTool,
     deactivateTool,

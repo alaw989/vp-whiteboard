@@ -1,0 +1,398 @@
+import { expect, type Page } from '@playwright/test'
+import { E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD } from './global-setup'
+
+/** Log in as the pre-seeded, approved e2e owner. */
+export async function login(page: Page) {
+  await page.goto('/login')
+  await page.fill('#email', E2E_OWNER_EMAIL)
+  await page.fill('#password', E2E_OWNER_PASSWORD)
+  await page.click('button[type="submit"]')
+  await page.waitForURL(/\/(whiteboards?|$)/, { timeout: 15000 })
+}
+
+/** Create a fresh whiteboard and return its UUID (from the redirected URL). */
+export async function createWhiteboard(page: Page): Promise<string> {
+  await page.goto('/whiteboard/new')
+  // The /new route POSTs the board then redirects to /whiteboard/{id}; wait
+  // for the real board URL, NOT the /whiteboard/new creation page (whose last
+  // path segment is "new", not the UUID).
+  await page.waitForURL(
+    (url) => /^\/whiteboard\/[^/]+$/.test(url.pathname) && !url.pathname.endsWith('/new'),
+    { timeout: 15000 },
+  )
+  const pathname = new URL(page.url()).pathname
+  return pathname.substring(pathname.lastIndexOf('/') + 1)
+}
+
+/**
+ * Wait until the real-time connection badge reads "connected". The relay only
+ * sets it once the WS handshake authenticated — the owner via the
+ * laravel_session cookie, the share viewer via the /s/{token} share token — so
+ * this is the assertion that both auth paths were exercised end to end.
+ */
+export async function waitForConnected(page: Page) {
+  await expect(page.getByText('connected', { exact: true })).toBeVisible({ timeout: 20000 })
+}
+
+/**
+ * Coarse, deterministic hash of the main Konva layer's rendered pixels. The
+ * canvas is reduced to a 24-wide grid of average luma (via getImageData, NOT
+ * drawImage — headless Chromium serves a stale surface to drawImage, so a
+ * freshly-drawn stroke would be invisible to it), so a stroke anywhere shifts
+ * the hash. Read-only — proves a shape actually rendered, without touching app
+ * internals.
+ */
+export function canvasFingerprint(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const container = document.querySelector('.whiteboard-container')
+    if (!container) return 'no-container'
+    const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
+    if (canvases.length === 0) return 'no-canvas'
+    const main = canvases.reduce((a, b) =>
+      a.width * a.height >= b.width * b.height ? a : b,
+    )
+    const ctx = main.getContext('2d')!
+    const data = ctx.getImageData(0, 0, main.width, main.height).data
+    const grid = 24
+    const gw = grid
+    const gh = Math.max(1, Math.round((grid * main.height) / main.width))
+    const sums = new Array<number>(gw * gh).fill(0)
+    for (let y = 0; y < main.height; y++) {
+      const gy = Math.min(gh - 1, Math.floor((y * gh) / main.height))
+      for (let x = 0; x < main.width; x++) {
+        const gx = Math.min(gw - 1, Math.floor((x * gw) / main.width))
+        sums[gy * gw + gx]! += data[(y * main.width + x) * 4]!
+      }
+    }
+    const per = Math.floor((main.width * main.height) / (gw * gh))
+    let h = 2166136261
+    for (let i = 0; i < sums.length; i++) {
+      h ^= Math.round(sums[i]! / per)
+      h = Math.imul(h, 16777619)
+    }
+    return (h >>> 0).toString(16)
+  })
+}
+
+/**
+ * Fingerprint of the TRANSFORMER layer canvas — the LAST canvas (Konva renders
+ * layers in template order; the transformer layer is declared after the main
+ * layer). Selection handles (blue border + anchors) render here, so a
+ * select-tool tap that successfully selects an element changes this hash while
+ * the main layer (canvasFingerprint) stays put. Empty = no selection.
+ */
+export function transformerFingerprint(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const container = document.querySelector('.whiteboard-container')
+    if (!container) return 'no-container'
+    const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
+    if (canvases.length === 0) return 'no-canvas'
+    const layer = canvases[canvases.length - 1]!
+    const ctx = layer.getContext('2d')!
+    const data = ctx.getImageData(0, 0, layer.width, layer.height).data
+    // Hash only the alpha channel on a coarse grid: the transformer draws thin
+    // blue handles + a dashed border, so a handful of opaque pixels distinguishes
+    // "selected" from the empty (all-transparent) layer.
+    const grid = 24
+    const gw = grid
+    const gh = Math.max(1, Math.round((grid * layer.height) / layer.width))
+    const sums = new Array<number>(gw * gh).fill(0)
+    for (let y = 0; y < layer.height; y++) {
+      const gy = Math.min(gh - 1, Math.floor((y * gh) / layer.height))
+      for (let x = 0; x < layer.width; x++) {
+        const gx = Math.min(gw - 1, Math.floor((x * gw) / layer.width))
+        sums[gy * gw + gx]! += data[(y * layer.width + x) * 4 + 3]!
+      }
+    }
+    const per = Math.max(1, Math.floor((layer.width * layer.height) / (gw * gh)))
+    let h = 2166136261
+    for (let i = 0; i < sums.length; i++) {
+      h ^= Math.round(sums[i]! / per)
+      h = Math.imul(h, 16777619)
+    }
+    return (h >>> 0).toString(16)
+  })
+}
+
+/**
+ * Sample a single RGBA pixel from the largest Konva layer canvas at a CSS
+ * (viewport) coordinate, mapping through the canvas's own devicePixelRatio.
+ * The highlighter renders at opacity 0.5, so a black highlight over the
+ * #f5f5f5 background blends to ~mid-gray while a pen stroke is opaque black —
+ * pixel color distinguishes which tool actually rendered.
+ */
+export function pixelAt(
+  page: Page,
+  point: { x: number; y: number },
+): Promise<[number, number, number, number]> {
+  return page.evaluate(({ x, y }) => {
+    const container = document.querySelector('.whiteboard-container')
+    if (!container) return [0, 0, 0, 0]
+    const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
+    if (canvases.length === 0) return [0, 0, 0, 0]
+    const main = canvases.reduce((a, b) =>
+      a.width * a.height >= b.width * b.height ? a : b,
+    )
+    const rect = main.getBoundingClientRect()
+    const px = Math.round((x - rect.left) * (main.width / rect.width))
+    const py = Math.round((y - rect.top) * (main.height / rect.height))
+    const d = main.getContext('2d')!.getImageData(px, py, 1, 1).data
+    return [d[0], d[1], d[2], d[3]]
+  }, point)
+}
+
+/**
+ * Scan a horizontal row of the largest Konva layer canvas (at viewport CSS
+ * `yCss`) and return the horizontal span of "ink" (luma < threshold) in CSS
+ * x-coordinates, or null if the canvas isn't ready. Used by the coordinate-probe
+ * regression: a fresh board has only the drawn stroke, so its dark pixels on
+ * the stroke's own row must start where the finger touched down — proving touch
+ * client coords map to the same stage position (no container-offset/zoom error).
+ * The ink's HEAD is the coordinate invariant; perfect-freehand's streamline can
+ * pull the tail a few px short of the lift point, so callers assert on the head.
+ */
+export async function darkRowSpan(
+  page: Page,
+  yCss: number,
+  threshold = 128,
+): Promise<{ minX: number; maxX: number; count: number } | null> {
+  return page.evaluate(
+    ({ yCss, threshold }) => {
+      const container = document.querySelector('.whiteboard-container')
+      if (!container) return null
+      const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
+      if (canvases.length === 0) return null
+      const main = canvases.reduce((a, b) => (a.width * a.height >= b.width * b.height ? a : b))
+      const rect = main.getBoundingClientRect()
+      const py = Math.round((yCss - rect.top) * (main.height / rect.height))
+      if (py < 0 || py >= main.height) return { minX: -1, maxX: -1, count: 0 }
+      const ctx = main.getContext('2d')!
+      const data = ctx.getImageData(0, py, main.width, 1).data
+      let minX = -1
+      let maxX = -1
+      let count = 0
+      for (let x = 0; x < main.width; x++) {
+        if (data[x * 4]! < threshold) {
+          if (minX === -1) minX = x
+          maxX = x
+          count++
+        }
+      }
+      const toCss = (px: number) => rect.left + (px / main.width) * rect.width
+      return minX === -1
+        ? { minX: -1, maxX: -1, count: 0 }
+        : { minX: toCss(minX), maxX: toCss(maxX), count }
+    },
+    { yCss, threshold },
+  )
+}
+
+export type TouchEvent = {
+  type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel'
+  pointerId: number
+  clientX: number
+  clientY: number
+  pressure?: number
+  buttons?: number
+}
+
+/**
+ * Dispatch a real PointerEvent sequence (pointerType 'touch') on the Konva
+ * stage content element. Playwright's mouse API always emits pointerType
+ * 'mouse' and touchscreen.tap() fires no pointermove, so neither can drive a
+ * Konva stroke (down → moves → up). Konva's stage listens on the content div
+ * and computes positions from clientX/clientY, so synthetic events carrying
+ * those coords behave like real touches.
+ */
+export async function touchPointer(page: Page, events: TouchEvent[]) {
+  await page.evaluate((evts) => {
+    const canvas = document.querySelector('.whiteboard-container canvas')
+    if (!canvas) throw new Error('stage canvas not found')
+    const content = canvas.parentElement
+    if (!content) throw new Error('stage content element not found')
+    for (const evt of evts) {
+      content.dispatchEvent(
+        new PointerEvent(evt.type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId: evt.pointerId,
+          pointerType: 'touch',
+          isPrimary: evt.pointerId === 1,
+          clientX: evt.clientX,
+          clientY: evt.clientY,
+          pressure: evt.pressure ?? 0.5,
+          buttons: evt.buttons ?? 1,
+        }),
+      )
+    }
+  }, events)
+}
+
+/**
+ * A single-finger touch DRAG of an already-selected element. Konva's draggable
+ * machinery (DragAndDrop) listens for NATIVE touch events on window
+ * (touchstart/touchmove/touchend), NOT pointer events — the app's own drawing
+ * and gesture handlers use the unified pointer pipeline, but moving a selected
+ * element goes through Konva's drag. A real device fires BOTH, so this helper
+ * dispatches the pointer sequence (for the app's handlers) AND the native touch
+ * sequence (for Konva's drag) with matching identifiers.
+ */
+export async function touchDrag(page: Page, start: { x: number; y: number }, end: { x: number; y: number }) {
+  await page.evaluate(({ start, end }) => {
+    const canvas = document.querySelector('.whiteboard-container canvas')
+    if (!canvas) throw new Error('stage canvas not found')
+    const content = canvas.parentElement
+    if (!content) throw new Error('stage content element not found')
+
+    const mkTouch = (clientX: number, clientY: number) =>
+      new Touch({ identifier: 1, target: content, clientX, clientY })
+
+    // Pointer sequence (unified pipeline: selection, gesture state)…
+    const pointerEvents: { type: string; clientX: number; clientY: number }[] = [
+      { type: 'pointerdown', clientX: start.x, clientY: start.y },
+    ]
+    const steps = 8
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps
+      pointerEvents.push({
+        type: 'pointermove',
+        clientX: start.x + (end.x - start.x) * t,
+        clientY: start.y + (end.y - start.y) * t,
+      })
+    }
+    pointerEvents.push({ type: 'pointerup', clientX: end.x, clientY: end.y })
+    for (const evt of pointerEvents) {
+      content.dispatchEvent(
+        new PointerEvent(evt.type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId: 1,
+          pointerType: 'touch',
+          isPrimary: true,
+          clientX: evt.clientX,
+          clientY: evt.clientY,
+          pressure: 0.5,
+          buttons: evt.type === 'pointerup' ? 0 : 1,
+        }),
+      )
+    }
+
+    // Native touch sequence (Konva's drag)…
+    content.dispatchEvent(
+      new TouchEvent('touchstart', {
+        bubbles: true,
+        cancelable: true,
+        touches: [mkTouch(start.x, start.y)],
+        targetTouches: [mkTouch(start.x, start.y)],
+        changedTouches: [mkTouch(start.x, start.y)],
+      }),
+    )
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps
+      const cx = start.x + (end.x - start.x) * t
+      const cy = start.y + (end.y - start.y) * t
+      window.dispatchEvent(
+        new TouchEvent('touchmove', {
+          bubbles: true,
+          cancelable: true,
+          touches: [mkTouch(cx, cy)],
+          targetTouches: [mkTouch(cx, cy)],
+          changedTouches: [mkTouch(cx, cy)],
+        }),
+      )
+    }
+    window.dispatchEvent(
+      new TouchEvent('touchend', {
+        bubbles: true,
+        cancelable: true,
+        touches: [],
+        targetTouches: [],
+        changedTouches: [mkTouch(end.x, end.y)],
+      }),
+    )
+  }, { start, end })
+}
+
+/** A single-finger touch pen stroke from start to end (pressure 0.5). */
+export async function touchStroke(page: Page, start: { x: number; y: number }, end: { x: number; y: number }) {
+  const events: TouchEvent[] = [{ type: 'pointerdown', pointerId: 1, clientX: start.x, clientY: start.y }]
+  const steps = 10
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps
+    events.push({
+      type: 'pointermove',
+      pointerId: 1,
+      clientX: start.x + (end.x - start.x) * t,
+      clientY: start.y + (end.y - start.y) * t,
+    })
+  }
+  events.push({ type: 'pointerup', pointerId: 1, clientX: end.x, clientY: end.y, buttons: 0 })
+  await touchPointer(page, events)
+}
+
+/** Bounding box of the whiteboard stage's first canvas (viewport CSS px). */
+export async function canvasBox(page: Page) {
+  const box = await page.locator('.whiteboard-container canvas').first().boundingBox()
+  if (!box) throw new Error('whiteboard stage not visible')
+  return box
+}
+
+/**
+ * Poll `page` until its canvas pixels differ from `baseline`, then re-check
+ * after a settle window — proving a COMMITTED element arrived via the WS relay
+ * (a transient remote active-stroke preview would vanish again on settle).
+ */
+export async function expectCanvasToChange(page: Page, baseline: string) {
+  await expect.poll(() => canvasFingerprint(page), {
+    timeout: 20000,
+    intervals: [250],
+  }).not.toBe(baseline)
+  await page.waitForTimeout(750)
+  expect(await canvasFingerprint(page)).not.toBe(baseline)
+}
+
+/**
+ * Poll `page` until its canvas pixels return to `baseline`, then re-check after
+ * a settle window — proving a cancelled stroke or restored viewport did NOT
+ * commit (a stray element rendering after the viewport returned would re-dirty
+ * the fingerprint and fail the settle re-check). Symmetric to
+ * `expectCanvasToChange`.
+ */
+export async function expectCanvasToReturn(page: Page, baseline: string) {
+  await expect.poll(() => canvasFingerprint(page), {
+    timeout: 20000,
+    intervals: [250],
+  }).toBe(baseline)
+  await page.waitForTimeout(750)
+  expect(await canvasFingerprint(page)).toBe(baseline)
+}
+
+/** Wait until the whiteboard stage canvas is attached (mounts after fetch). */
+export async function waitForCanvas(page: Page) {
+  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+}
+
+/** The md:hidden mobile bottom toolbar, once visible. */
+export async function openMobileToolbar(page: Page) {
+  const toolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
+  await expect(toolbar).toBeVisible({ timeout: 20000 })
+  return toolbar
+}
+
+/**
+ * Expand the md:hidden mobile toolbar into its full palette by clicking the
+ * collapsed color swatch (the strip's button whose child swatch div has the
+ * rounded size classes), then wait for the "Tools" header. Shape tools like
+ * Rectangle live only in the expanded palette, not the collapsed primary strip.
+ */
+export async function expandMobileToolbar(page: Page) {
+  const toolbar = await openMobileToolbar(page)
+  const colorSwatch = toolbar
+    .locator('button')
+    .filter({ has: page.locator('.w-7.h-7.rounded-md') })
+  await colorSwatch.click()
+  await expect(toolbar.getByText('Tools', { exact: true })).toBeVisible({ timeout: 10000 })
+  return toolbar
+}

@@ -635,4 +635,26 @@ describe('useCollaborativeCanvas — reconnect resume (mocked WebSocket)', () =>
 
     a.cleanup()
   })
+
+  it('cancelActiveStroke removes the active stroke WITHOUT committing it to elements', () => {
+    const a = useCollaborativeCanvas('board-1', 'user-a', 'A')
+
+    // Start an in-flight stroke broadcast.
+    a.startActiveStroke('s1')
+    expect(a.yActiveStrokes.has('s1')).toBe(true)
+    expect(a.yElements.toArray()).toHaveLength(0)
+
+    // Cancel must purge the preview but leave the board untouched.
+    a.cancelActiveStroke('s1')
+    expect(a.yActiveStrokes.has('s1')).toBe(false)
+    expect(a.yElements.toArray()).toHaveLength(0)
+
+    // Contrast: endActiveStroke DOES commit (moves the stroke into elements).
+    a.startActiveStroke('s2')
+    a.endActiveStroke('s2', { id: 's2', type: 'stroke', userId: 'user-a', userName: 'A', timestamp: 0, data: {} } as any)
+    expect(a.yActiveStrokes.has('s2')).toBe(false)
+    expect(a.yElements.toArray().map((e: any) => e.id)).toEqual(['s2'])
+
+    a.cleanup()
+  })
 })

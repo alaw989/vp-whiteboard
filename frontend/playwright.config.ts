@@ -20,6 +20,10 @@ export default defineConfig({
       command: 'npm run dev',
       port: 3000,
       reuseExistingServer: true,
+      // TEST=1 makes @nuxt/devtools bail in its module setup, so the dev-only
+      // floating widget can't sit on top of the mobile toolbar and swallow
+      // clicks during e2e (it is absent in production).
+      env: { TEST: '1' },
     },
     {
       // Yjs WS relay — the collab spec's live-sync assertions depend on it.

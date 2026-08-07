@@ -67,6 +67,27 @@ describe('useToolHandlers', () => {
     expect(fn).toHaveBeenCalled()
   })
 
+  it('dispatchCancel calls cancel when defined', () => {
+    const { register, dispatchCancel } = useToolHandlers()
+    const fn = vi.fn()
+    register('pen', { cancel: fn })
+    dispatchCancel('pen')
+    expect(fn).toHaveBeenCalled()
+  })
+
+  it('dispatchCancel falls back to deactivate when no cancel', () => {
+    const { register, dispatchCancel } = useToolHandlers()
+    const fn = vi.fn()
+    register('pen', { deactivate: fn })
+    dispatchCancel('pen')
+    expect(fn).toHaveBeenCalled()
+  })
+
+  it('dispatchCancel silently handles missing handlers', () => {
+    const { dispatchCancel } = useToolHandlers()
+    expect(() => dispatchCancel('x' as any)).not.toThrow()
+  })
+
   it('wrapError catches errors and logs via console.error', () => {
     const { register, dispatchMouseDown } = useToolHandlers()
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})

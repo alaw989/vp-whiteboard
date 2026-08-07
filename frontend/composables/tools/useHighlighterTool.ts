@@ -60,5 +60,14 @@ export function useHighlighterTool(ctx: ToolContext): ToolHandler {
       ctx.isDrawing.value = false
       reset()
     },
+    cancel() {
+      // Abort the in-flight stroke (e.g. a two-finger gesture interrupted it)
+      // without committing it. Clears the remote active-stroke preview so
+      // collaborators don't see a stuck stroke.
+      if (currentStrokeId.value && ctx.cancelActiveStroke) {
+        ctx.cancelActiveStroke(currentStrokeId.value)
+      }
+      reset()
+    },
   }
 }

@@ -44,4 +44,27 @@ describe('useHighlighterTool', () => {
     tool.onMouseUp?.({}, { x: 30, y: 40 })
     expect(ctx.isDrawing.value).toBe(false)
   })
+
+  it('cancel aborts the active stroke without committing', () => {
+    const startActiveStroke = vi.fn()
+    const cancelActiveStroke = vi.fn()
+    const ctx = createMockToolContext({ startActiveStroke, cancelActiveStroke })
+    const tool = useHighlighterTool(ctx)
+    tool.onMouseDown?.({}, { x: 10, y: 20 })
+    const strokeId = startActiveStroke.mock.calls[0]![0]!
+    tool.onMouseMove?.({}, { x: 30, y: 40 })
+    tool.cancel?.()
+    expect(cancelActiveStroke).toHaveBeenCalledWith(strokeId)
+    expect(ctx.emitElementAdd).not.toHaveBeenCalled()
+    expect(tool.state?.currentStrokePoints?.value).toHaveLength(0)
+    expect(tool.state?.currentStrokeId?.value).toBeNull()
+  })
+
+  it('cancel does not call cancelActiveStroke when no stroke is active', () => {
+    const cancelActiveStroke = vi.fn()
+    const ctx = createMockToolContext({ cancelActiveStroke })
+    const tool = useHighlighterTool(ctx)
+    tool.cancel?.()
+    expect(cancelActiveStroke).not.toHaveBeenCalled()
+  })
 })

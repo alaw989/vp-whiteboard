@@ -361,7 +361,7 @@
 
   <!-- Mobile Bottom Sheet Toolbar -->
   <div
-    class="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-neutral-200 z-20 transition-all duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"
+    class="md:hidden absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-neutral-200 z-20 transition-all duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"
     :style="{ paddingBottom: 'env(safe-area-inset-bottom, 16px)' }"
     role="toolbar"
     aria-label="Mobile whiteboard tools"
