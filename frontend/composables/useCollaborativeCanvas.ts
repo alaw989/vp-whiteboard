@@ -396,6 +396,17 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
    * with divergent CRDT structs can reconcile onto our canonical copy.
    */
   function sendFullStateSync() {
+    // Skip empty docs entirely. encodeStateAsUpdate of an empty doc is NOT a
+    // zero-byte update (it encodes a 2-byte `[0, 0]` client header), so the
+    // byteLength guard below would let an empty board broadcast a meaningless
+    // SYNC_FULL on every open and in reply to every sync-request. Only the
+    // persisted shared content belongs in a full-state announce — transient
+    // cursors/active-strokes are carried by incremental deltas instead.
+    const hasContent =
+      yElements.length > 0 ||
+      yDocumentLayers.size > 0 ||
+      yMeta.size > 0
+    if (!hasContent) return
     const update = Y.encodeStateAsUpdate(ydoc)
     if (update && update.byteLength > 0) {
       sendBinary(encodeSyncFrame(update, true))

@@ -509,6 +509,41 @@ describe('useCollaborativeCanvas — reconnect resume (mocked WebSocket)', () =>
     expectConverged(b, ['A1', 'B1', 'A2', 'A3', 'B2'])
   })
 
+  it('an empty board announces NO SYNC_FULL on open or in reply to a sync-request — the empty-doc announce is skipped entirely', async () => {
+    // encodeStateAsUpdate of an empty doc is a 2-byte [0, 0] client header,
+    // NOT a zero-length update, so a byteLength guard alone would still
+    // broadcast a meaningless SYNC_FULL. The composable must skip the announce
+    // when the doc has no persisted content (no elements, layers, or meta).
+    const a = useCollaborativeCanvas('board-empty', 'user-a', 'A')
+    const b = useCollaborativeCanvas('board-empty', 'user-b', 'B')
+    const a0 = FakeWebSocket.instances[0]!
+    const b0 = FakeWebSocket.instances[1]!
+
+    // On open, only the JSON sync-request text frame is sent — no binary
+    // full-state frame.
+    a0._open()
+    expect(a0.sent).toHaveLength(1)
+    expect(a0.sent[0]).toBe(JSON.stringify({ type: 'sync-request' }))
+    expect(a0.sent.some((f) => f instanceof Uint8Array)).toBe(false)
+
+    b0._open()
+    expect(b0.sent).toHaveLength(1)
+    expect(b0.sent[0]).toBe(JSON.stringify({ type: 'sync-request' }))
+    expect(b0.sent.some((f) => f instanceof Uint8Array)).toBe(false)
+
+    // Even an explicit sync-request from a peer draws no SYNC_FULL reply when
+    // our doc is empty: B's request reaches A, but A sends nothing back.
+    // (Clear A's own already-sent sync-request first so we only observe the
+    // reply, and note the pump drains B's sent frames onto A.)
+    a0.sent.splice(0)
+    pump(b0, a0)
+    expect(a0.sent).toHaveLength(0)
+    expect(a0.sent.some((f) => f instanceof Uint8Array)).toBe(false)
+
+    a.cleanup()
+    b.cleanup()
+  })
+
   it('timer hygiene: repeated close/reopen cycles spawn exactly one reconnect socket per close, a close during backoff never double-schedules, and a settled reconnect leaks no pending timers', async () => {
     const a = useCollaborativeCanvas('board-1', 'user-a', 'A')
     const a0 = FakeWebSocket.instances[0]!
