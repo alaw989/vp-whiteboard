@@ -32,9 +32,54 @@ Client delta-broadcast/apply assumed both docs share the same CRDT item graph. T
 - frame round-trip, dedupe does not echo (origin = `remote`).
 `npm run typecheck` clean, `npm test` 331/331, `php artisan test` 47 passed.
 
+### Iteration 5 (2026-08-07) — DONE: `isAuthed` connection gate regression tests (+9)
+
+The relay's **connection gate** — `isAuthed` deciding between a logged-in Sanctum session and an anonymous share token — was the last untested decision point in the live-sync path: if it 4001s a valid share viewer or accepts a room-crossing token, the whole "anonymous collaborator joins the room" feature silently dies. It lived behind `async function isAuthed` with zero coverage.
+
+**Changes (`frontend/server/ws-server.js` + `ws-server.test.ts`):**
+- Exported `isAuthed` (the connection handler call site is unchanged) and added a `laravelUrl = LARAVEL_URL` param so tests inject the base URL (module-scope `LARAVEL_URL` is frozen at import time) — same injectable pattern as `resolveStatefulOrigin`.
+- Added `clearAuthCache()` export (test helper) so per-test verdict caching can't leak between tests.
+- `ws-server.test.ts` (+9 tests → 353 total): no creds → rejected with zero fetches; valid session cookie → `/api/user` 200 admits owner and forwards the browser's WS-handshake Origin (no synthesized referer, regression-locking the Iteration-1 bug); stale session 401 → falls through to share lookup (session must not block a valid share viewer); share token via cookie admits viewer; `?share=` query param alone (nginx cookie-less path) never even calls `/api/user`; query param wins over cookie token; token resolving to a **different** whiteboard_id is rejected (room-scoped); Laravel unreachable → fail-closed deny; session verdict cached so repeat connects skip the round-trip.
+
+**Verified:** `npm run typecheck` clean, `npm test` 353/353 (41 files), raw-node import of the module works (`isAuthed`/`clearAuthCache`/`runHeartbeat` all exported).
+
+### Iteration 4 (2026-08-07) — DONE: heartbeat/stale-connection pruning extracted + regression tests (+4)
+
+The relay's **server-side heartbeat** (ping every 30s, terminate unresponsive clients after 60s) was the last untested chunk of the live-sync path (root-cause candidate #5 — a heartbeat must not kill idle-but-alive collaborators). It lived inside the `isMain` block with no coverage.
+
+**Changes (`frontend/server/ws-server.js` + `ws-server.test.ts`):**
+- Exported pure `runHeartbeat(clients, now)` + constants `HEARTBEAT_INTERVAL_MS`/`HEARTBEAT_TIMEOUT_MS`: pings every OPEN client whose `lastPong` is fresher than 60s; terminates the rest; returns `{pinged, terminated}`. The `isMain` interval now just calls it — behavior byte-identical.
+- `lastPong` is refreshed when the client sends its own keepalive `{type:'ping'}` (relayClientMessage sets it + answers pong); the client sends that every 25s < 60s, so a healthy tab is never pruned.
+- `ws-server.test.ts` (+4 tests → 344 total): healthy client gets pinged not terminated; stale client (lastPong > 60s) terminated without ping; non-OPEN clients skipped; mixed pass counts correct.
+- Verified: `npm run typecheck` clean, `npm test` 344/344 (41 files), relay still boots under direct `node` run (EADDRINUSE against the already-running :3001 relay = isMain path binds), and a raw-node import smoke confirms the helper routes correctly with no process-hanging interval.
+
+### Iteration 3 (2026-08-07) — DONE: relay frame-routing regression tests (+4)
+
+Iterations 1–2 proved the sync protocol works, but the **relay's actual forwarding logic** — the thing that physically carries a live draw from one browser to another — was buried inside the `wss.on('connection')` callback with **zero test coverage**. Root-cause candidate #2 (binary Yjs frames misclassified as JSON control messages and dropped) was ruled out by hand but never regression-locked, and neither was the guarantee that a delta reaches the *other* collaborator but never echoes back to the sender.
+
+**Changes (`frontend/server/ws-server.js` + `ws-server.test.ts`):**
+- Extracted the message handler body into an exported pure function `relayClientMessage(ws, data, room)`:
+  - JSON with `type` → `ping` is answered in-place with a `pong` to the sender only (not broadcast); any other type (`sync-request`, presence, cursor, …) is forwarded as JSON to all OTHER open peers, never echoed back.
+  - Anything not JSON → treated as a Yjs binary frame and relayed **verbatim** to all other open peers (the live-edit path). Returns `{kind, forwarded|relayed, bytes}`.
+- The connection handler now just calls it and logs from the result — behavior identical (verified live: binary relayed to peer, not sender; sync-request forwarded; ping→pong only to sender).
+- `ws-server.test.ts` (+4 tests → 340 total): sync-request forwarded to all open peers excluding sender; ping answered in place only; a `0x02` SYNC_DELTA frame is relayed verbatim as binary (regression-locks candidate #2) and never echoed to the sender; closed peers skipped + sender excluded.
+
+**Verified:** `npm run typecheck` clean, `npm test` 340/340 (41 files), plus a raw-`node` smoke of `relayClientMessage` confirming real-Buffer routing matches the tests.
+
+### Iteration 2 (2026-08-07) — DONE: relay auth regression tests added + import-safe module
+
+Iteration 1's Bug 1 fix (`resolveStatefulOrigin` in `frontend/server/ws-server.js`) was exported for unit tests but had **zero test coverage**. Also, importing `ws-server.js` into a test process **hung** — the module-scope heartbeat `setInterval` kept Node alive (proven: `node -e "import(...)"` ran past the 120s timeout until SIGTERM).
+
+**Changes:**
+- `frontend/server/ws-server.js`: moved the heartbeat `setInterval` inside the `isMain` guard (it previously ran at module scope). The relay is now import-safe for tests, and a direct run behaves identically (`node server/ws-server.js` still binds + heartbeats — verified via `EADDRINUSE` when a relay was already on :3001).
+- `frontend/server/ws-server.test.ts` (NEW, +5 tests → 336 total): regression-locks the exact Bug 1 scenario — WS handshake carries `Origin` but never `Referer`, so `resolveStatefulOrigin` must NOT synthesize a referer (Sanctum reads referer first, a fabricated one wins and skips session auth → 401 → 4001 → reconnect loop). Also covers: Origin normalization (path stripped), explicit client Referer forwarding, LARAVEL_URL fallback only when the handshake carried neither header, and path-stripping of the fallback origin.
+
+**Verified:** `npm test` 336/336 (41 files), `npm run typecheck` clean. `npm run dev:ws` + live owner↔viewer sync was confirmed working in Iteration 1 and is unchanged by this refactor.
+
 ### What's next
 - Commit/push this branch; run the CI/deploy pipeline (AGENTS.md protocol) to staging, then prod — the auth fix is needed there too IF any deployment has the frontend on a different origin than the API (on single-origin prod the old synthesized referer happened to match, so prod likely only needs the sync-protocol fix).
 - Watch the relay logs for `🚫 Rejected` on staging/prod after deploy to confirm share-token auth still holds.
+- The relay's room clean-up logic (delayed `rooms.delete` 60s after the last peer leaves, and the `user-joined`/`user-left` presence broadcasts) is still untested — it lives in the connection handler. Next candidate: extract a `pruneEmptyRooms`/close-handler helper and regression-test the 4001-free close path.
 
 ### Gotchas
 - Relay restart traps: `pkill -f "server/ws-server.js"` also kills the shell running it (the pattern is in the shell's own argv). Kill by PID from `ss -tlnp`. Multiple stale relay instances cause `EADDRINUSE` + "Unexpected response code: 200" handshake errors on the client.
@@ -93,6 +138,18 @@ Client delta-broadcast/apply assumed both docs share the same CRDT item graph. T
 - Do not touch the Goal section. Update the State section every iteration: what changed, what is next, gotchas.
 
 ## Log
+
+### 2026-08-07 — Iteration 5
+- Exported `isAuthed` (with an injectable `laravelUrl`) + `clearAuthCache()` in `frontend/server/ws-server.js`; added 9 regression tests to `frontend/server/ws-server.test.ts` (353 total) covering the connection gate: no-creds reject (zero fetches), session-cookie admit + Origin forwarding (no synthesized referer), session-401 → share-token fallthrough, share token via cookie / via `?share=` query (no /api/user hit), query-wins-over-cookie, room-scoped rejection of a token bound to a different whiteboard_id, fail-closed on Laravel unreachable, and verdict caching. Locks the anonymous share-viewer join path end-to-end. typecheck + tests green (353/353), module imports cleanly under node.
+
+### 2026-08-07 — Iteration 4
+- Extracted the relay's server-side heartbeat into exported pure `runHeartbeat(clients, now)` + `HEARTBEAT_INTERVAL_MS`/`HEARTBEAT_TIMEOUT_MS`; the `isMain` interval now calls it (behavior identical). Added 4 regression tests to `frontend/server/ws-server.test.ts` (344 total): healthy client pinged not terminated, stale client (lastPong > 60s) terminated without ping, non-OPEN clients skipped, mixed pass counts. Locks root-cause candidate #5 (heartbeat must not kill idle-but-alive collaborators). typecheck + tests green.
+
+### 2026-08-07 — Iteration 3
+- Extracted the relay's message handler into exported `relayClientMessage(ws, data, room)` (pure routing: JSON control forwarding, ping→pong in-place, verbatim binary relay to other open peers, sender always excluded). Added 4 regression tests to `frontend/server/ws-server.test.ts` (340 total) locking candidate root cause #2 (binary frames must relay as binary, not be dropped) and the "delta reaches the other collaborator but never echoes back" guarantee. typecheck + tests green.
+
+### 2026-08-07 — Iteration 2
+- Made `ws-server.js` import-safe (moved the module-scope heartbeat `setInterval` inside the `isMain` guard) and added `frontend/server/ws-server.test.ts` (+5 tests → 336): regression-locks the Iteration-1 Bug 1 auth fix (`resolveStatefulOrigin` — Origin present + no synthesized Referer, normalization, fallback). `npm run typecheck` + `npm test` green.
 
 ### 2026-08-07 — Iteration 1
 - Diagnosed + fixed relay auth (Origin/Referer forwarding in `ws-server.js`) and the Yjs sync protocol (binary full-state + dedupe frames in `useCollaborativeCanvas.ts`). Added 5 regression tests proving bidirectional delta propagation. Details in State.
