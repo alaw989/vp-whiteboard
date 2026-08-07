@@ -1,21 +1,22 @@
 import { test, expect } from '@playwright/test'
+import { E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD } from './global-setup'
 
 test.describe('Whiteboard smoke', () => {
-  const email = `e2e-${Date.now()}@test.local`
-  const password = 'password'
+  const email = E2E_OWNER_EMAIL
+  const password = E2E_OWNER_PASSWORD
 
-  test('register, create whiteboard, reload, verify persistence', async ({ page }) => {
-    await page.goto('/register')
-    await page.fill('input[name="name"]', 'E2E Test')
-    await page.fill('input[name="email"]', email)
-    await page.fill('input[name="password"]', password)
-    await page.fill('input[name="password_confirmation"]', password)
+  // Registration is owner-approved (new users are `pending` and can't log in),
+  // so the suite uses the pre-seeded, approved owner from global-setup.
+  test('login, create whiteboard, reload, verify persistence', async ({ page }) => {
+    await page.goto('/login')
+    await page.fill('#email', email)
+    await page.fill('#password', password)
     await page.click('button[type="submit"]')
     await page.waitForURL(/\/(whiteboards?|$)/, { timeout: 15000 })
 
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    await expect(page.locator('text=New Whiteboard').or(page.locator('text=Create'))).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('a[href="/whiteboard/new"]')).toBeVisible({ timeout: 10000 })
 
     await page.goto('/whiteboard/new')
     await page.waitForURL(/\/whiteboard\//, { timeout: 15000 })
@@ -23,6 +24,6 @@ test.describe('Whiteboard smoke', () => {
     const whiteboardUrl = page.url()
     await page.reload()
     await page.waitForURL(whiteboardUrl, { timeout: 15000 })
-    await expect(page.locator('canvas')).toBeAttached({ timeout: 10000 })
+    await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 10000 })
   })
 })
