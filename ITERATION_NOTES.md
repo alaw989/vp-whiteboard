@@ -4,29 +4,26 @@
 Extract the WS relay connection close/error/cleanup logic in frontend/server/ws-server.js into exported, testable helpers and add regression tests: close removes the client from its room and decrements totalConnections, user-left broadcasts to remaining peers only, the 60s delayed empty-room cleanup deletes the room only if still empty when it fires, the error path must not leak (currently never decrements totalConnections, never broadcasts user-left, never schedules cleanup), and heartbeat-termination must drive the close path. Decide and implement whether the relay's user-joined/user-left presence broadcasts are consumed by the client (useCollaborativeCanvas.ts handleIncomingMessage ignores them today) or removed. Keep npm run typecheck + npm test green.
 
 ## State
-Iteration complete: unit-tested the relay's join-presence contract (the last untested lifecycle surface) and hardened `broadcastToRoom` against a phantom-room leak.
+Iteration complete: added a live wire-integration suite for the relay — the first tests that spawn the actual relay process and connect real WebSocket clients over the wire, closing the last relay gap (the `WS_ALLOW_ANON` skip-auth connection path and real binary/JSON relay traffic were previously only covered by banner tests that never opened a socket).
 
 ### What changed
-- `frontend/server/ws-server.js`:
-  - Exported `sendJson` and `broadcastToRoom` (the join-presence helpers that were previously module-private and only exercised via tests' recorder mimics).
-  - `broadcastToRoom` now takes an injectable `roomsArg` (defaults to module state) AND uses a NON-creating lookup — previously it called `getRoom()`, which CREATED a phantom empty-room entry if a stale room id was ever broadcast to. Aligned with `removeClientFromRoom`'s no-create rule.
-  - Extracted `announceJoin(ws, roomsArg, now)` — the connection handler's join block (send `connected` to self with userCount incl. self + broadcast `user-joined` to peers) is now an exported, deterministic-timestamp helper.
-  - Connection handler calls `announceJoin(ws, rooms)`; `userCount` semantics unchanged (socket added to room before announcing).
-- `frontend/server/ws-server.test.ts`: +5 tests → 44 relay tests. Cover: `sendJson` skips closed sockets; `broadcastToRoom` reaches other OPEN peers only (sender + closed excluded); broadcast to nonexistent room is a no-op that does NOT create a phantom room; `announceJoin` sends `connected` to joiner (userCount=3 incl. self) + `user-joined` to both peers only, with injectable timestamp; joiner in no room gets `connected` userCount=0 and broadcasts to nobody.
+- `frontend/server/ws-server.test.ts` (test-only iteration — no relay code changed):
+  - Moved `SERVER_PATH`, `freePort()`, and `waitForBanner()` to module scope so both the banner suite and the new integration suite reuse them.
+  - New describe `ws-server — live wire integration (spawned relay + real WS clients, WS_ALLOW_ANON=1)`: spawns `node server/ws-server.js` on a free port with `WS_ALLOW_ANON=1`, connects two real `ws` clients to `/whiteboard:room-wire`, and asserts the FULL lifecycle over the wire: A gets `connected` (userCount=1, own roomId/userId), B gets `connected` (userCount=2), A hears `user-joined` for B (name+timestamp) exactly once (B never hears its own), binary Yjs frame from A relayed verbatim to B (not echoed to A), JSON `cursor` frame from B relayed to A, and on B close A hears `user-left`. Timeout 20s; kills the child via SIGTERM in `finally`.
 
 ### Tests
-- Full suite: `npm run typecheck` 0 errors; `npm test` 380 passed (was 375); `php artisan test` untouched (47).
+- Full suite: `npm run typecheck` 0 errors; `npm test` 381 passed (was 380). Wire suite adds 1 integration test (45 relay tests total). `php artisan test` untouched (47).
 
 ### What is next
-- Relay: the `WS_ALLOW_ANON` (skip-auth) path in the connection handler remains untested — it's only exercised by the spawn-based banner tests (which never actually open a WS connection). A spawn-based integration test that connects two clients over the wire and asserts `connected`/`user-joined`/relay traffic end-to-end would close the last relay gap.
-- The connection handler's auth-reject path (`ws.close(4001)`) is still inline; if more coverage is wanted, extract it (but it's a one-liner — low value).
+- The connection handler's auth-reject path (`ws.close(4001)`) is still inline; if more coverage is wanted, extract it (but it's a one-liner — low value). A spawn-based test with `WS_ALLOW_ANON` unset + a stub Laravel would prove the 4001 reject over the wire, but needs the relay to consult a local mock API.
+- Wire-level empty-room cleanup (60s) isn't asserted end-to-end (would stall the suite); it's covered by the fake-timer unit tests.
 - Push branch off `develop`, open PR, run through CI (per AGENTS.md protocol) when asked.
 
 ### Gotchas
-- `broadcastToRoom` now takes a 4th `roomsArg` param — when passed by reference (e.g. `registerLifecycleHandlers(ws, rooms, totalConnectionsRef, broadcastToRoom)`), the default applies module-level `rooms`, so behavior is unchanged.
-- `broadcastToRoom` is NON-creating: do NOT reintroduce `getRoom()` inside it or broadcasting to a stale room id will resurrect a phantom empty-room entry (same rule as `removeClientFromRoom`).
-- `announceJoin` must be called AFTER `room.add(ws)` — `userCount` includes the joiner itself, matching the original `room.size` semantics.
-- `vi.useFakeTimers()` also fakes `Date.now()` — pass an explicit `now` to `runHeartbeat`/helpers where deterministic timestamps are asserted.
+- The wire test must connect to `/whiteboard:{roomId}?userId=...&userName=...` (URL-encode the params) — the relay parses both from the query string.
+- Always `child.kill('SIGTERM')` + `await exited` in a `finally`; a leaked spawned relay will keep vitest hanging on an open handle.
+- `waitForMessage`/`waitForBinaryMessage` poll a shared array every 20ms — the client's `ws.on('message')` handlers push into it, so attach handlers before awaiting open.
+- The banner/`connected` frames arrive async relative to `ws.on('open')`; use the wait helpers rather than asserting immediately after open.
 
 ## Context (from prior code review — read before changing code)
 
@@ -65,5 +62,6 @@ Extract helpers that the connection handler calls, keeping the handler thin:
 - Do not touch the Goal section. Update the State section every iteration.
 
 ## Log
+- Iter 3 (2026-08-07): Added live wire-integration test (spawned relay + 2 real WS clients, `WS_ALLOW_ANON=1`) covering the full lifecycle end-to-end: connected userCount, user-joined to peer only, binary Yjs verbatim relay, JSON cursor relay, user-left on close. Moved spawn helpers to module scope. typecheck 0 errors, 381 tests green.
 - Iter 2 (2026-08-07): Exported `sendJson`/`broadcastToRoom`/`announceJoin`; made `broadcastToRoom` non-creating (phantom-room leak fix, injectable rooms map); extracted join block into testable `announceJoin`. +5 relay tests (44 total). typecheck 0 errors, 380 tests green.
 - Iter 1 (2026-08-07): Extracted relay lifecycle (close/error/cleanup) into exported testable helpers; fixed error-path leak (now decrements + broadcasts user-left + schedules cleanup, converging with close); kept + client-consumed `user-joined`/`user-left` via new `applyPresenceMessage` (immediate leave via yCursors delete, join seed). Added 9 relay + 5 client tests. typecheck 0 errors, 375 tests green, php artisan test 47 green.

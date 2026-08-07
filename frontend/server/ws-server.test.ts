@@ -6,6 +6,7 @@ import { mkdtemp, rm, writeFile, symlink } from 'fs/promises'
 import os from 'os'
 import { fileURLToPath, pathToFileURL } from 'url'
 import path from 'path'
+import { WebSocket } from 'ws'
 import {
   resolveStatefulOrigin,
   relayClientMessage,
@@ -722,52 +723,52 @@ describe('ws-server — isAuthed (connection gate: owners + share viewers)', () 
   })
 })
 
-describe('ws-server — actually listens when launched as the entry point (regression for pm2 never binding)', () => {
-  const SERVER_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ws-server.js')
+const SERVER_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ws-server.js')
 
-  function freePort(): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const srv = createTcpServer()
-      srv.unref()
-      srv.on('error', reject)
-      srv.listen(0, '127.0.0.1', () => {
-        const port = (srv.address() as { port: number }).port
-        srv.close(() => resolve(port))
-      })
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createTcpServer()
+    srv.unref()
+    srv.on('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const port = (srv.address() as { port: number }).port
+      srv.close(() => resolve(port))
     })
-  }
+  })
+}
 
-  // Poll the relay's HTTP endpoint until it answers with its banner (proves the
-  // listen() actually happened), or reject after timeoutMs.
-  function waitForBanner(port: number, timeoutMs: number): Promise<string> {
-    const deadline = Date.now() + timeoutMs
-    return new Promise((resolve, reject) => {
-      const attempt = () => {
-        if (Date.now() > deadline) {
-          reject(new Error(`relay did not answer on :${port} within ${timeoutMs}ms`))
-          return
-        }
-        const req = http.get({ host: '127.0.0.1', port, path: '/', timeout: 500 }, (res) => {
-          let body = ''
-          res.on('data', (c) => (body += c))
-          res.on('end', () => {
-            if (res.statusCode === 200 && body.includes('VP Whiteboard Yjs WebSocket Server')) {
-              resolve(body)
-            } else {
-              setTimeout(attempt, 200)
-            }
-          })
-        })
-        req.on('timeout', () => {
-          req.destroy()
-          setTimeout(attempt, 200)
-        })
-        req.on('error', () => setTimeout(attempt, 200))
+// Poll the relay's HTTP endpoint until it answers with its banner (proves the
+// listen() actually happened), or reject after timeoutMs.
+function waitForBanner(port: number, timeoutMs: number): Promise<string> {
+  const deadline = Date.now() + timeoutMs
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      if (Date.now() > deadline) {
+        reject(new Error(`relay did not answer on :${port} within ${timeoutMs}ms`))
+        return
       }
-      attempt()
-    })
-  }
+      const req = http.get({ host: '127.0.0.1', port, path: '/', timeout: 500 }, (res) => {
+        let body = ''
+        res.on('data', (c) => (body += c))
+        res.on('end', () => {
+          if (res.statusCode === 200 && body.includes('VP Whiteboard Yjs WebSocket Server')) {
+            resolve(body)
+          } else {
+            setTimeout(attempt, 200)
+          }
+        })
+      })
+      req.on('timeout', () => {
+        req.destroy()
+        setTimeout(attempt, 200)
+      })
+      req.on('error', () => setTimeout(attempt, 200))
+    }
+    attempt()
+  })
+}
 
+describe('ws-server — actually listens when launched as the entry point (regression for pm2 never binding)', () => {
   it('spawns `node server/ws-server.js` on a free port and serves the banner', async () => {
     const port = await freePort()
     const child = spawn(process.execPath, [SERVER_PATH], {
@@ -834,4 +835,147 @@ describe('ws-server — actually listens when launched as the entry point (regre
       await rm(tmpDir, { recursive: true, force: true })
     }
   }, 15000)
+})
+
+describe('ws-server — live wire integration (spawned relay + real WS clients, WS_ALLOW_ANON=1)', () => {
+  // The unit tests above cover the connection lifecycle with fake sockets; these
+  // integration tests prove the same contract over a REAL wire against a spawned
+  // relay process — closing the last relay gap: the `WS_ALLOW_ANON` skip-auth
+  // connection path is otherwise only exercised by banner tests that never open
+  // a socket. Two clients connect to the same room and observe the full
+  // lifecycle: `connected` (self, with room size), `user-joined` (peer), binary
+  // Yjs relay, JSON control relay, and `user-left` on close.
+
+  async function spawnRelay() {
+    const port = await freePort()
+    const child = spawn(process.execPath, [SERVER_PATH], {
+      env: {
+        ...process.env,
+        WS_PORT: String(port),
+        WS_HOST: '127.0.0.1',
+        // Skip auth (the exact connection path this suite exists to exercise).
+        LARAVEL_URL: 'http://127.0.0.1:9',
+        WS_ALLOW_ANON: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const exited = new Promise<void>((resolve) => {
+      if (child.exitCode !== null) return resolve()
+      child.once('exit', () => resolve())
+    })
+    await waitForBanner(port, 5000)
+    return { port, child, exited }
+  }
+
+  interface WireClient {
+    ws: WebSocket
+    messages: Record<string, unknown>[]
+    binary: Buffer[]
+    waitFor(type: string, timeoutMs?: number): Promise<Record<string, unknown>>
+    waitForBinary(timeoutMs?: number): Promise<Buffer>
+  }
+
+  function connectClient(port: number, roomId: string, userId: string, userName: string): Promise<WireClient> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${port}/whiteboard:${roomId}?userId=${encodeURIComponent(userId)}&userName=${encodeURIComponent(userName)}`,
+      )
+      const messages: Record<string, unknown>[] = []
+      const binary: Buffer[] = []
+      ws.on('message', (data, isBinary) => {
+        if (isBinary) binary.push(data as Buffer)
+        else messages.push(JSON.parse(data.toString()) as Record<string, unknown>)
+      })
+      ws.on('error', reject)
+      ws.on('open', () => {
+        resolve({
+          ws,
+          messages,
+          binary,
+          waitFor: (type, timeoutMs = 5000) => waitForMessage(messages, type, timeoutMs),
+          waitForBinary: (timeoutMs = 5000) => waitForBinaryMessage(binary, timeoutMs),
+        })
+      })
+    })
+  }
+
+  function waitForMessage(messages: Record<string, unknown>[], type: string, timeoutMs: number): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      const deadline = Date.now() + timeoutMs
+      const attempt = () => {
+        const found = messages.find((m) => m.type === type)
+        if (found) return resolve(found)
+        if (Date.now() > deadline) return reject(new Error(`timed out waiting for message type "${type}"`))
+        setTimeout(attempt, 20)
+      }
+      attempt()
+    })
+  }
+
+  function waitForBinaryMessage(binary: Buffer[], timeoutMs: number): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const deadline = Date.now() + timeoutMs
+      const attempt = () => {
+        const head = binary[0]
+        if (head !== undefined) return resolve(head)
+        if (Date.now() > deadline) return reject(new Error('timed out waiting for a binary frame'))
+        setTimeout(attempt, 20)
+      }
+      attempt()
+    })
+  }
+
+  it('relays the full lifecycle between two clients over the wire', async () => {
+    const { port, child, exited } = await spawnRelay()
+    const sockets: WebSocket[] = []
+    try {
+      // Client A joins an empty room → hears `connected` with userCount 1 (self).
+      const clientA = await connectClient(port, 'room-wire', 'user-a', 'Alice')
+      sockets.push(clientA.ws)
+      const connectedA = await clientA.waitFor('connected')
+      expect(connectedA.roomId).toBe('room-wire')
+      expect(connectedA.userId).toBe('user-a')
+      expect(connectedA.userCount).toBe(1)
+
+      // Client B joins the same room → hears `connected` with userCount 2 (self
+      // + A), and A hears `user-joined` for B.
+      const clientB = await connectClient(port, 'room-wire', 'user-b', 'Bob')
+      sockets.push(clientB.ws)
+      const connectedB = await clientB.waitFor('connected')
+      expect(connectedB.roomId).toBe('room-wire')
+      expect(connectedB.userId).toBe('user-b')
+      expect(connectedB.userCount).toBe(2)
+
+      const joined = await clientA.waitFor('user-joined')
+      expect(joined.userId).toBe('user-b')
+      expect(joined.userName).toBe('Bob')
+      expect(joined.timestamp).toEqual(expect.any(Number))
+
+      // A never hears its own `user-joined`; B never hears B's own either.
+      await new Promise((r) => setTimeout(r, 100))
+      expect(clientA.messages.filter((m) => m.type === 'user-joined')).toHaveLength(1)
+      expect(clientB.messages.filter((m) => m.type === 'user-joined')).toHaveLength(0)
+
+      // Binary Yjs frame from A is relayed verbatim to B (live-draw path).
+      const frame = Buffer.from([0x02, 1, 2, 3, 4])
+      clientA.ws.send(frame)
+      const relayed = await clientB.waitForBinary()
+      expect(relayed).toEqual(frame)
+      expect(clientA.binary).toHaveLength(0)
+
+      // JSON control frame from B reaches A.
+      clientB.ws.send(JSON.stringify({ type: 'cursor', x: 10, y: 20 }))
+      const cursor = await clientA.waitFor('cursor')
+      expect(cursor.x).toBe(10)
+
+      // B closes → A hears `user-left` for B.
+      clientB.ws.close()
+      const left = await clientA.waitFor('user-left')
+      expect(left.userId).toBe('user-b')
+    } finally {
+      for (const s of sockets) s.close()
+      child.kill('SIGTERM')
+      await exited
+    }
+  }, 20000)
 })
