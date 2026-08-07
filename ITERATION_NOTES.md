@@ -4,35 +4,29 @@
 Extract the WS relay connection close/error/cleanup logic in frontend/server/ws-server.js into exported, testable helpers and add regression tests: close removes the client from its room and decrements totalConnections, user-left broadcasts to remaining peers only, the 60s delayed empty-room cleanup deletes the room only if still empty when it fires, the error path must not leak (currently never decrements totalConnections, never broadcasts user-left, never schedules cleanup), and heartbeat-termination must drive the close path. Decide and implement whether the relay's user-joined/user-left presence broadcasts are consumed by the client (useCollaborativeCanvas.ts handleIncomingMessage ignores them today) or removed. Keep npm run typecheck + npm test green.
 
 ## State
-Iteration complete: extracted the relay's connection lifecycle into exported, testable helpers; fixed the error-path leak; wired the client to consume the presence broadcasts.
+Iteration complete: unit-tested the relay's join-presence contract (the last untested lifecycle surface) and hardened `broadcastToRoom` against a phantom-room leak.
 
 ### What changed
 - `frontend/server/ws-server.js`:
-  - Replaced `let totalConnections` with `const totalConnectionsRef = { value: 0 }` so helpers can mutate the shared counter via explicit deps.
-  - Extracted `removeClientFromRoom(ws, rooms, totalConnectionsRef, broadcastToRoomFn, now)` — deletes the ws from its room, decrements the counter (guarded ≥ 0), broadcasts `user-left` to REMAINING peers ONLY (skips when the room just emptied), returns `{roomId, roomSize, broadcastUserLeft}`.
-  - Extracted `scheduleEmptyRoomCleanup(roomId, rooms, delayMs)` (exported `EMPTY_ROOM_CLEANUP_DELAY_MS = 60_000`): deletes the room only if STILL empty when the timer fires (rejoin-safe).
-  - `handleClientClose(...)` = remove + log + schedule cleanup when empty; `handleClientError(error, ...)` now CONVERGES with close (decrement + user-left + cleanup) instead of leaking all three; `registerLifecycleHandlers(ws, ...)` wires `close` AND `error` to the same teardown.
-  - Connection handler now calls `registerLifecycleHandlers(ws, rooms, totalConnectionsRef, broadcastToRoom)`; also removed a subtle phantom-room leak (old close handler used `getRoom(ws.roomId || roomId)` which CREATED a room entry for auth-rejected sockets).
-  - `user-joined`/`user-left` broadcasts KEPT (required by the error-path convergence + tests).
-- `frontend/composables/useCollaborativeCanvas.ts` (presence DECISION: keep broadcasts AND consume them client-side):
-  - New exported `applyPresenceMessage(users, message, now)`: `user-joined` seeds an immediate entry (accurate "N users online" before the peer's first cursor frame), `user-left` removes immediately.
-  - `handleIncomingMessage` now branches on `user-joined`/`user-left`: applies to `connectedUsers`, and on `user-left` also `yCursors.delete(peerId)` (for non-self) so the yCursors observer doesn't resurrect a leaver for the 30s expiry window.
+  - Exported `sendJson` and `broadcastToRoom` (the join-presence helpers that were previously module-private and only exercised via tests' recorder mimics).
+  - `broadcastToRoom` now takes an injectable `roomsArg` (defaults to module state) AND uses a NON-creating lookup — previously it called `getRoom()`, which CREATED a phantom empty-room entry if a stale room id was ever broadcast to. Aligned with `removeClientFromRoom`'s no-create rule.
+  - Extracted `announceJoin(ws, roomsArg, now)` — the connection handler's join block (send `connected` to self with userCount incl. self + broadcast `user-joined` to peers) is now an exported, deterministic-timestamp helper.
+  - Connection handler calls `announceJoin(ws, rooms)`; `userCount` semantics unchanged (socket added to room before announcing).
+- `frontend/server/ws-server.test.ts`: +5 tests → 44 relay tests. Cover: `sendJson` skips closed sockets; `broadcastToRoom` reaches other OPEN peers only (sender + closed excluded); broadcast to nonexistent room is a no-op that does NOT create a phantom room; `announceJoin` sends `connected` to joiner (userCount=3 incl. self) + `user-joined` to both peers only, with injectable timestamp; joiner in no room gets `connected` userCount=0 and broadcasts to nobody.
 
 ### Tests
-- `frontend/server/ws-server.test.ts`: +9 tests → 39 relay tests. Cover: close removes from room + decrements + broadcasts user-left to remaining open peers only (closer excluded, no broadcast when room empties); 60s cleanup deletes room only if still empty (rejoin survives); error path performs the SAME cleanup (decrement + user-left + scheduled cleanup, solo-client room deleted after timer); heartbeat termination → `terminate()` → close path cleans up (no leak); auth-reject/no-room socket is a no-op for rooms but still un-accounted; double-close is idempotent; injectable clock gives deterministic timestamps. Uses `vi.useFakeTimers()` (describe-scoped) for the 60s delay.
-- `frontend/composables/useCollaborativeCanvas.test.ts`: +5 tests proving `user-joined`/`user-left` are handled (seed, idempotent join, immediate leave, no-userId/unknown-type ignored, other users untouched).
-- Full suite: `npm run typecheck` 0 errors; `npm test` 375 passed (was 361); `php artisan test` 47 passed (untouched).
+- Full suite: `npm run typecheck` 0 errors; `npm test` 380 passed (was 375); `php artisan test` untouched (47).
 
 ### What is next
-- Relay: consider exporting `broadcastToRoom`/`getRoom` so the user-joined broadcast could be unit-tested too (currently only exercised indirectly via the lifecycle tests' recorder mimic). The `connected`/`user-joined` sent-to-self message and the `WS_ALLOW_ANON` path remain untested.
-- Client: the `user-joined` seed is best-effort (the yCursors observer rebuild can wipe it before the peer's real presence lands). If precise join counts matter, make the observer merge instead of rebuild, or drop the seed and rely purely on yCursors.
+- Relay: the `WS_ALLOW_ANON` (skip-auth) path in the connection handler remains untested — it's only exercised by the spawn-based banner tests (which never actually open a WS connection). A spawn-based integration test that connects two clients over the wire and asserts `connected`/`user-joined`/relay traffic end-to-end would close the last relay gap.
+- The connection handler's auth-reject path (`ws.close(4001)`) is still inline; if more coverage is wanted, extract it (but it's a one-liner — low value).
 - Push branch off `develop`, open PR, run through CI (per AGENTS.md protocol) when asked.
 
 ### Gotchas
+- `broadcastToRoom` now takes a 4th `roomsArg` param — when passed by reference (e.g. `registerLifecycleHandlers(ws, rooms, totalConnectionsRef, broadcastToRoom)`), the default applies module-level `rooms`, so behavior is unchanged.
+- `broadcastToRoom` is NON-creating: do NOT reintroduce `getRoom()` inside it or broadcasting to a stale room id will resurrect a phantom empty-room entry (same rule as `removeClientFromRoom`).
+- `announceJoin` must be called AFTER `room.add(ws)` — `userCount` includes the joiner itself, matching the original `room.size` semantics.
 - `vi.useFakeTimers()` also fakes `Date.now()` — pass an explicit `now` to `runHeartbeat`/helpers where deterministic timestamps are asserted.
-- `removeClientFromRoom` uses `rooms.get(roomId)` (no creation) — do NOT switch it back to `getRoom()` or auth-rejected sockets resurrect phantom rooms.
-- `handleClientError` takes `error` FIRST (matches the `ws.on('error')` handler). Tests exercise it via `registerLifecycleHandlers` + `emit('error', ...)`.
-- Presence decision (documented): broadcasts KEPT and now consumed by the client — presence is still primarily yCursors-derived; relay frames supplement it (immediate leave + join seed).
 
 ## Context (from prior code review — read before changing code)
 
@@ -71,4 +65,5 @@ Extract helpers that the connection handler calls, keeping the handler thin:
 - Do not touch the Goal section. Update the State section every iteration.
 
 ## Log
+- Iter 2 (2026-08-07): Exported `sendJson`/`broadcastToRoom`/`announceJoin`; made `broadcastToRoom` non-creating (phantom-room leak fix, injectable rooms map); extracted join block into testable `announceJoin`. +5 relay tests (44 total). typecheck 0 errors, 380 tests green.
 - Iter 1 (2026-08-07): Extracted relay lifecycle (close/error/cleanup) into exported testable helpers; fixed error-path leak (now decrements + broadcasts user-left + schedules cleanup, converging with close); kept + client-consumed `user-joined`/`user-left` via new `applyPresenceMessage` (immediate leave via yCursors delete, join seed). Added 9 relay + 5 client tests. typecheck 0 errors, 375 tests green, php artisan test 47 green.

@@ -330,22 +330,10 @@ wss.on('connection', async (ws, req) => {
   ws.userName = userName
   ws.lastPong = Date.now()
 
-  // Notify the new user about their connection
-  sendJson(ws, {
-    type: 'connected',
-    roomId,
-    userId,
-    userCount: room.size,
-    instantRetry: true,
-  })
-
-  // Notify others in the room that someone joined
-  broadcastToRoom(roomId, {
-    type: 'user-joined',
-    userId,
-    userName,
-    timestamp: Date.now(),
-  }, ws)
+  // Notify the new user about their connection + announce their join to peers.
+  // Extracted so the join-presence contract (connected to self, user-joined to
+  // others) is unit-testable.
+  announceJoin(ws, rooms)
 
   // Handle incoming messages
   ws.on('message', (data) => {
@@ -362,18 +350,49 @@ wss.on('connection', async (ws, req) => {
   registerLifecycleHandlers(ws, rooms, totalConnectionsRef, broadcastToRoom)
 })
 
-// Helper: send JSON to a single client
-function sendJson(ws, msg) {
+// Helper: send JSON to a single client (exported for tests)
+export function sendJson(ws, msg) {
   if (ws.readyState === 1) ws.send(JSON.stringify(msg))
 }
 
-// Helper: broadcast JSON to all peers in a room
-function broadcastToRoom(roomId, msg, exclude) {
-  const room = getRoom(roomId)
+/**
+ * Broadcast JSON to all OPEN peers in a room, excluding the sender.
+ *
+ * Exported (with an injectable `roomsArg`) so the presence broadcasts are
+ * unit-testable. Uses a NON-creating lookup (unlike getRoom) — broadcasting to
+ * a stale/absent room id must not resurrect a phantom empty-room entry.
+ */
+export function broadcastToRoom(roomId, msg, exclude, roomsArg = rooms) {
+  const room = roomsArg.get(roomId)
+  if (!room) return
   const payload = JSON.stringify(msg)
   room.forEach((client) => {
     if (client !== exclude && client.readyState === 1) client.send(payload)
   })
+}
+
+/**
+ * Announce a freshly-connected socket to its room: a `connected` frame to the
+ * joiner itself (echoing roomId/userId/userCount) and a `user-joined` frame to
+ * every OTHER peer. Extracted from the connection handler so the join-presence
+ * contract (and the sent-to-self message) is unit-testable.
+ */
+export function announceJoin(ws, roomsArg = rooms, now = Date.now()) {
+  const roomId = ws.roomId
+  const room = roomsArg.get(roomId)
+  sendJson(ws, {
+    type: 'connected',
+    roomId,
+    userId: ws.userId,
+    userCount: room ? room.size : 0,
+    instantRetry: true,
+  })
+  broadcastToRoom(roomId, {
+    type: 'user-joined',
+    userId: ws.userId,
+    userName: ws.userName,
+    timestamp: now,
+  }, ws, roomsArg)
 }
 
 // Delay before an empty room entry is deleted from the `rooms` map.

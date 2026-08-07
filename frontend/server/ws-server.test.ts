@@ -20,6 +20,9 @@ import {
   handleClientClose,
   handleClientError,
   registerLifecycleHandlers,
+  sendJson,
+  broadcastToRoom,
+  announceJoin,
 } from './ws-server'
 
 const API_URL = 'http://localhost:8002'
@@ -490,6 +493,90 @@ describe('ws-server — connection lifecycle (close/error/cleanup) — regressio
 
     expect(recorder.calls[0]!.msg.timestamp).toBe(1234567890)
     expect(b.sent).toEqual([{ json: { type: 'user-left', userId: 'user-a', timestamp: 1234567890 } }])
+  })
+})
+
+describe('ws-server — sendJson/broadcastToRoom/announceJoin (join presence contract)', () => {
+  function fakeSocket(id: string, opts: { roomId?: string; userId?: string; userName?: string; open?: boolean } = {}) {
+    const sent: ({ json: Record<string, unknown> } | { binary: Buffer })[] = []
+    return {
+      id,
+      roomId: opts.roomId,
+      userId: opts.userId ?? `user-${id}`,
+      userName: opts.userName ?? `User ${id}`,
+      readyState: opts.open === false ? 3 : 1,
+      sent,
+      send(d: string | Buffer) {
+        if (typeof d === 'string') sent.push({ json: JSON.parse(d) })
+        else sent.push({ binary: d })
+      },
+    }
+  }
+
+  it('sendJson serializes and sends only to an OPEN socket (skips closed/CLOSING)', () => {
+    const open = fakeSocket('open')
+    const closed = fakeSocket('closed', { open: false })
+
+    sendJson(open, { type: 'connected', roomId: 'r1' })
+    sendJson(closed, { type: 'connected', roomId: 'r1' })
+
+    expect(open.sent).toEqual([{ json: { type: 'connected', roomId: 'r1' } }])
+    expect(closed.sent).toEqual([])
+  })
+
+  it('broadcastToRoom sends to every other OPEN peer, excluding the sender and closed clients', () => {
+    const sender = fakeSocket('sender')
+    const peer1 = fakeSocket('p1')
+    const peer2 = fakeSocket('p2')
+    const closed = fakeSocket('closed', { open: false })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([sender, peer1, peer2, closed])]])
+
+    broadcastToRoom('r1', { type: 'user-joined', userId: 'user-sender', userName: 'S' }, sender, rooms)
+
+    expect(peer1.sent).toEqual([{ json: { type: 'user-joined', userId: 'user-sender', userName: 'S' } }])
+    expect(peer2.sent).toEqual([{ json: { type: 'user-joined', userId: 'user-sender', userName: 'S' } }])
+    expect(sender.sent).toEqual([])
+    expect(closed.sent).toEqual([])
+  })
+
+  it('broadcastToRoom to a nonexistent room is a NO-OP and does NOT create a phantom room', () => {
+    const rooms = new Map<string, Set<any>>()
+    broadcastToRoom('ghost', { type: 'user-joined' }, undefined, rooms)
+    expect(rooms.size).toBe(0)
+  })
+
+  it('announceJoin sends connected to the joiner and user-joined to all other peers only', () => {
+    const joiner = fakeSocket('j', { roomId: 'r1', userName: 'Joiner' })
+    const peer1 = fakeSocket('p1', { roomId: 'r1' })
+    const peer2 = fakeSocket('p2', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([joiner, peer1, peer2])]])
+
+    announceJoin(joiner, rooms, 1234567890)
+
+    // The joiner hears `connected` with the room size INCLUDING itself (the
+    // connection handler adds the socket to the room BEFORE announcing).
+    expect(joiner.sent).toEqual([
+      { json: { type: 'connected', roomId: 'r1', userId: 'user-j', userCount: 3, instantRetry: true } },
+    ])
+    // Peers hear `user-joined` with the joiner's identity + timestamp; the
+    // joiner itself does not.
+    expect(peer1.sent).toEqual([
+      { json: { type: 'user-joined', userId: 'user-j', userName: 'Joiner', timestamp: 1234567890 } },
+    ])
+    expect(peer2.sent).toEqual([
+      { json: { type: 'user-joined', userId: 'user-j', userName: 'Joiner', timestamp: 1234567890 } },
+    ])
+  })
+
+  it('announceJoin with a joiner in no room still sends connected (userCount 0) and broadcasts to nobody', () => {
+    const joiner = fakeSocket('solo', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>()
+
+    announceJoin(joiner, rooms, 1234567890)
+
+    expect(joiner.sent).toEqual([
+      { json: { type: 'connected', roomId: 'r1', userId: 'user-solo', userCount: 0, instantRetry: true } },
+    ])
   })
 })
 
