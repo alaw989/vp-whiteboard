@@ -151,6 +151,67 @@ async function isAuthed(cookieHeader, roomId, queryShareToken, req) {
   return false
 }
 
+/**
+ * Route one client frame to the rest of its room.
+ *
+ * Extracted from the connection handler so the relay's core routing behavior
+ * can be unit-tested (regression-locks candidate root cause #2: a Yjs binary
+ * update must be relayed as binary, never misclassified as a JSON control
+ * message and dropped).
+ *
+ * - JSON frames with a `type`: `ping` is answered in-place with a `pong` to the
+ *   sender; every other type (sync-request, presence, cursor, …) is forwarded
+ *   to all OTHER open peers, never echoed back to the sender.
+ * - Anything that isn't JSON is a Yjs binary frame and is relayed verbatim to
+ *   all OTHER open peers (this is the live-edit path: incremental deltas and
+ *   full-state snapshots).
+ *
+ * @returns {{kind:'json', type?:string, forwarded:number}|
+ *           {kind:'binary', relayed:number, bytes:number}}
+ */
+export function relayClientMessage(ws, data, room) {
+  let text
+  if (typeof data === 'string' || data instanceof Buffer) {
+    text = typeof data === 'string' ? data : data.toString('utf8')
+  } else {
+    text = Buffer.from(data).toString('utf8')
+  }
+
+  let json
+  try { json = JSON.parse(text) } catch { /* not JSON — binary Yjs message */ }
+  if (json && json.type) {
+    if (json.type === 'ping') {
+      ws.lastPong = Date.now()
+      sendJson(ws, { type: 'pong' })
+      return { kind: 'json', type: 'ping', forwarded: 0 }
+    }
+
+    // Forward other JSON messages (presence, cursor, etc.) to the room
+    const payload = JSON.stringify(json)
+    let forwarded = 0
+    room.forEach((client) => {
+      if (client !== ws && client.readyState === 1) {
+        client.send(payload)
+        forwarded++
+      }
+    })
+    return { kind: 'json', type: json.type, forwarded }
+  }
+
+  // Binary message — relay to all other clients in the room (Yjs sync)
+  const rawBuffer = typeof data === 'string' ? Buffer.from(data, 'utf8') : data
+  const bytes = rawBuffer.byteLength || rawBuffer.length || 0
+
+  let relayed = 0
+  room.forEach((client) => {
+    if (client !== ws && client.readyState === 1) {
+      client.send(rawBuffer)
+      relayed++
+    }
+  })
+  return { kind: 'binary', relayed, bytes }
+}
+
 // Create HTTP server for WebSocket upgrade
 const server = createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' })
@@ -245,42 +306,9 @@ wss.on('connection', async (ws, req) => {
 
   // Handle incoming messages
   ws.on('message', (data) => {
-    // Try to parse as JSON for control messages (ping, presence)
-    let text
-    if (typeof data === 'string' || data instanceof Buffer) {
-      text = typeof data === 'string' ? data : data.toString('utf8')
-    } else {
-      text = Buffer.from(data).toString('utf8')
-    }
-
-    let json
-    try { json = JSON.parse(text) } catch { /* not JSON — binary Yjs message */ }
-    if (json && json.type) {
-      if (json.type === 'ping') {
-        ws.lastPong = Date.now()
-        sendJson(ws, { type: 'pong' })
-        return
-      }
-
-      // Forward other JSON messages (presence, cursor, etc.) to the room
-      broadcastToRoom(ws.roomId || roomId, json, ws)
-      return
-    }
-
-    // Binary message — relay to all other clients in the room (Yjs sync)
-    const currentRoom = getRoom(ws.roomId || roomId)
-    const rawBuffer = typeof data === 'string' ? Buffer.from(data, 'utf8') : data
-    const msgSize = rawBuffer.byteLength || rawBuffer.length || 0
-
-    let relayed = 0
-    currentRoom.forEach((client) => {
-      if (client !== ws && client.readyState === 1) {
-        client.send(rawBuffer)
-        relayed++
-      }
-    })
-    if (msgSize > 0) {
-      console.log(`[Yjs WS] 📨 Binary: room=${ws.roomId || roomId}, size=${msgSize}B, relayed to ${relayed}`)
+    const result = relayClientMessage(ws, data, getRoom(ws.roomId || roomId))
+    if (result.kind === 'binary' && result.bytes > 0) {
+      console.log(`[Yjs WS] 📨 Binary: room=${ws.roomId || roomId}, size=${result.bytes}B, relayed to ${result.relayed}`)
     }
   })
 
