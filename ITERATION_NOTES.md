@@ -4,17 +4,15 @@
 Add an admin approval UI to the frontend: a page (e.g. /approvals) that lists pending registrations from GET /api/approvals with Approve/Deny buttons calling POST /api/approvals/{id}/approve and POST /api/approvals/{id}/deny, restricted to admins (backend already enforces isAdmin; add frontend middleware so non-admins can't open it, and show an Approvals link/nav only for admins), and covered by an e2e test (admin logs in, sees a pending user, approves, the pending user can then log in) plus unit tests for any new frontend logic. Keep npm run typecheck + npm test green and the existing e2e suite passing.
 
 ## State
-Iteration 1 (Aug 7, 2026) — approvals composable + page built, unit-tested.
+Iteration 2 (Aug 7, 2026) — dashboard nav link for admins added.
 
 **Changed this iteration:**
-- New `frontend/composables/useApprovals.ts`: `pendingUsersFromResponse()` (extracts/normalizes the `{success,data}` envelope, tolerates bare arrays, drops malformed rows), `isAdminUser()` (strict `is_admin === true`), and `useApprovals()` composable exposing `pending/loading/error/isAdmin/adminChecked` + `checkAdmin()` (fetch `/api/user`), `load()` (`GET /api/approvals`), `approve(id)`, `deny(id)` (POST + remove from list). Explicit `import { ref }` / `useApi` — don't rely on Nuxt auto-imports in `.ts`.
-- New `frontend/composables/useApprovals.test.ts`: 13 tests (normalization edge cases, admin detection incl. non-boolean `is_admin`, checkAdmin success/non-admin/401, load success/error, approve/deny remove-from-list + rethrow). Test stubs `useNuxtApp` global (pattern from `useApi.test.ts`).
-- New `frontend/pages/approvals.vue`: on mount `checkAdmin()` → if not admin show an "Admins Only" forbidden card WITHOUT calling the approvals API; if admin `load()` and render pending rows with Approve (btn-primary) / Deny (red) buttons + toast feedback, empty state, refresh button, logout. `/approvals` is not whitelisted in `auth.global.ts`, so it already requires login (non-logged-in → /login). No middleware change needed.
-- Verified: `npm run typecheck` exit 0; `npm test` 420/420 (was 407 + 13 new).
+- `frontend/pages/index.vue` header now shows an "Approvals" `NuxtLink` (`/approvals`, `data-testid="nav-approvals"`) ONLY when the signed-in user is admin, via `useApprovals()` — `const { isAdmin, checkAdmin } = useApprovals()`; `onMounted` now also calls `checkAdmin()` (fires `/api/user`, sets `isAdmin`). Non-admins never see the link; admins get one click from the dashboard to the approvals page.
+- Reuses the existing `useApprovals` composable + its `isAdminUser` logic; no new logic, so no new unit tests (the composable's 13 tests cover the admin-detection). Existing e2e suite unaffected (owner is not an admin → link hidden; the extra `/api/user` fetch is harmless).
+- Verified: `npm run typecheck` exit 0; `npm test` 420/420.
 
 **Next iterations:**
-- Nav link: show an "Approvals" link in the dashboard header (`index.vue`) only for admins — needs `is_admin` client-side on the dashboard (reuse `useApprovals().checkAdmin()` or a shared auth-user composable).
-- E2E spec `frontend/e2e/approvals.spec.ts`: extend `global-setup.ts` to also seed an admin (`is_admin => true`, approved) + a pending user; admin logs in → sees pending user → Approve → user can log in; non-admin logged-in user visiting `/approvals` sees the "Admins Only" state. Wire into the existing Playwright stack (Laravel :8002 + Nuxt :3000 TEST=1 + WS :3001).
+- E2E spec `frontend/e2e/approvals.spec.ts`: extend `global-setup.ts` to also seed an admin (`is_admin => true`, approved) + a pending user; admin logs in → sees the dashboard "Approvals" link + pending user on `/approvals` → Approve → user can log in; non-admin logged-in user visiting `/approvals` sees the "Admins Only" state. Wire into the existing Playwright stack (Laravel :8002 + Nuxt :3000 TEST=1 + WS :3001).
 
 **Gotchas:**
 - Backend `GET /api/approvals` already 403s non-admins; the page guard is UX only. Don't weaken the backend.
@@ -22,6 +20,7 @@ Iteration 1 (Aug 7, 2026) — approvals composable + page built, unit-tested.
 - `deny` hard-deletes the user (backend) — immediate, no confirm dialog (kept e2e-friendly); a confirm could be added later.
 - Approve/Deny buttons show no per-row spinner; `busyId` only disables. Fine for now.
 - Test env note: `useApprovals` uses `ref` and `useApi` (via `useNuxtApp`), both available in vitest via setup.ts + global stub.
+- Dashboard: the nav link has a `data-testid="nav-approvals"` hook for the upcoming e2e spec to assert admin visibility / non-admin absence.
 
 ## Context (from prior code review — read before changing code)
 
@@ -69,3 +68,4 @@ Iteration 1 (Aug 7, 2026) — approvals composable + page built, unit-tested.
 ## Log
 
 - 2026-08-07 (iter 1): Added `useApprovals` composable + 13 unit tests + `/approvals` page (admin-gated, list + approve/deny). Typecheck + 420 tests green.
+- 2026-08-07 (iter 2): Dashboard (`index.vue`) header shows "Approvals" nav link only for admins via `useApprovals().checkAdmin()`. Typecheck + 420 tests green.

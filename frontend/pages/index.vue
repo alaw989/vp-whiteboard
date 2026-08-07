@@ -10,6 +10,15 @@
           </div>
           <div class="flex items-center gap-3">
             <NuxtLink
+              v-if="isAdmin"
+              to="/approvals"
+              class="btn-ghost text-sm"
+              data-testid="nav-approvals"
+            >
+              <Icon name="mdi:account-check-outline" class="w-4 h-4" />
+              Approvals
+            </NuxtLink>
+            <NuxtLink
               to="/whiteboard/new"
               class="btn-primary"
             >
@@ -194,8 +203,10 @@
 <script setup lang="ts">
 import type { Whiteboard, ApiResponse } from '~/types'
 import { toastSuccess, toastError } from '~/composables/useToast'
+import { useApprovals } from '~/composables/useApprovals'
 
 const { $api } = useApi()
+const { isAdmin, checkAdmin } = useApprovals()
 
 // Fetch whiteboards
 const whiteboards = ref<Whiteboard[]>([])
@@ -218,7 +229,10 @@ async function refresh() {
   }
 }
 
-onMounted(() => { refresh() })
+onMounted(() => {
+  refresh()
+  checkAdmin()
+})
 
 // Menu state
 const menuOpenId = ref<string | null>(null)
