@@ -306,7 +306,7 @@ wss.on('connection', async (ws, req) => {
     const authed = await isAuthed(req.headers.cookie, roomId, url.searchParams.get('share'), req)
     if (!authed) {
       console.log(`[Yjs WS] 🚫 Rejected unauthenticated connection to room=${roomId}`)
-      ws.close(4001, 'Authentication required')
+      rejectConnection(ws, totalConnectionsRef)
       return
     }
   }
@@ -397,6 +397,24 @@ export function announceJoin(ws, roomsArg = rooms, now = Date.now()) {
 
 // Delay before an empty room entry is deleted from the `rooms` map.
 export const EMPTY_ROOM_CLEANUP_DELAY_MS = 60_000
+
+/**
+ * Reject a connection that failed auth. The connection handler increments
+ * `totalConnections` BEFORE the auth check runs, so a rejected socket must be
+ * un-accounted here — the original inline `ws.close(4001); return` leaked the
+ * count (the socket was never added to a room, never got lifecycle handlers,
+ * and its eventual close decremented nothing). Extracted so the accounting is
+ * unit-testable and converges with `removeClientFromRoom`'s guard.
+ *
+ * @param {object} ws the socket to reject (never joined a room)
+ * @param {{value:number}} totalConnectionsRef shared connection counter holder
+ * @param {number} [code] close code (default 4001)
+ * @param {string} [reason] close reason (default 'Authentication required')
+ */
+export function rejectConnection(ws, totalConnectionsRef, code = 4001, reason = 'Authentication required') {
+  if (totalConnectionsRef.value > 0) totalConnectionsRef.value--
+  ws.close(code, reason)
+}
 
 /**
  * Shared teardown for a departing socket (close OR error). Removes it from its

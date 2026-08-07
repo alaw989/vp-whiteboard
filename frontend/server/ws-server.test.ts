@@ -21,6 +21,7 @@ import {
   handleClientClose,
   handleClientError,
   registerLifecycleHandlers,
+  rejectConnection,
   sendJson,
   broadcastToRoom,
   announceJoin,
@@ -481,6 +482,35 @@ describe('ws-server — connection lifecycle (close/error/cleanup) — regressio
 
     expect(counter.value).toBe(0)
     expect(recorder.calls).toHaveLength(0)
+  })
+
+  it('rejectConnection un-accounts the rejected socket and closes 4001 (auth-reject count leak)', () => {
+    // The connection handler increments totalConnections BEFORE running auth;
+    // a socket that fails auth returns early WITHOUT registering lifecycle
+    // handlers, so its eventual close would never decrement the counter. The
+    // original inline `ws.close(4001); return` leaked one count per rejected
+    // connection. rejectConnection must undo the connect-time increment.
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const closeSpy = vi.fn()
+    a.close = closeSpy
+    const counter = { value: 1 }
+
+    rejectConnection(a, counter)
+
+    expect(counter.value).toBe(0)
+    expect(closeSpy).toHaveBeenCalledWith(4001, 'Authentication required')
+    // Never joined a room, so teardown must not touch rooms or broadcast.
+    expect(a.sent).toEqual([])
+  })
+
+  it('rejectConnection never drives the counter below zero and honors a custom code/reason', () => {
+    const a = fakeSocket('a')
+    const closeSpy = vi.fn()
+    a.close = closeSpy
+
+    rejectConnection(a, { value: 0 }, 4401, 'Banned')
+
+    expect(closeSpy).toHaveBeenCalledWith(4401, 'Banned')
   })
 
   it('handleClientClose accepts an injectable clock for deterministic timestamps', () => {
