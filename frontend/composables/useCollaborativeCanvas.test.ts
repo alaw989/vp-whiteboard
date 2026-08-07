@@ -375,6 +375,28 @@ describe('useCollaborativeCanvas — live sync (delta propagation both ways)', (
     expect(after).toHaveLength(3)
     expect(new Set(after).size).toBe(after.length)
   })
+
+  it('a zero-length SYNC_FULL/SYNC_DELTA frame is a complete no-op (no apply, no dedupe)', () => {
+    // A frame whose update payload is empty (hand-rolled / truncated /
+    // corrupt) must short-circuit in `applyRemoteSyncFrame`'s
+    // `update.byteLength === 0` guard. The dedupe must NOT run: it is what
+    // collapses legitimate duplicates, so running it on a garbage full-state
+    // frame would silently mutate a healthy doc. Start from a doc with a
+    // duplicate to prove dedupe is never reached.
+    const doc = new Y.Doc()
+    const yElements = doc.getArray('elements')
+    doc.transact(() => {
+      yElements.insert(0, [A, A, B])
+    }, 'setup')
+
+    // Full-flagged empty frame: even with duplicates present, nothing happens.
+    applyRemoteSyncFrame(doc, yElements, encodeSyncFrame(new Uint8Array(0), true))
+    expect(ids(yElements)).toEqual(['A', 'A', 'B'])
+
+    // Delta-flagged empty frame: same short-circuit, same no-op.
+    applyRemoteSyncFrame(doc, yElements, encodeSyncFrame(new Uint8Array(0), false))
+    expect(ids(yElements)).toEqual(['A', 'A', 'B'])
+  })
 })
 
 describe('useCollaborativeCanvas — reconnect resume (mocked WebSocket)', () => {
