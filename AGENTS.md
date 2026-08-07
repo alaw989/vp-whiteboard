@@ -3,6 +3,7 @@
 ## Rules
 
 - Do NOT commit, push, create PRs, or deploy unless explicitly instructed by the user.
+- Development must always be test driven: write or update tests first, then implement to make them pass.
 
 ## CI/CD Protocol (STANDING PROCEDURE — always follow when shipping work)
 

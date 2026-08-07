@@ -23,6 +23,8 @@
 
 import { WebSocketServer } from 'ws'
 import { createServer } from 'http'
+import { realpathSync } from 'fs'
+import { fileURLToPath } from 'url'
 
 const PORT = process.env.WS_PORT || 3001
 const HOST = process.env.WS_HOST || '0.0.0.0'
@@ -399,10 +401,56 @@ function broadcastToRoom(roomId, msg, exclude) {
   })
 }
 
+/**
+ * Decide whether this process was launched as the entry-point script (so it
+ * must bind the port and start the heartbeat) rather than merely imported as a
+ * module (e.g. by vitest, which unit-tests the exported helpers below).
+ *
+ * Two launch modes are treated as "entry point":
+ * 1. Direct `node server/ws-server.js` — process.argv[1] is our own file. The
+ *    paths are compared via realpath (not the raw string) so relative
+ *    invocations, symlinked entry points, and redundant `..` segments all still
+ *    resolve to this file. `pathToFileURL(argv[1]).href === import.meta.url` is
+ *    NOT enough: it resolves relative paths against cwd but does not follow
+ *    symlinks, so `node /usr/local/bin/ws-relay` (a symlink to this script)
+ *    would report false and leave the relay unbound.
+ * 2. pm2 fork mode — pm2 executes our script via its ProcessContainerFork.js
+ *    loader, so process.argv[1] is THAT container's path
+ *    (/usr/lib/node_modules/pm2/lib/ProcessContainerFork.js), never ours. The
+ *    naive `import.meta.url === file://${process.argv[1]}` comparison then
+ *    returns false and the relay never binds — nginx 502s every WS upgrade and
+ *    live sharing breaks until a refresh. Detect the fork loader directly from
+ *    argv[1] as the primary pm2 signal (works even if pm2 doesn't set pm_id,
+ *    e.g. older majors); pm_id covers any other pm2 loader path as a
+ *    belt-and-suspenders fallback.
+ *
+ * @param {string|undefined} [argv1] override process.argv[1] (tests)
+ * @param {string|undefined} [pmId]  override process.env.pm_id (tests)
+ * @returns {boolean}
+ */
+export function isEntryPoint(argv1 = process.argv[1], pmId = process.env.pm_id) {
+  if (argv1) {
+    // 1. Direct node run — argv[1] resolves to our own file. realpathSync
+    //    normalizes relative paths AND follows symlinks; it throws when the
+    //    path isn't a real file (e.g. a bare pm2 loader path on a dev machine
+    //    without pm2 installed), which falls through to the pm2 checks below.
+    try {
+      if (realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url))) return true
+    } catch {
+      // unparsable/nonexistent argv[1] — fall through to the pm2 checks
+    }
+    // 2. pm2 fork mode — argv[1] is pm2's ProcessContainerFork.js loader.
+    if (argv1.includes('ProcessContainerFork')) return true
+  }
+  // pm2 fallback signal: pm2 always sets pm_id on managed children, so this
+  // also catches loader paths we don't explicitly recognize above.
+  return typeof pmId !== 'undefined' && pmId !== ''
+}
+
 // Start the server + heartbeat only when run directly (skip when imported for
 // tests, e.g. to unit-test helpers — the module-scope heartbeat interval would
 // otherwise keep the vitest/node process alive).
-const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`
+const isMain = isEntryPoint()
 if (isMain) {
   // Server-side heartbeat — ping every 30s, disconnect clients unresponsive for 60s
   setInterval(() => {

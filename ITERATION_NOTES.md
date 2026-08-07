@@ -1,156 +1,58 @@
 # Iteration Notes
 
 ## Goal
-Fix live whiteboard sharing: changes by one collaborator (logged-in owner or anonymous share viewer) are not reflected in other open browsers without a refresh. Diagnose the Yjs/WebSocket real-time path (frontend/composables/useCollaborativeCanvas.ts + frontend/server/ws-server.js), fix it, add a regression test that proves delta propagation both ways, and keep npm run typecheck + npm test green.
+Fix the staging WS relay: after the collab fix deployed, the staging relay (vp-ws-server-staging) never listens on :3003 so nginx 502s every WebSocket upgrade to wss://staging-whiteboard.vp-associates.com/whiteboard:* and live sharing still requires a refresh. Root cause identified: the relay's isMain guard (frontend/server/ws-server.js) is false under pm2 because pm2 fork mode runs scripts via /usr/lib/node_modules/pm2/lib/ProcessContainerFork.js (so process.argv[1] is pm2's container, not our script). Fix isMain detection so the relay binds under BOTH direct node runs and pm2, add a regression test, keep typecheck + tests green, and verify the relay actually listens on :3003.
 
 ## State
+**Current:** Fixed the isMain guard so the relay binds under BOTH launch modes. `frontend/server/ws-server.js` now exports `isEntryPoint(argv1?, pmId?)` which returns true for a direct `node server/ws-server.js` run (compares `import.meta.url` to `pathToFileURL(argv[1]).href`, replacing the fragile `file://${process.argv[1]}` string concat) OR when pm2-managed. pm2 detection is now belt-and-suspenders: it returns true when `argv[1]` contains `ProcessContainerFork` (pm2's fork loader — the primary signal, works even if pm2 omits `pm_id`, e.g. older majors) AND when `process.env.pm_id` is set (fallback covering any other pm2 loader path). `const isMain = isEntryPoint()` gates the listen + heartbeat as before, so importing for tests still binds nothing.
 
-### Iteration 1 (2026-08-07) — DONE: root cause found + fixed + regression tests green
+The pm2 launch path now also has an end-to-end regression test (iteration 3): `ws-server.test.ts` spawns the relay through a simulated pm2 fork loader — a temp file *named* `ProcessContainerFork.js` that dynamically imports `ws-server.js` — and asserts it serves its HTTP banner. Verified with a negative control: a loader named `plain-loader.js` importing the same module does NOT bind (curl → `000`), proving the bind is driven by the argv[1] signal, not unconditional.
 
-**Two distinct bugs were found and fixed. Both were reproduced live with the real local stack (Laravel :8002, Nuxt :3000, relay :3001) and two Playwright browser tabs.**
+Iteration 4 hardened the **direct-run** leg of `isEntryPoint`: the string/URL compare (`pathToFileURL(argv[1]).href === import.meta.url`) was swapped for a realpath compare (`realpathSync(argv[1]) === realpathSync(fileURLToPath(import.meta.url))`), so a relay launched via a *symlink* (e.g. `node /usr/local/bin/ws-relay` → ws-server.js) also binds. `realpathSync` throws on nonexistent paths (a bare pm2 loader path on a machine without pm2), which falls through to the `ProcessContainerFork`/`pm_id` checks unchanged. New regression test proves `isEntryPoint(symlinkToServer, undefined) === true`; also sanity-verified live by symlink-spawning the relay and curling the banner off it. 361/361 tests, typecheck clean.
 
-#### Bug 1 — Relay rejected even logged-in owners (killed ALL live sync locally)
-`frontend/server/ws-server.js`'s `fetchJson()` fabricated `Origin`/`Referer` from `LARAVEL_URL`. Sanctum's `EnsureFrontendRequestsAreStateful::fromFrontend()` (vendor file) reads `referer ?: origin` FIRST, so the relay's synthesized referer `http://localhost:8002/` won over the client origin and never matched `SANCTUM_STATEFUL_DOMAINS=localhost:3000` → session auth skipped → `/api/user` 401 → relay closed with 4001 → client set `authRejected=true`, showed the "collaboration is off" banner, stopped reconnecting. Reproduced: logged-in owner on the board saw `disconnected` + banner.
+**Next:** Deploy to staging and verify live (per AGENTS.md CI/CD protocol): merge to `develop` → deploy-staging → `pm2 list` shows `vp-ws-server-staging` online → confirm it listens on :3003 (`ss -tlnp | grep 3003` on the droplet) → open a share link in an incognito tab and confirm live edits propagate without a refresh. The root fix ships in `ws-server.js`, so the deploy workflow needs no change — but if the relay still won't bind, check whether the droplet's pm2 actually passes a `pm_id` env (older pm2 majors) and broaden the pm2 check accordingly. This iteration's symlink hardening matters only if someone later launches the relay through a symlinked path — the pm2 launch path (the actual staging bug) was already covered.
 
-**Fix:** `resolveStatefulOrigin(clientOrigin, clientReferer)` — forward the browser's real WS-handshake `Origin`/`Referer`; when only `Origin` is present (WS handshake has NO `Referer`), do NOT synthesize a referer (a fabricated one wins in Sanctum and breaks auth); fall back to LARAVEL_URL only when the handshake carried neither. Also exported the helper + guarded `server.listen` with an `isMain` check so the module can be imported for unit tests.
+**Gotchas:**
+- The pm2 detection no longer relies solely on `process.env.pm_id` (which older pm2 majors may omit): `argv[1]` containing `ProcessContainerFork` now flips the decision by itself. If `npm test` ever runs *under* pm2, `isEntryPoint()` would be true during vitest import and a relay would bind on :3001 — CI runs on GitHub Actions, not pm2, so this is currently moot, but note it if someone adds a pm2-run test job.
+- The `# actually listens` describe block now has TWO spawn-based tests on random free ports (no connections, `WS_ALLOW_ANON=1`): one direct `node server/ws-server.js`, one via the simulated pm2 fork loader (temp dir `os.tmpdir()/pm2-fork-*`, cleaned up in `finally`). Both poll the HTTP banner then SIGTERM. The simulated loader relies on Node resolving the dynamic `import(file://…ws-server.js)` as ESM via `frontend/package.json` `"type": "module"` — the loader itself lives outside `frontend/` (default CJS), where `import()` is still valid.
+- **This branch (`fix/staging-ws-pm2`) is NOT yet merged to `develop`** — the relay is still broken on staging until the two committed fix iterations ship through the CI/CD pipeline (deploy gates on the `test` job, which runs the frontend suite that now includes the new test).
 
-#### Bug 2 — Incremental Yjs deltas silently dropped (the actual "no live updates" bug)
-Client delta-broadcast/apply assumed both docs share the same CRDT item graph. They DON'T: every client independently re-imports the same DB `canvas_state` via `importState()`, and each `importState` re-creates the elements as FRESH structs under that client's own Yjs clientId. Proven in Node (`hypothesis.mjs`): after both docs import the same [A,B], a delta generated by owner for a new element applies to nothing on the viewer (and even on a fresh empty doc). This is why edits only appeared after refresh (refresh = DB re-import). Candidate root cause #4 in the seed notes was the real one — but it's a protocol-design gap (missing state reconciliation), not a send/apply coding bug.
-
-**Fix (`frontend/composables/useCollaborativeCanvas.ts`):** binary sync frames with a 1-byte type prefix:
-- `0x01 SYNC_FULL` = `encodeStateAsUpdate(ydoc)` — broadcast after every `importState()` AND on WS open AND in reply to a peer's `sync-request`. Receiver applies it with `REMOTE_ORIGIN`, then `deduplicateYjsElements()` collapses the duplicate copies (both clients imported the same logical elements).
-- `0x02 SYNC_DELTA` = incremental `ydoc.on('update')` delta (existing behavior, now prefixed) — works once the docs share an item graph.
-- **Critical gotcha:** dedupe runs inside a `REMOTE_ORIGIN` transaction so its positional deletions are NEVER broadcast — if a peer applied our positional deletes against its own differently-ordered doc it would delete the WRONG items (tested: wiped content). Each client converges on its own copies; element ids/order end up identical everywhere.
-- Removed the old JSON `sync-state` + `hasLocalContent` gate (it actively prevented convergence — both clients with content refused each other's state).
-
-**Verified live (final code):** owner draws → viewer canvas Line count 84→85 without refresh; viewer draws → owner 83→84 without refresh. Relay log shows `📨 Binary ... relayed to 1`. Auth: `authed=true`, no 4001.
-
-**Regression tests** (`frontend/composables/useCollaborativeCanvas.test.ts`, +5 tests → 331 total): 
-- a plain delta on divergent structs is dropped (documents the bug),
-- full-state + dedupe reconciles divergent docs,
-- deltas propagate BOTH ways after convergence,
-- frame round-trip, dedupe does not echo (origin = `remote`).
-`npm run typecheck` clean, `npm test` 331/331, `php artisan test` 47 passed.
-
-### Iteration 5 (2026-08-07) — DONE: `isAuthed` connection gate regression tests (+9)
-
-The relay's **connection gate** — `isAuthed` deciding between a logged-in Sanctum session and an anonymous share token — was the last untested decision point in the live-sync path: if it 4001s a valid share viewer or accepts a room-crossing token, the whole "anonymous collaborator joins the room" feature silently dies. It lived behind `async function isAuthed` with zero coverage.
-
-**Changes (`frontend/server/ws-server.js` + `ws-server.test.ts`):**
-- Exported `isAuthed` (the connection handler call site is unchanged) and added a `laravelUrl = LARAVEL_URL` param so tests inject the base URL (module-scope `LARAVEL_URL` is frozen at import time) — same injectable pattern as `resolveStatefulOrigin`.
-- Added `clearAuthCache()` export (test helper) so per-test verdict caching can't leak between tests.
-- `ws-server.test.ts` (+9 tests → 353 total): no creds → rejected with zero fetches; valid session cookie → `/api/user` 200 admits owner and forwards the browser's WS-handshake Origin (no synthesized referer, regression-locking the Iteration-1 bug); stale session 401 → falls through to share lookup (session must not block a valid share viewer); share token via cookie admits viewer; `?share=` query param alone (nginx cookie-less path) never even calls `/api/user`; query param wins over cookie token; token resolving to a **different** whiteboard_id is rejected (room-scoped); Laravel unreachable → fail-closed deny; session verdict cached so repeat connects skip the round-trip.
-
-**Verified:** `npm run typecheck` clean, `npm test` 353/353 (41 files), raw-node import of the module works (`isAuthed`/`clearAuthCache`/`runHeartbeat` all exported).
-
-### Iteration 4 (2026-08-07) — DONE: heartbeat/stale-connection pruning extracted + regression tests (+4)
-
-The relay's **server-side heartbeat** (ping every 30s, terminate unresponsive clients after 60s) was the last untested chunk of the live-sync path (root-cause candidate #5 — a heartbeat must not kill idle-but-alive collaborators). It lived inside the `isMain` block with no coverage.
-
-**Changes (`frontend/server/ws-server.js` + `ws-server.test.ts`):**
-- Exported pure `runHeartbeat(clients, now)` + constants `HEARTBEAT_INTERVAL_MS`/`HEARTBEAT_TIMEOUT_MS`: pings every OPEN client whose `lastPong` is fresher than 60s; terminates the rest; returns `{pinged, terminated}`. The `isMain` interval now just calls it — behavior byte-identical.
-- `lastPong` is refreshed when the client sends its own keepalive `{type:'ping'}` (relayClientMessage sets it + answers pong); the client sends that every 25s < 60s, so a healthy tab is never pruned.
-- `ws-server.test.ts` (+4 tests → 344 total): healthy client gets pinged not terminated; stale client (lastPong > 60s) terminated without ping; non-OPEN clients skipped; mixed pass counts correct.
-- Verified: `npm run typecheck` clean, `npm test` 344/344 (41 files), relay still boots under direct `node` run (EADDRINUSE against the already-running :3001 relay = isMain path binds), and a raw-node import smoke confirms the helper routes correctly with no process-hanging interval.
-
-### Iteration 3 (2026-08-07) — DONE: relay frame-routing regression tests (+4)
-
-Iterations 1–2 proved the sync protocol works, but the **relay's actual forwarding logic** — the thing that physically carries a live draw from one browser to another — was buried inside the `wss.on('connection')` callback with **zero test coverage**. Root-cause candidate #2 (binary Yjs frames misclassified as JSON control messages and dropped) was ruled out by hand but never regression-locked, and neither was the guarantee that a delta reaches the *other* collaborator but never echoes back to the sender.
-
-**Changes (`frontend/server/ws-server.js` + `ws-server.test.ts`):**
-- Extracted the message handler body into an exported pure function `relayClientMessage(ws, data, room)`:
-  - JSON with `type` → `ping` is answered in-place with a `pong` to the sender only (not broadcast); any other type (`sync-request`, presence, cursor, …) is forwarded as JSON to all OTHER open peers, never echoed back.
-  - Anything not JSON → treated as a Yjs binary frame and relayed **verbatim** to all other open peers (the live-edit path). Returns `{kind, forwarded|relayed, bytes}`.
-- The connection handler now just calls it and logs from the result — behavior identical (verified live: binary relayed to peer, not sender; sync-request forwarded; ping→pong only to sender).
-- `ws-server.test.ts` (+4 tests → 340 total): sync-request forwarded to all open peers excluding sender; ping answered in place only; a `0x02` SYNC_DELTA frame is relayed verbatim as binary (regression-locks candidate #2) and never echoed to the sender; closed peers skipped + sender excluded.
-
-**Verified:** `npm run typecheck` clean, `npm test` 340/340 (41 files), plus a raw-`node` smoke of `relayClientMessage` confirming real-Buffer routing matches the tests.
-
-### Iteration 2 (2026-08-07) — DONE: relay auth regression tests added + import-safe module
-
-Iteration 1's Bug 1 fix (`resolveStatefulOrigin` in `frontend/server/ws-server.js`) was exported for unit tests but had **zero test coverage**. Also, importing `ws-server.js` into a test process **hung** — the module-scope heartbeat `setInterval` kept Node alive (proven: `node -e "import(...)"` ran past the 120s timeout until SIGTERM).
-
-**Changes:**
-- `frontend/server/ws-server.js`: moved the heartbeat `setInterval` inside the `isMain` guard (it previously ran at module scope). The relay is now import-safe for tests, and a direct run behaves identically (`node server/ws-server.js` still binds + heartbeats — verified via `EADDRINUSE` when a relay was already on :3001).
-- `frontend/server/ws-server.test.ts` (NEW, +5 tests → 336 total): regression-locks the exact Bug 1 scenario — WS handshake carries `Origin` but never `Referer`, so `resolveStatefulOrigin` must NOT synthesize a referer (Sanctum reads referer first, a fabricated one wins and skips session auth → 401 → 4001 → reconnect loop). Also covers: Origin normalization (path stripped), explicit client Referer forwarding, LARAVEL_URL fallback only when the handshake carried neither header, and path-stripping of the fallback origin.
-
-**Verified:** `npm test` 336/336 (41 files), `npm run typecheck` clean. `npm run dev:ws` + live owner↔viewer sync was confirmed working in Iteration 1 and is unchanged by this refactor.
-
-### What's next
-- Commit/push this branch; run the CI/deploy pipeline (AGENTS.md protocol) to staging, then prod — the auth fix is needed there too IF any deployment has the frontend on a different origin than the API (on single-origin prod the old synthesized referer happened to match, so prod likely only needs the sync-protocol fix).
-- Watch the relay logs for `🚫 Rejected` on staging/prod after deploy to confirm share-token auth still holds.
-- The relay's room clean-up logic (delayed `rooms.delete` 60s after the last peer leaves, and the `user-joined`/`user-left` presence broadcasts) is still untested — it lives in the connection handler. Next candidate: extract a `pruneEmptyRooms`/close-handler helper and regression-test the 4001-free close path.
-
-### Gotchas
-- Relay restart traps: `pkill -f "server/ws-server.js"` also kills the shell running it (the pattern is in the shell's own argv). Kill by PID from `ss -tlnp`. Multiple stale relay instances cause `EADDRINUSE` + "Unexpected response code: 200" handshake errors on the client.
-- Local `.env` was missing `APP_KEY` (all `/sanctum/csrf-cookie` and `/api/login` calls 500'd); ran `php artisan key:generate`. `.env` is gitignored.
-- `pkill`/timeout traps aside, verify the relay restart actually bound: `ss -tlnp | grep 3001`.
-- Konva node counting for live-sync verification is noisy (grid/guides/transient UI differ per tab) — rely on relay `📨 Binary` lines + relative deltas, or the exported unit tests.
-
-## Context (seeded before loop start — do not delete)
-
-## Context (seeded before loop start — do not delete)
+## Context (diagnosis from prior investigation — read before changing code)
 
 ### Symptom
-- In a shared whiteboard, edits by one collaborator don't appear live in another open browser. A full page refresh shows them.
-- Refresh works because auto-save PATCHes `canvas_state` to the Laravel DB and reload re-imports it. So the live Yjs/WebSocket path is broken in one or both directions.
+- After merging the live-sync collab fix to develop and deploying to staging, the WS relay does not bind.
+- Browser console on staging: `WebSocket connection to 'wss://staging-whiteboard.vp-associates.com/whiteboard:...' failed` (reconnect loop).
+- `curl` a WS handshake to https://staging-whiteboard.vp-associates.com/whiteboard:test → `HTTP 502 Bad Gateway` (nginx upstream dead).
+- nginx staging vhost (`/etc/nginx/sites-enabled/staging-whiteboard.vp-associates.com`): `location /whiteboard: { proxy_pass http://localhost:3003; }` — correct.
+- pm2 reports `vp-ws-server-staging` as **online**, but `ss -tlnp` shows **nothing listening on :3003**, no startup banner in the pm2 out log, and the process holds no socket. A direct run of the SAME script on the droplet binds fine.
 
-### Architecture (how live sync SHOULD work)
-- Custom WS relay: `frontend/server/ws-server.js` (port 3001). Rooms keyed by whiteboard UUID. Path `/whiteboard:{id}`.
-- Client: `frontend/composables/useCollaborativeCanvas.ts` (called from `frontend/pages/whiteboard/[id].vue` onMounted).
-- Join sync: client sends JSON `{type:'sync-request'}`; a peer replies with `{type:'sync-state', state}` (full `exportState()`). Receiver imports ONLY if it has no local content (`yElements.length > 0 || yDocumentLayers.size > 0`).
-- Live edits: every `ydoc.transact(..., <non-'remote'> origin)` fires `ydoc.on('update')` -> `sendBinary(update)` (incremental binary Yjs delta). Relay forwards binary frames to all other clients in the room. Receiver applies with `Y.applyUpdate(ydoc, data, REMOTE_ORIGIN)` where `REMOTE_ORIGIN = 'remote'`, so it is never echoed back. `yElements.observe` -> `elements.value` -> canvas re-renders.
-- Relay auth: logged-in session cookie OR share token (httpOnly `vp_share_token` cookie OR `?share=` query param on handshake). Token must resolve at `GET {LARAVEL_URL}/api/shares/{token}` to `data.data.whiteboard_id === roomId`. Rejection closes with code 4001; client sees `authRejected=true` and stops reconnecting (`shouldReconnectOnClose` in useCollaborativeCanvas.ts).
-- Share flow: `/s/{token}` Nitro route (`frontend/server/routes/s/[id].get.ts`) sets the httpOnly cookie, redirects to `/whiteboard/{id}?share={token}`; the page stashes token in sessionStorage, scrubs the URL, and `initWebSocket()` appends `?share=` to the handshake.
-- Client heartbeat: sends `{type:'ping'}` every 25s; relay pings every 30s and terminates after 60s without a pong.
+### Root cause (confirmed with evidence)
+- `frontend/server/ws-server.js` line ~405: `const isMain = process.argv[1] && import.meta.url === \`file://${process.argv[1]}\``
+- pm2 fork mode spawns `node /usr/lib/node_modules/pm2/lib/ProcessContainerFork.js` and that container loads our script. So inside the pm2-managed process, `process.argv[1]` = `/usr/lib/node_modules/pm2/lib/ProcessContainerFork.js`, while `import.meta.url` = `file:///var/www/vp-whiteboard-staging/frontend/server/ws-server.js`. They never match → `isMain` = false → the `if (isMain) { server.listen(...) }` block (and the heartbeat `setInterval`) never runs → process sits alive doing nothing.
+- Proven on the droplet with an `argvprobe.mjs` started via pm2: `ARGV: ["/usr/bin/node","/usr/lib/node_modules/pm2/lib/ProcessContainerFork.js"]`, `ISMAIN: false`.
+- Direct `node server/ws-server.js` (relative or absolute) works because Node resolves argv[1] to the real script path and it matches import.meta.url.
 
-### Candidate root causes (rule each in/out with evidence)
-1. **Deployed relay stale / rejecting share viewers (4001).** Verify relay logs for `🚫 Rejected`, and `WS_ALLOW_ANON`. Confirm the `?share=` handshake token resolves and matches the room. Check nginx `/whiteboard:` location forwards the upgrade + Cookie header on the live servers.
-2. **Binary frames misclassified as JSON and dropped.** Relay does `JSON.parse(data.toString('utf8'))` and if `json.type` is set it treats the frame as a control message and does NOT relay it as binary (`ws-server.js` message handler ~line 216). A Yjs binary update could theoretically parse as JSON with a `.type` — verify the relay actually logs `📨 Binary` for live edits.
-3. **Room-ID mismatch.** Owner opens `/whiteboard/{uuid}`; share viewer redirects to `/whiteboard/{uuid}`. Both roomId = uuid. Verify the relay logs show both clients in the same room (`Room {id} now has N clients`).
-4. **Client delta-broadcast/observer bug.** Check `ydoc.on('update')` origin gating (anything not exactly `'remote'` broadcasts), `sendBinary` `ws.readyState` gate, `yElements.observe` re-populating `elements.value`, and that `WhiteboardCanvas` `:elements` prop is reactive.
-5. **Heartbeat killing idle connections.** Confirm pongs keep `lastPong` fresh; look for `💔 Heartbeat timeout` in relay logs.
-6. **Both directions or only one?** Reproduce owner<->owner AND owner<->share-viewer to know the scope.
+### Fix direction
+- Make entry-point detection robust to pm2's fork container. Suggested:
+  - If `process.argv[1]` includes `ProcessContainerFork` → treat as main.
+  - Else compare real paths: `realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))`.
+  - Otherwise false (importing from a test must NOT bind/listen/heartbeat).
+- Keep the module import-safe for tests: under vitest argv[1] is the test runner, so isMain stays false. `frontend/server/ws-server.test.ts` must still pass.
+- Add a regression test locking the isMain decision, e.g. refactor into an exported pure `isMainEntry(argv1, importMetaUrl)` and test (a) direct-run argv1 → true, (b) pm2 container argv1 → true, (c) test-runner argv1 → false.
 
-### Reproduction (local full stack — do this in the first iteration)
-1. Backend: `php artisan serve --port=8002` (SQLite local DB, `.env` present).
-2. Frontend dev server: `cd frontend && npm run dev` (port 3000). `frontend/.env` sets `LARAVEL_URL=http://localhost:8002`, `NUXT_PUBLIC_WS_URL=ws://localhost:3001`.
-3. WS relay: `cd frontend && npm run dev:ws` (starts `node server/ws-server.js` with `LARAVEL_URL=http://localhost:8002`, port 3001).
-4. Create a whiteboard + a share link via the API as a logged-in user:
-   - `POST /api/whiteboards` (auth) -> `{id}`
-   - `POST /api/whiteboards/{id}/shares` (auth, `{role:'edit'}`) -> `data.url` contains the raw `/s/{token}` link.
-5. Use the Playwright browser MCP to open TWO browser contexts:
-   - Context A: logged-in owner on `/whiteboard/{id}`.
-   - Context B: anonymous share viewer on `/s/{token}` (no session).
-6. Draw with the pen tool in A; assert the stroke element appears in B **without refresh** (wait for element count / element id on B's canvas). Then draw in B and assert it appears in A. Also repeat the A<->B test with two logged-in users (owner + second account).
-7. Watch the relay stdout for: `✅ Connection`, `Room {id} now has 2 clients`, `📨 Binary`, `🚫 Rejected`, `💔 Heartbeat timeout`. Capture the evidence (file paths/line refs) in the State section.
+### Verify end-to-end before DONE
+1. `cd frontend && npm run typecheck && npm test` green.
+2. Direct run still binds: `WS_PORT=3999 node server/ws-server.js` → banner + bound.
+3. pm2 case covered by the pure-function unit test (argv1 = `/usr/lib/node_modules/pm2/lib/ProcessContainerFork.js` → true).
+4. If possible verify on staging: SSH `ssh -i /home/alaw989/.ssh/droplet-vp-nuxt -o StrictHostKeyChecking=no root@165.245.141.179`; after deploy confirm `ss -tlnp | grep 3003` binds. Deploy auto-runs on push to develop (`.github/workflows/deploy-staging.yml`), relay started via pm2 with `WS_PORT=3003`.
 
-### Verification/acceptance
-- With the local stack running, live edits propagate both directions between owner and share viewer WITHOUT a refresh.
-- A regression test exists (e.g. extend `frontend/composables/useCollaborativeCanvas.test.ts`) that exercises delta broadcast/apply both ways with a mocked WebSocket, and it passes.
-- `cd frontend && npm run typecheck && npm test` all green (backend `php artisan test` too if you touched Laravel).
-
-### Gotchas / prior context (AGENTS.md summary)
-- Prior echo-storm fix replaced full-state observers with `ydoc.on('update')` broadcasting only incremental deltas, tagged `REMOTE_ORIGIN` so peer-applied updates are never echoed back.
-- Peer `sync-state` is intentionally IGNORED once local content exists (DB is source of truth on load).
-- `exportState()` calls `deduplicateYElements()` which does `yElements.delete(i, 1)` — an implicit transaction with origin `null`, which DOES broadcast a binary delta. In-place `roundElementCoords(el)` mutates elements but triggers no ydoc update.
-- The just-merged PR #41 (commit 5554b0c / merge 2350eaa) added the `?share=` handshake for anon share viewers; make sure you are reasoning about the CURRENT code (branch already contains it).
-- Do not touch the Goal section. Update the State section every iteration: what changed, what is next, gotchas.
+### Gotchas
+- The relay is ESM (`"type": "module"` in frontend/package.json). Droplet node is v22.23.1.
+- The `isMain` guard exists solely so importing the module in vitest doesn't bind a port or leave a heartbeat interval running (iteration 2 of the prior loop). Keep that property.
+- Do not touch the Goal section. Update the State section every iteration.
 
 ## Log
-
-### 2026-08-07 — Iteration 5
-- Exported `isAuthed` (with an injectable `laravelUrl`) + `clearAuthCache()` in `frontend/server/ws-server.js`; added 9 regression tests to `frontend/server/ws-server.test.ts` (353 total) covering the connection gate: no-creds reject (zero fetches), session-cookie admit + Origin forwarding (no synthesized referer), session-401 → share-token fallthrough, share token via cookie / via `?share=` query (no /api/user hit), query-wins-over-cookie, room-scoped rejection of a token bound to a different whiteboard_id, fail-closed on Laravel unreachable, and verdict caching. Locks the anonymous share-viewer join path end-to-end. typecheck + tests green (353/353), module imports cleanly under node.
-
-### 2026-08-07 — Iteration 4
-- Extracted the relay's server-side heartbeat into exported pure `runHeartbeat(clients, now)` + `HEARTBEAT_INTERVAL_MS`/`HEARTBEAT_TIMEOUT_MS`; the `isMain` interval now calls it (behavior identical). Added 4 regression tests to `frontend/server/ws-server.test.ts` (344 total): healthy client pinged not terminated, stale client (lastPong > 60s) terminated without ping, non-OPEN clients skipped, mixed pass counts. Locks root-cause candidate #5 (heartbeat must not kill idle-but-alive collaborators). typecheck + tests green.
-
-### 2026-08-07 — Iteration 3
-- Extracted the relay's message handler into exported `relayClientMessage(ws, data, room)` (pure routing: JSON control forwarding, ping→pong in-place, verbatim binary relay to other open peers, sender always excluded). Added 4 regression tests to `frontend/server/ws-server.test.ts` (340 total) locking candidate root cause #2 (binary frames must relay as binary, not be dropped) and the "delta reaches the other collaborator but never echoes back" guarantee. typecheck + tests green.
-
-### 2026-08-07 — Iteration 2
-- Made `ws-server.js` import-safe (moved the module-scope heartbeat `setInterval` inside the `isMain` guard) and added `frontend/server/ws-server.test.ts` (+5 tests → 336): regression-locks the Iteration-1 Bug 1 auth fix (`resolveStatefulOrigin` — Origin present + no synthesized Referer, normalization, fallback). `npm run typecheck` + `npm test` green.
-
-### 2026-08-07 — Iteration 1
-- Diagnosed + fixed relay auth (Origin/Referer forwarding in `ws-server.js`) and the Yjs sync protocol (binary full-state + dedupe frames in `useCollaborativeCanvas.ts`). Added 5 regression tests proving bidirectional delta propagation. Details in State.
-- Local reproduction used: `php artisan serve --port=8002`, `npm run dev`, relay with `LARAVEL_URL=http://localhost:8002` (auth ON), SQLite DB, test user `iter-owner@test.local` / `password123` (approved), board `019fda39-64f1-71cf-ad8f-796e9196d34f`, share token `iter-share-token-1`.
+- **Iteration 1:** Replaced the one-line `isMain` guard (false under pm2 fork mode → relay never bound → nginx 502 on every WS upgrade → live sharing needed a refresh). Extracted `isEntryPoint()` (exported, testable) that accepts direct node runs AND pm2-managed processes; uses `pathToFileURL` for a correct path→URL comparison. Added 5 regression tests in `frontend/server/ws-server.test.ts`: 4 unit tests for `isEntryPoint` (direct run / pm2 fork / pm_id-only / module import) + 1 spawn-based integration test proving `node server/ws-server.js` actually listens and serves its banner. Verified: `npm run typecheck` clean, `npm test` 358/358 green.
+- **Iteration 2:** Broadened the pm2 signal in `isEntryPoint` to be belt-and-suspenders — it now also returns true when `argv[1]` contains `ProcessContainerFork` (pm2's fork loader) even with no `pm_id` set, covering older pm2 majors that don't populate the env var (the documented "broaden the pm2 check" risk). Added 1 regression test (`PM2_FORK_LOADER` with `pmId=undefined` → true). Verified: `npm run typecheck` clean, `npm test` 359/359 green.
+- **Iteration 3:** Closed the remaining verification gap — the pm2 launch path was only proven by the `isEntryPoint` pure-function unit tests, while the `# actually listens` integration test only covered direct `node` runs. Added an end-to-end test that spawns the relay through a *simulated* pm2 fork loader (temp file named `ProcessContainerFork.js` in `os.tmpdir()/pm2-fork-*` that `import()`s `ws-server.js`), asserting the HTTP banner appears — proving the argv[1] signal alone drives the bind with no `pm_id`. Negative control verified manually: a `plain-loader.js` importing the same module does not bind (curl → `000`). Verified: `npm run typecheck` clean, `npm test` 360/360 green.
+- **Iteration 4:** Hardened the direct-run leg of `isEntryPoint` against symlinked entry points — replaced `pathToFileURL(argv[1]).href === import.meta.url` with `realpathSync(argv[1]) === realpathSync(fileURLToPath(import.meta.url))`, so relative invocations and symlinks both resolve to the real file (the raw-string compare broke on `node /usr/local/bin/ws-relay` → symlink). `realpathSync` throwing on a nonexistent argv[1] falls through to the unchanged `ProcessContainerFork`/`pm_id` checks. Added a regression test asserting `isEntryPoint(symlinkToServer) === true`; manually verified by symlink-spawning the relay and curling its banner. Verified: `npm run typecheck` clean, `npm test` 361/361 green.
