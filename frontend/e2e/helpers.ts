@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { expect, type Page } from '@playwright/test'
 import { E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD } from './global-setup'
 
@@ -8,6 +9,30 @@ export async function login(page: Page) {
   await page.fill('#password', E2E_OWNER_PASSWORD)
   await page.click('button[type="submit"]')
   await page.waitForURL(/\/(whiteboards?|$)/, { timeout: 15000 })
+}
+
+/**
+ * Reset a registration-request fixture to `pending` (idempotent, re-runnable).
+ *
+ * The approvals spec MUTATES these rows (approve flips status, deny hard-deletes),
+ * so a retried or re-ordered run would otherwise find an empty pending list.
+ * Seeding the fixture at the start of each test — not just in global-setup —
+ * makes every approvals test independent and retry-safe. Same tinker recipe as
+ * global-setup.ts (plaintext password lets the `hashed` cast hash it).
+ */
+export function seedPendingUser(email: string) {
+  const php = `
+App\\Models\\User::updateOrCreate(
+  ['email' => '${email}'],
+  ['name' => 'E2E Pending', 'password' => 'e2e-password', 'status' => 'pending', 'is_admin' => false]
+);
+echo App\\Models\\User::where('email', '${email}')->value('status');
+`.trim()
+  execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+    cwd: '..',
+    stdio: 'pipe',
+    encoding: 'utf8',
+  })
 }
 
 /** Create a fresh whiteboard and return its UUID (from the redirected URL). */

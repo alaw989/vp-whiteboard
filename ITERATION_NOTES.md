@@ -4,23 +4,26 @@
 Add an admin approval UI to the frontend: a page (e.g. /approvals) that lists pending registrations from GET /api/approvals with Approve/Deny buttons calling POST /api/approvals/{id}/approve and POST /api/approvals/{id}/deny, restricted to admins (backend already enforces isAdmin; add frontend middleware so non-admins can't open it, and show an Approvals link/nav only for admins), and covered by an e2e test (admin logs in, sees a pending user, approves, the pending user can then log in) plus unit tests for any new frontend logic. Keep npm run typecheck + npm test green and the existing e2e suite passing.
 
 ## State
-Iteration 2 (Aug 7, 2026) — dashboard nav link for admins added.
+Iteration 3 (Aug 7, 2026) — e2e spec for the approvals flow added; the Goal is now fully implemented end-to-end.
 
 **Changed this iteration:**
-- `frontend/pages/index.vue` header now shows an "Approvals" `NuxtLink` (`/approvals`, `data-testid="nav-approvals"`) ONLY when the signed-in user is admin, via `useApprovals()` — `const { isAdmin, checkAdmin } = useApprovals()`; `onMounted` now also calls `checkAdmin()` (fires `/api/user`, sets `isAdmin`). Non-admins never see the link; admins get one click from the dashboard to the approvals page.
-- Reuses the existing `useApprovals` composable + its `isAdminUser` logic; no new logic, so no new unit tests (the composable's 13 tests cover the admin-detection). Existing e2e suite unaffected (owner is not an admin → link hidden; the extra `/api/user` fetch is harmless).
-- Verified: `npm run typecheck` exit 0; `npm test` 420/420.
+- `frontend/e2e/global-setup.ts`: seeds the accounts the suite needs — approved NON-admin owner (now forces `is_admin => false`; a stale row had left it `true`, silently turning the guard test into an admin test because the page loaded the list instead of showing "Admins Only"), approved admin `e2e-admin@test.local`, and two pending users `e2e-pending@test.local` / `e2e-deny@test.local` whose `status` is reset to `pending` on every run (re-runnable despite approve/deny mutating them).
+- `frontend/e2e/helpers.ts`: new `seedPendingUser(email)` — re-seeds a pending fixture via `php artisan tinker` at the start of each mutating test, making the approvals tests independent and retry-safe.
+- `frontend/e2e/approvals.spec.ts` (new, 3 tests): (1) pending login is rejected → admin signs in, sees the dashboard "Approvals" nav link, approves via the UI, signs out → the now-approved user signs in; (2) admin deny removes the row and the deleted user can no longer authenticate; (3) non-admin (owner) gets no Approvals nav link (asserted only after the client `/api/user` check resolves) and direct `/approvals` navigation shows the "Admins Only" state, never the pending list.
+- Verified: `npm run typecheck` exit 0; `npm test` 420/420; full `npx playwright test` 23/23 (3 new approvals + 20 existing smoke/collab/mobile-touch). Backend untouched.
 
-**Next iterations:**
-- E2E spec `frontend/e2e/approvals.spec.ts`: extend `global-setup.ts` to also seed an admin (`is_admin => true`, approved) + a pending user; admin logs in → sees the dashboard "Approvals" link + pending user on `/approvals` → Approve → user can log in; non-admin logged-in user visiting `/approvals` sees the "Admins Only" state. Wire into the existing Playwright stack (Laravel :8002 + Nuxt :3000 TEST=1 + WS :3001).
+**Goal status: fully implemented.** Page, admin gate, nav link, unit tests (iter 1–2) + e2e coverage (this iter) all in place and green.
+
+**Next iterations (optional polish, nothing required):**
+- `deny` hard-deletes with no confirm dialog; a confirm step / per-row spinner could be added, but would need e2e updates.
+- The `/approvals` guard is page-level (not a route-middleware rule); fine as-is — the backend 403s non-admins and the page never calls the API for them.
 
 **Gotchas:**
+- `updateOrCreate` does NOT clear fields omitted from the update array — a stale `is_admin=true` on the owner row silently changed guard-test behavior. Always force `is_admin => false` on non-admin fixtures.
+- `global-setup` runs once per Playwright invocation; mutating specs must re-seed their own fixtures (`seedPendingUser`) to survive retries/reordering.
 - Backend `GET /api/approvals` already 403s non-admins; the page guard is UX only. Don't weaken the backend.
-- The page must not call `/api/approvals` for non-admins (page currently only fetches `/api/user` first).
-- `deny` hard-deletes the user (backend) — immediate, no confirm dialog (kept e2e-friendly); a confirm could be added later.
-- Approve/Deny buttons show no per-row spinner; `busyId` only disables. Fine for now.
 - Test env note: `useApprovals` uses `ref` and `useApi` (via `useNuxtApp`), both available in vitest via setup.ts + global stub.
-- Dashboard: the nav link has a `data-testid="nav-approvals"` hook for the upcoming e2e spec to assert admin visibility / non-admin absence.
+- Dashboard nav link has `data-testid="nav-approvals"` for the e2e spec's visibility/absence assertions.
 
 ## Context (from prior code review — read before changing code)
 
@@ -69,3 +72,4 @@ Iteration 2 (Aug 7, 2026) — dashboard nav link for admins added.
 
 - 2026-08-07 (iter 1): Added `useApprovals` composable + 13 unit tests + `/approvals` page (admin-gated, list + approve/deny). Typecheck + 420 tests green.
 - 2026-08-07 (iter 2): Dashboard (`index.vue`) header shows "Approvals" nav link only for admins via `useApprovals().checkAdmin()`. Typecheck + 420 tests green.
+- 2026-08-07 (iter 3): E2E `approvals.spec.ts` (3 tests: approve flow, deny flow, non-admin guard) + `global-setup.ts` seeds admin/pending/deny fixtures (owner forced non-admin) + `seedPendingUser` helper. Typecheck + 420 vitest + 23 e2e green.
