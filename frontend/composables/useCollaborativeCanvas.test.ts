@@ -551,4 +551,31 @@ describe('useCollaborativeCanvas — reconnect resume (mocked WebSocket)', () =>
     await vi.advanceTimersByTimeAsync(60 * 1000)
     expect(FakeWebSocket.instances).toHaveLength(4)
   })
+
+  it('a 4001 rejection DURING the reconnect backoff cancels the pending timer — no socket is created after the backoff elapses', async () => {
+    const a = useCollaborativeCanvas('board-1', 'user-a', 'A')
+    const a0 = FakeWebSocket.instances[0]!
+    a0._open()
+    expect(FakeWebSocket.instances).toHaveLength(1)
+
+    // A transient close (1006) schedules a reconnect backoff (~1s).
+    a0._close(1006)
+    expect(a.authRejected.value).toBe(false)
+    expect(a.connectionStatus.value).toBe('connecting')
+
+    // The relay then rejects the attempt with 4001 (auth required). This must
+    // cancel the still-pending backoff timer, not just flag authRejected —
+    // otherwise the stale timer fires initWebSocket() once the backoff elapses
+    // and re-creates a socket doomed to be rejected again.
+    a0._close(4001)
+    expect(a.authRejected.value).toBe(true)
+    expect(a.connectionStatus.value).toBe('disconnected')
+
+    // Even after the original backoff window fully elapses, no new socket is
+    // created: the stale timer was cleared on the 4001 rejection.
+    await vi.advanceTimersByTimeAsync(30 * 1000)
+    expect(FakeWebSocket.instances).toHaveLength(1)
+
+    a.cleanup()
+  })
 })

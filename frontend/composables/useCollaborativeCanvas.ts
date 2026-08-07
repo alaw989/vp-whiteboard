@@ -263,6 +263,15 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         // relay with ~1/sec rejected handshakes) and let the UI explain.
         if (!shouldReconnectOnClose(event.code)) {
           authRejected.value = true
+          // Also cancel any reconnect backoff timer already pending (scheduled
+          // by an earlier transient close). Leaving it armed would make the
+          // stale timer fire initWebSocket() after the backoff and re-create a
+          // socket that is doomed to be rejected with 4001 again — the exact
+          // hammering this guard exists to stop.
+          if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout)
+            reconnectTimeout = null
+          }
           return
         }
 
