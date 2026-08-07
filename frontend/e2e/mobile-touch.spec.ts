@@ -30,6 +30,12 @@ async function selectMobileHighlighter(page: Page) {
   await expect(mobileToolbar.getByTitle('Highlighter (B)')).toHaveClass(/bg-blue-100/)
 }
 
+async function selectMobileEraser(page: Page) {
+  const mobileToolbar = await openMobileToolbar(page)
+  await mobileToolbar.getByTitle('Eraser (X)').click()
+  await expect(mobileToolbar.getByTitle('Eraser (X)')).toHaveClass(/bg-blue-100/)
+}
+
 test('mobile toolbar selects pen; a touch pen stroke lands on the canvas', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
@@ -289,6 +295,43 @@ test('a touch pen stroke lands exactly where the finger drew (coordinate probe)'
       expect(ch).toBeGreaterThan(230)
     }
   }
+})
+
+test('mobile toolbar selects the eraser; a touch tap removes a committed stroke', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await waitForCanvas(page)
+
+  // Draw a committed pen stroke at known coords (identity viewport, same
+  // geometry as the coordinate-probe test) so the eraser can tap its midpoint.
+  await selectMobilePen(page)
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+  const x0 = box.x + 120
+  const x1 = box.x + 320
+  const y = box.y + 220
+
+  await touchStroke(page, { x: x0, y }, { x: x1, y })
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+
+  // Eraser is a primary tool in the collapsed md:hidden strip. Selecting it and
+  // TAPPING the stroke must delete the whole element via the touch pointer path
+  // (pointerdown → handleMouseDown → dispatchMouseDown('eraser')) — the same
+  // unified pointer pipeline the pen uses, so a touch mapping error here would
+  // miss the stroke (it would erase nothing and the fingerprint would stay
+  // dirty).
+  await selectMobileEraser(page)
+  const midX = (x0 + x1) / 2
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: midX, clientY: y },
+    { type: 'pointerup', pointerId: 1, clientX: midX, clientY: y, buttons: 0 },
+  ])
+
+  // The stroke is gone: the fingerprint returns to the pre-stroke baseline and
+  // stays there (the element was deleted, not just covered up).
+  await expectCanvasToReturn(page, baseline)
 })
 
 test('a remote touch stroke preview appears on a peer and clears when the drawer cancels into a gesture', async ({ browser }) => {
