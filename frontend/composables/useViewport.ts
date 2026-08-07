@@ -395,4 +395,48 @@ export function getViewportBounds(
   }
 }
 
+export interface PinchInput {
+  startViewport: ViewportState
+  startCenter: { x: number; y: number }
+  startDistance: number
+  currentCenter: { x: number; y: number }
+  currentDistance: number
+  minZoom?: number
+  maxZoom?: number
+}
+
+/**
+ * Compute the next viewport for a two-finger pan + pinch-zoom gesture.
+ *
+ * The content point that sat under the gesture centroid at gesture start stays
+ * under the centroid as the fingers move, and zoom scales by the ratio of the
+ * finger distance. Pure — callers feed it client→stage-relative coords.
+ */
+export function computePinchViewport(input: PinchInput): ViewportState {
+  const {
+    startViewport,
+    startCenter,
+    startDistance,
+    currentCenter,
+    currentDistance,
+    minZoom = 0.1,
+    maxZoom = 5.0,
+  } = input
+
+  // Degenerate start (two pointers at the same spot): no zoom change, pan only.
+  const zoomFactor = startDistance > 0 ? currentDistance / startDistance : 1
+  const zoom = Math.min(Math.max(startViewport.zoom * zoomFactor, minZoom), maxZoom)
+
+  // World-space point under the fingers at gesture start.
+  const worldX = (startCenter.x - startViewport.x) / startViewport.zoom
+  const worldY = (startCenter.y - startViewport.y) / startViewport.zoom
+
+  // Anchor it under the current centroid after pan + zoom.
+  return {
+    x: currentCenter.x - worldX * zoom,
+    y: currentCenter.y - worldY * zoom,
+    zoom,
+  }
+}
+
 export type UseViewportReturn = ReturnType<typeof useViewport>

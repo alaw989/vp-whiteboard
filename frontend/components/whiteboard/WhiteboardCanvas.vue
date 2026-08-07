@@ -1063,7 +1063,7 @@ import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue
 import WhiteboardCursorPointer from '~/components/whiteboard/WhiteboardCursorPointer.vue'
 import type { PDFLoadingState } from '~/types'
 import { useSelection } from '~/composables/useSelection'
-import { useViewport } from '~/composables/useViewport'
+import { useViewport, computePinchViewport } from '~/composables/useViewport'
 import { useCursors, type CursorState } from '~/composables/useCursors'
 import { useMeasurements } from '~/composables/useMeasurements'
 import { useSnapping } from '~/composables/useSnapping'
@@ -1230,6 +1230,7 @@ const {
   startPan,
   stopPan,
   setViewportDirect,
+  setViewport,
   applyRemoteViewport,
   getViewportBounds,
 } = useViewport({
@@ -1706,11 +1707,13 @@ const isDrawing = ref(false)
 const currentPressure = ref(0.5)
 const currentPointerType = ref<'mouse' | 'pen' | 'touch'>('mouse')
 
-// Gesture state for two-finger pan using pointer events
+// Gesture state for two-finger pan/pinch using pointer events
 const activePointers = ref<Map<number, {x: number, y: number}>>(new Map())
 const gestureState = ref({
   isPanning: false,
   lastViewport: { x: 0, y: 0, zoom: 1 },
+  startCenter: { x: 0, y: 0 },
+  startDistance: 0,
 })
 
 // Manual pan tool state
@@ -2211,6 +2214,17 @@ function getStagePointerPos(): { x: number; y: number } {
   return stage.getPointerPosition() || { x: 0, y: 0 }
 }
 
+// Convert viewport-relative client coords to stage-container-relative coords so
+// gesture math (centroid/distance, which feed computePinchViewport) is in the
+// same space as viewport.x/y. Stage pan/zoom is applied at the stage level.
+function toStagePoint(clientX: number, clientY: number): { x: number; y: number } {
+  const stage = stageRef.value?.getNode()
+  const container = stage?.container()
+  if (!container) return { x: clientX, y: clientY }
+  const rect = container.getBoundingClientRect()
+  return { x: clientX - rect.left, y: clientY - rect.top }
+}
+
 // Extract pressure and pointer type from pointer event
 function updatePointerState(event: any) {
   // Pointer events provide pressure (0-1) and pointerType ('mouse', 'pen', 'touch')
@@ -2406,11 +2420,19 @@ function handlePointerDown(event: any) {
   // Track this pointer for multi-pointer gesture detection
   activePointers.value.set(pointerId, { x: evt.clientX, y: evt.clientY })
 
-  // Check for two-finger pan (second pointer detected)
+  // Check for two-finger pan/pinch (second pointer detected)
   if (activePointers.value.size === 2) {
-    // Enter pan mode for two-finger gesture
+    // Enter gesture mode for two-finger pan + pinch-zoom
     gestureState.value.isPanning = true
     gestureState.value.lastViewport = { x: viewport.value.x, y: viewport.value.y, zoom: viewport.value.zoom }
+
+    const pointers = Array.from(activePointers.value.values())
+    if (pointers.length === 2) {
+      const p1 = toStagePoint(pointers[0]!.x, pointers[0]!.y)
+      const p2 = toStagePoint(pointers[1]!.x, pointers[1]!.y)
+      gestureState.value.startCenter = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }
+      gestureState.value.startDistance = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+    }
 
     // Don't start drawing when panning
     evt.preventDefault()
@@ -2468,26 +2490,26 @@ function handlePointerMove(event: any) {
     return
   }
 
-  // Handle two-finger pan gesture
+  // Handle two-finger pan + pinch-zoom gesture
   if (gestureState.value.isPanning && activePointers.value.size === 2) {
     const pointers = Array.from(activePointers.value.values())
     if (pointers.length === 2) {
-      // Calculate movement delta from first pointer
-      // We need to track the movement, but for simplicity use current position
-      // relative to the last viewport position
-      const pointer1 = pointers[0]!
-      const pointer2 = pointers[1]!
+      const p1 = toStagePoint(pointers[0]!.x, pointers[0]!.y)
+      const p2 = toStagePoint(pointers[1]!.x, pointers[1]!.y)
 
-      // Calculate centroid
-      const centerX = (pointer1.x + pointer2.x) / 2
-      const centerY = (pointer1.y + pointer2.y) / 2
+      const center = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }
+      const distance = Math.hypot(p2.x - p1.x, p2.y - p1.y)
 
-      // Update viewport - we'd need to track delta from previous position
-      // For now, use Konva's built-in drag or require explicit pan tool
-      // A simpler approach: enable pan mode during two-finger gesture
-      if (!isPanning.value) {
-        enablePan()
-      }
+      const nextViewport = computePinchViewport({
+        startViewport: gestureState.value.lastViewport,
+        startCenter: gestureState.value.startCenter,
+        startDistance: gestureState.value.startDistance,
+        currentCenter: center,
+        currentDistance: distance,
+        minZoom: 0.1,
+        maxZoom: 5.0,
+      })
+      setViewportDirect(nextViewport)
 
       evt.preventDefault()
       return
@@ -2525,15 +2547,14 @@ function handlePointerUp(event: any) {
     }
   }
 
-  // Exit pan mode if less than 2 pointers (for two-finger gesture panning only)
+  // Exit gesture mode if less than 2 pointers (for two-finger pan/pinch only)
   // Don't disable if pan tool is intentionally selected
   if (activePointers.value.size < 2) {
     if (gestureState.value.isPanning) {
       gestureState.value.isPanning = false
-      // Only disable pan if it's from two-finger gesture, not from pan tool selection
-      if (isPanning.value && props.currentTool !== 'pan') {
-        disablePan()
-      }
+      gestureState.value.startDistance = 0
+      // Commit the final gesture viewport so remote collaborators sync up.
+      setViewport({ x: viewport.value.x, y: viewport.value.y, zoom: viewport.value.zoom })
     }
   }
 

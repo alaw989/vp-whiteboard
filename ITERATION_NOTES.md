@@ -4,7 +4,17 @@
 Verify and harden mobile/touch drawing on the whiteboard: with touch input (Playwright mobile/touch emulation), drawing with the pen/highlighter tools must produce real strokes (unified pointer events exist — confirm pointerType touch works end-to-end and fix any bugs), two-finger pan and pinch-zoom gestures must work, the md:hidden mobile toolbar must let a user select tool/color/size and draw, and any breakage found must be fixed with a regression test. Add mobile-emulated e2e coverage (extend the existing Playwright setup in frontend/e2e/) proving a touch draw lands on the canvas, and keep npm run typecheck + npm test green.
 
 ## State
-(empty — first iteration will start the log)
+- **Iteration 1 (touch gestures):** Fixed the two-finger pan/pinch gesture in `WhiteboardCanvas.vue` — it previously entered "pan mode" (enablePan/disablePan + Konva draggable) but NEVER moved the viewport, so two-finger gestures were dead on touch. Now:
+  - Added pure `computePinchViewport()` in `composables/useViewport.ts` (exported): pan by centroid delta, pinch-zoom toward the gesture centroid, zoom clamped to min/max, degenerate start-distance guard.
+  - `handlePointerDown` (2nd finger lands) records `startCenter`/`startDistance`/`lastViewport`; `handlePointerMove` drives `setViewportDirect(computePinchViewport(...))` each move; `handlePointerUp` resets gesture state and calls `setViewport(...)` once to sync the final viewport to remote collaborators.
+  - Added `toStagePoint()` helper to convert client coords → stage-container-relative coords so gesture math is in the same space as `viewport.x/y` (container's offset isn't in client coords).
+  - New unit tests: `composables/useViewport.test.ts` (5 tests: pan, pinch-anchor, anchored from panned/zoomed start, zoom clamp, zero-distance fallback).
+  - Verified: `npm run typecheck` clean, `npm test` 399 passed (394 + 5 new).
+- **Next:** (a) Add the mobile-touch e2e spec (`frontend/e2e/mobile-touch.spec.ts`, `hasTouch/isMobile` viewport + dispatched pointer events) proving a touch pen stroke lands on canvas via the `canvasFingerprint` helper; (b) verify single-finger touch draw still works end-to-end (should, via the unified pointer handlers); (c) consider cancelling an in-progress stroke when the 2nd finger lands (currently the frozen partial stroke commits on lift — pre-existing, acceptable); (d) confirm the `md:hidden` mobile toolbar tool/color/size pick works.
+- **Gotchas:**
+  - The loop gate is only `npm run typecheck && npm test` (unit); e2e is NOT auto-run. e2e stack (:8002/:3000/:3001) is currently NOT running, so e2e specs can't be verified locally this session.
+  - Gesture math must use stage-relative coords (via `toStagePoint`), not raw `clientX/clientY`, or pinch anchor drifts by the container's page offset.
+  - `setViewportDirect` does NOT sync; call `setViewport` once on gesture end (kept — don't sync per-move or you spam the relay).
 
 ## Context (from prior code review — read before changing code)
 
@@ -38,3 +48,5 @@ Verify and harden mobile/touch drawing on the whiteboard: with touch input (Play
 - Keep changes minimal and inside the canvas/toolbar/e2e files. Do not touch the Goal section. Update the State section every iteration.
 
 ## Log
+
+- Iteration 1: two-finger pan/pinch-zoom implemented (was a no-op); `computePinchViewport` in useViewport.ts + 5 unit tests; typecheck + 399 unit tests green.
