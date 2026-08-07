@@ -1,5 +1,5 @@
 <template>
-  <div class="h-screen flex flex-col bg-neutral-100">
+  <div class="h-dvh flex flex-col bg-neutral-100">
     <!-- Header -->
     <header class="bg-chrome border-b border-chrome-border px-4 py-2 flex items-center justify-between z-10">
       <div class="flex items-center gap-4">
@@ -118,7 +118,7 @@
     </Transition>
 
     <!-- Main Content -->
-    <div class="flex-1 flex overflow-hidden">
+    <div class="flex-1 flex relative overflow-hidden">
       <!-- Layer Panel (between toolbar and canvas) -->
       <ClientOnly>
         <LayerPanel
@@ -189,6 +189,7 @@
               :start-active-stroke="startActiveStroke"
               :broadcast-stroke-point="broadcastStrokePoint"
               :end-active-stroke="endActiveStroke"
+              :cancel-active-stroke="cancelActiveStroke"
               :get-viewport="(canvasInstance as any)?.getViewport"
               :sync-viewport="(canvasInstance as any)?.syncViewport"
               :observe-viewport="(canvasInstance as any)?.observeViewport"
@@ -585,6 +586,7 @@ if (import.meta.client) {
 const startActiveStroke = computed(() => canvasInstance.value?.startActiveStroke)
 const broadcastStrokePoint = computed(() => canvasInstance.value?.broadcastStrokePoint)
 const endActiveStroke = computed(() => canvasInstance.value?.endActiveStroke)
+const cancelActiveStroke = computed(() => canvasInstance.value?.cancelActiveStroke)
 
 // Export functionality
 const { isExporting, progress: exportProgress, exportAsPNG, exportAsPDF } = useExport()

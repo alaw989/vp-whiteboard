@@ -1,5 +1,9 @@
 <template>
-  <div class="whiteboard-container" ref="containerRef">
+  <div
+    class="whiteboard-container"
+    ref="containerRef"
+    @pointercancel.capture="handlePointerCancel"
+  >
     <!-- Stage (Konva container) -->
     <v-stage
       ref="stageRef"
@@ -10,7 +14,6 @@
       @pointermove="handlePointerMove"
       @pointerup="handlePointerUp"
       @pointerleave="handlePointerLeave"
-      @pointercancel="handlePointerCancel"
       @click="handleStageClick"
     >
       <!-- Main Layer (background, document layers, drawings, annotations) -->
@@ -1063,7 +1066,7 @@ import PDFLoadingIndicator from '~/components/whiteboard/PDFLoadingIndicator.vue
 import WhiteboardCursorPointer from '~/components/whiteboard/WhiteboardCursorPointer.vue'
 import type { PDFLoadingState } from '~/types'
 import { useSelection } from '~/composables/useSelection'
-import { useViewport } from '~/composables/useViewport'
+import { useViewport, computePinchViewport } from '~/composables/useViewport'
 import { useCursors, type CursorState } from '~/composables/useCursors'
 import { useMeasurements } from '~/composables/useMeasurements'
 import { useSnapping } from '~/composables/useSnapping'
@@ -1117,6 +1120,7 @@ const props = defineProps<{
   startActiveStroke?: ((strokeId: string) => void) | null
   broadcastStrokePoint?: ((strokeId: string, point: [number, number, number]) => void) | null
   endActiveStroke?: ((strokeId: string, element: CanvasElement) => void) | null
+  cancelActiveStroke?: ((strokeId: string) => void) | null
   // Viewport sync props
   getViewport?: () => import('~/types').SharedViewportState
   syncViewport?: (viewport: import('~/types').ViewportState) => void
@@ -1230,6 +1234,7 @@ const {
   startPan,
   stopPan,
   setViewportDirect,
+  setViewport,
   applyRemoteViewport,
   getViewportBounds,
 } = useViewport({
@@ -1706,11 +1711,13 @@ const isDrawing = ref(false)
 const currentPressure = ref(0.5)
 const currentPointerType = ref<'mouse' | 'pen' | 'touch'>('mouse')
 
-// Gesture state for two-finger pan using pointer events
+// Gesture state for two-finger pan/pinch using pointer events
 const activePointers = ref<Map<number, {x: number, y: number}>>(new Map())
 const gestureState = ref({
   isPanning: false,
   lastViewport: { x: 0, y: 0, zoom: 1 },
+  startCenter: { x: 0, y: 0 },
+  startDistance: 0,
 })
 
 // Manual pan tool state
@@ -1854,6 +1861,7 @@ const toolContext: ToolContext = {
   get startActiveStroke() { return props.startActiveStroke },
   get broadcastStrokePoint() { return props.broadcastStrokePoint },
   get endActiveStroke() { return props.endActiveStroke },
+  get cancelActiveStroke() { return props.cancelActiveStroke },
   isMeasuring,
   measurementStart,
   currentMeasurementEnd,
@@ -2211,6 +2219,17 @@ function getStagePointerPos(): { x: number; y: number } {
   return stage.getPointerPosition() || { x: 0, y: 0 }
 }
 
+// Convert viewport-relative client coords to stage-container-relative coords so
+// gesture math (centroid/distance, which feed computePinchViewport) is in the
+// same space as viewport.x/y. Stage pan/zoom is applied at the stage level.
+function toStagePoint(clientX: number, clientY: number): { x: number; y: number } {
+  const stage = stageRef.value?.getNode()
+  const container = stage?.container()
+  if (!container) return { x: clientX, y: clientY }
+  const rect = container.getBoundingClientRect()
+  return { x: clientX - rect.left, y: clientY - rect.top }
+}
+
 // Extract pressure and pointer type from pointer event
 function updatePointerState(event: any) {
   // Pointer events provide pressure (0-1) and pointerType ('mouse', 'pen', 'touch')
@@ -2406,11 +2425,32 @@ function handlePointerDown(event: any) {
   // Track this pointer for multi-pointer gesture detection
   activePointers.value.set(pointerId, { x: evt.clientX, y: evt.clientY })
 
-  // Check for two-finger pan (second pointer detected)
+  // Check for two-finger pan/pinch (second pointer detected)
   if (activePointers.value.size === 2) {
-    // Enter pan mode for two-finger gesture
+    // Enter gesture mode for two-finger pan + pinch-zoom
     gestureState.value.isPanning = true
     gestureState.value.lastViewport = { x: viewport.value.x, y: viewport.value.y, zoom: viewport.value.zoom }
+
+    const pointers = Array.from(activePointers.value.values())
+    if (pointers.length === 2) {
+      const p1 = toStagePoint(pointers[0]!.x, pointers[0]!.y)
+      const p2 = toStagePoint(pointers[1]!.x, pointers[1]!.y)
+      gestureState.value.startCenter = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }
+      gestureState.value.startDistance = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+    }
+
+    // A second finger means the user wants to pan/pinch, not draw. Cancel any
+    // stroke started by the first finger so it neither commits a stray partial
+    // shape nor leaves a stuck active-stroke preview for collaborators, and
+    // reset pressure/pointer type so the next stroke starts clean.
+    if (isDrawing.value) {
+      toolRegistry.dispatchCancel(props.currentTool as any)
+      isDrawing.value = false
+      currentPressure.value = 0.5
+      if (evt.pointerType) {
+        currentPointerType.value = evt.pointerType
+      }
+    }
 
     // Don't start drawing when panning
     evt.preventDefault()
@@ -2468,26 +2508,26 @@ function handlePointerMove(event: any) {
     return
   }
 
-  // Handle two-finger pan gesture
+  // Handle two-finger pan + pinch-zoom gesture
   if (gestureState.value.isPanning && activePointers.value.size === 2) {
     const pointers = Array.from(activePointers.value.values())
     if (pointers.length === 2) {
-      // Calculate movement delta from first pointer
-      // We need to track the movement, but for simplicity use current position
-      // relative to the last viewport position
-      const pointer1 = pointers[0]!
-      const pointer2 = pointers[1]!
+      const p1 = toStagePoint(pointers[0]!.x, pointers[0]!.y)
+      const p2 = toStagePoint(pointers[1]!.x, pointers[1]!.y)
 
-      // Calculate centroid
-      const centerX = (pointer1.x + pointer2.x) / 2
-      const centerY = (pointer1.y + pointer2.y) / 2
+      const center = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }
+      const distance = Math.hypot(p2.x - p1.x, p2.y - p1.y)
 
-      // Update viewport - we'd need to track delta from previous position
-      // For now, use Konva's built-in drag or require explicit pan tool
-      // A simpler approach: enable pan mode during two-finger gesture
-      if (!isPanning.value) {
-        enablePan()
-      }
+      const nextViewport = computePinchViewport({
+        startViewport: gestureState.value.lastViewport,
+        startCenter: gestureState.value.startCenter,
+        startDistance: gestureState.value.startDistance,
+        currentCenter: center,
+        currentDistance: distance,
+        minZoom: 0.1,
+        maxZoom: 5.0,
+      })
+      setViewportDirect(nextViewport)
 
       evt.preventDefault()
       return
@@ -2525,15 +2565,14 @@ function handlePointerUp(event: any) {
     }
   }
 
-  // Exit pan mode if less than 2 pointers (for two-finger gesture panning only)
+  // Exit gesture mode if less than 2 pointers (for two-finger pan/pinch only)
   // Don't disable if pan tool is intentionally selected
   if (activePointers.value.size < 2) {
     if (gestureState.value.isPanning) {
       gestureState.value.isPanning = false
-      // Only disable pan if it's from two-finger gesture, not from pan tool selection
-      if (isPanning.value && props.currentTool !== 'pan') {
-        disablePan()
-      }
+      gestureState.value.startDistance = 0
+      // Commit the final gesture viewport so remote collaborators sync up.
+      setViewport({ x: viewport.value.x, y: viewport.value.y, zoom: viewport.value.zoom })
     }
   }
 
@@ -2566,14 +2605,41 @@ function handlePointerLeave(event: any) {
   // If still drawing and button pressed, the stroke will continue when pointer re-enters
 }
 
-// Track pointer cancellation (e.g., palm rejection, system gesture)
+// Track pointer cancellation (e.g., palm rejection, system gesture). A
+// pointercancel means the browser/OS took the gesture away from the page (the
+// notification shade was pulled, a system back/scroll gesture started, palm
+// rejection kicked in). An in-progress stroke must be CANCELLED, not committed —
+// otherwise a stray partial shape lands on the board.
+//
+// This listener is attached in the CAPTURE phase on the container div (not on
+// the v-stage): Konva never emits a Konva `pointercancel` — its Stage._pointercancel
+// re-emits the native event as a Konva `pointerup`, so a plain @pointercancel on
+// the stage would be dead code and the stroke would commit as if it were a
+// normal lift. The capture-phase container listener runs BEFORE Konva's content
+// listener, cancelling the stroke (isDrawing → false) so the re-emitted
+// pointerup finds no drawing in progress.
 function handlePointerCancel(event: any) {
   const evt = event.evt || event
+  const pointerId = evt.pointerId
 
-  // Only end drawing if mouse button is not still pressed
-  if (!isDrawing.value || (evt.buttons & 1) === 0) {
-    handlePointerUp(event)
+  // Remove pointer from active tracking
+  activePointers.value.delete(pointerId)
+
+  if (isDrawing.value) {
+    // Abort the partial stroke the same way a second finger does: the tool's
+    // cancel() resets its stroke state and broadcasts cancelActiveStroke so
+    // collaborators' in-progress preview clears — but no element is committed.
+    toolRegistry.dispatchCancel(props.currentTool as any)
+    isDrawing.value = false
+    currentPressure.value = 0.5
+    if (evt.pointerType) {
+      currentPointerType.value = evt.pointerType
+    }
+    return
   }
+
+  // Not mid-stroke — fall through to normal pointer-up cleanup.
+  handlePointerUp(event)
 }
 
 // Cache for stroke outlines keyed by element ID to avoid redundant getStroke() calls
@@ -2606,7 +2672,10 @@ function buildStrokeConfig(outline: number[][], data: StrokeElement) {
     stroke: data.color,
     strokeWidth: 1,
     fill: data.color,
-    globalAlpha: data.tool === 'highlighter' ? 0.5 : 1,
+    // Konva has no `globalAlpha` node property (it only reads `opacity` when
+    // setting the canvas context alpha), so highlighter translucency must use
+    // `opacity` — `globalAlpha: 0.5` was silently ignored → opaque highlights.
+    opacity: data.tool === 'highlighter' ? 0.5 : 1,
     lineCap: 'round',
     lineJoin: 'round',
     closed: true,
@@ -2639,7 +2708,7 @@ function getActiveStrokeConfig(strokeId: string, points: [number, number, number
     stroke: userColor,
     strokeWidth: 1,
     fill: userColor,
-    globalAlpha: 0.7,  // Slightly transparent to show in-progress state
+    opacity: 0.7,  // Slightly transparent to show in-progress state
     lineCap: 'round',
     lineJoin: 'round',
     closed: true,
@@ -3243,7 +3312,7 @@ const currentStrokeConfig = computed(() => {
     stroke: props.currentColor,
     strokeWidth: 1,  // Outline is filled, so stroke width doesn't matter
     fill: props.currentColor,
-    globalAlpha: props.currentTool === 'highlighter' ? 0.5 : 1,
+    opacity: props.currentTool === 'highlighter' ? 0.5 : 1,
     lineCap: 'round',
     lineJoin: 'round',
     closed: true,
@@ -3785,6 +3854,11 @@ defineExpose({
 .whiteboard-container {
   touch-action: none;
   /* Prevent browser default gestures like pinch-zoom and scroll */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  /* Prevent iOS long-press callout / magnifier from hijacking a touch draw */
+  -webkit-touch-callout: none;
 }
 </style>
 
