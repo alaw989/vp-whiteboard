@@ -36,6 +36,7 @@ export function createMockToolContext(overrides: Partial<ToolContext> = {}): Too
     constrainPoint: vi.fn((_origin, cursor) => cursor),
     polarTrackingResult: ref(null),
     applyDirectDistance: vi.fn(),
+    cancelActiveStroke: vi.fn(),
 
     setCursor: vi.fn(),
     clearCursor: vi.fn(),

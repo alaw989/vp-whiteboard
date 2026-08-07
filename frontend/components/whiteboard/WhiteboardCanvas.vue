@@ -1117,6 +1117,7 @@ const props = defineProps<{
   startActiveStroke?: ((strokeId: string) => void) | null
   broadcastStrokePoint?: ((strokeId: string, point: [number, number, number]) => void) | null
   endActiveStroke?: ((strokeId: string, element: CanvasElement) => void) | null
+  cancelActiveStroke?: ((strokeId: string) => void) | null
   // Viewport sync props
   getViewport?: () => import('~/types').SharedViewportState
   syncViewport?: (viewport: import('~/types').ViewportState) => void
@@ -1857,6 +1858,7 @@ const toolContext: ToolContext = {
   get startActiveStroke() { return props.startActiveStroke },
   get broadcastStrokePoint() { return props.broadcastStrokePoint },
   get endActiveStroke() { return props.endActiveStroke },
+  get cancelActiveStroke() { return props.cancelActiveStroke },
   isMeasuring,
   measurementStart,
   currentMeasurementEnd,
@@ -2432,6 +2434,19 @@ function handlePointerDown(event: any) {
       const p2 = toStagePoint(pointers[1]!.x, pointers[1]!.y)
       gestureState.value.startCenter = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }
       gestureState.value.startDistance = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+    }
+
+    // A second finger means the user wants to pan/pinch, not draw. Cancel any
+    // stroke started by the first finger so it neither commits a stray partial
+    // shape nor leaves a stuck active-stroke preview for collaborators, and
+    // reset pressure/pointer type so the next stroke starts clean.
+    if (isDrawing.value) {
+      toolRegistry.dispatchCancel(props.currentTool as any)
+      isDrawing.value = false
+      currentPressure.value = 0.5
+      if (evt.pointerType) {
+        currentPointerType.value = evt.pointerType
+      }
     }
 
     // Don't start drawing when panning

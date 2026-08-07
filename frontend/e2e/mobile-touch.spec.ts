@@ -203,6 +203,56 @@ test('two-finger pan moves the viewport without committing a stroke', async ({ p
   await expect.poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] }).toBe(baseline)
 })
 
+test('a two-finger gesture started mid-stroke cancels the partial stroke (regression)', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+
+  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
+  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+  await mobileToolbar.getByTitle('Pen (P)').click()
+  await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+  const cx = box.x + box.width * 0.5
+  const cy = box.y + box.height * 0.4
+  const spread = 60
+
+  // Finger 1 starts a stroke and draws a couple of points, THEN finger 2 lands.
+  // That must transition to a two-finger gesture and CANCEL the partial stroke
+  // (no stray pixels, no committed element) rather than commit it on release.
+  // The pan after finger 2 lands is a pure translation (+40,+30) for BOTH
+  // fingers so the inverse pan restores the exact viewport.
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: cx - spread - 30, clientY: cy - 20 },
+    { type: 'pointermove', pointerId: 1, clientX: cx - spread - 10, clientY: cy - 20 },
+    { type: 'pointerdown', pointerId: 2, clientX: cx + spread, clientY: cy },
+    { type: 'pointermove', pointerId: 1, clientX: cx - spread + 30, clientY: cy + 10 },
+    { type: 'pointermove', pointerId: 2, clientX: cx + spread + 40, clientY: cy + 30 },
+    { type: 'pointerup', pointerId: 2, clientX: cx + spread + 40, clientY: cy + 30, buttons: 0 },
+    { type: 'pointerup', pointerId: 1, clientX: cx - spread + 30, clientY: cy + 10, buttons: 0 },
+  ])
+
+  // The gesture panned the viewport (fingerprint differs)…
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+
+  // …but panning back by the exact inverse restores the baseline: the partial
+  // stroke was cancelled, not committed (a committed stroke would leave pixels
+  // no pan can undo).
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: cx - spread + 30, clientY: cy + 10 },
+    { type: 'pointerdown', pointerId: 2, clientX: cx + spread + 40, clientY: cy + 30 },
+    { type: 'pointermove', pointerId: 1, clientX: cx - spread - 10, clientY: cy - 20 },
+    { type: 'pointermove', pointerId: 2, clientX: cx + spread, clientY: cy },
+    { type: 'pointerup', pointerId: 1, clientX: cx - spread - 10, clientY: cy - 20, buttons: 0 },
+    { type: 'pointerup', pointerId: 2, clientX: cx + spread, clientY: cy, buttons: 0 },
+  ])
+  await expect.poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] }).toBe(baseline)
+})
+
 test('mobile toolbar color and size selection flow through to a stroke', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)

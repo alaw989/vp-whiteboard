@@ -888,6 +888,18 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     lastBroadcastTime.delete(strokeId)
   }
 
+  /**
+   * Abort an in-progress stroke WITHOUT committing it to yElements.
+   * Used when a gesture (e.g. a two-finger pan/pinch) interrupts a stroke, so
+   * remote collaborators never see a stuck active-stroke preview.
+   */
+  function cancelActiveStroke(strokeId: string) {
+    ydoc.transact(() => {
+      yActiveStrokes.delete(strokeId)
+    }, userId)
+    lastBroadcastTime.delete(strokeId)
+  }
+
   // ============================================
   // Document Layer Methods (for shared PDFs/images)
   // ============================================
@@ -975,6 +987,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     startActiveStroke,
     broadcastStrokePoint,
     endActiveStroke,
+    cancelActiveStroke,
 
     // Viewport sync methods
     getViewport,
@@ -996,6 +1009,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     ydoc,
     yElements,
     yMeta,
+    yActiveStrokes,
     yDocumentLayers,
     wsProvider,
   }

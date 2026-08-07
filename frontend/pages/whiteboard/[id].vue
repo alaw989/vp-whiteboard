@@ -189,6 +189,7 @@
               :start-active-stroke="startActiveStroke"
               :broadcast-stroke-point="broadcastStrokePoint"
               :end-active-stroke="endActiveStroke"
+              :cancel-active-stroke="cancelActiveStroke"
               :get-viewport="(canvasInstance as any)?.getViewport"
               :sync-viewport="(canvasInstance as any)?.syncViewport"
               :observe-viewport="(canvasInstance as any)?.observeViewport"
@@ -585,6 +586,7 @@ if (import.meta.client) {
 const startActiveStroke = computed(() => canvasInstance.value?.startActiveStroke)
 const broadcastStrokePoint = computed(() => canvasInstance.value?.broadcastStrokePoint)
 const endActiveStroke = computed(() => canvasInstance.value?.endActiveStroke)
+const cancelActiveStroke = computed(() => canvasInstance.value?.cancelActiveStroke)
 
 // Export functionality
 const { isExporting, progress: exportProgress, exportAsPNG, exportAsPDF } = useExport()
