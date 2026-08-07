@@ -2,11 +2,28 @@ import { execFileSync } from 'node:child_process'
 import { expect, type Page } from '@playwright/test'
 import { E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD } from './global-setup'
 
-/** Log in as the pre-seeded, approved e2e owner. */
-export async function login(page: Page) {
+/** Fill the login form + submit, waiting for the button to enable (hydrated). */
+export async function loginSubmit(page: Page, email: string, password: string) {
   await page.goto('/login')
-  await page.fill('#email', E2E_OWNER_EMAIL)
-  await page.fill('#password', E2E_OWNER_PASSWORD)
+  await page.fill('#email', email)
+  await page.fill('#password', password)
+  await expect(page.locator('button[type="submit"]')).toBeEnabled({ timeout: 10000 })
+  await page.click('button[type="submit"]')
+}
+
+/** Log in as the pre-seeded, approved e2e owner (or the given credentials). */
+export async function login(page: Page, creds: { email: string; password: string } = {
+  email: E2E_OWNER_EMAIL,
+  password: E2E_OWNER_PASSWORD,
+}) {
+  await page.goto('/login')
+  await page.fill('#email', creds.email)
+  await page.fill('#password', creds.password)
+  // Nuxt SSR hydration can replace the inputs after fill and drop the value;
+  // wait until the submit button actually enables (v-model updated) before
+  // clicking, so a hydration race fails fast instead of a 30s disabled-button
+  // timeout.
+  await expect(page.locator('button[type="submit"]')).toBeEnabled({ timeout: 10000 })
   await page.click('button[type="submit"]')
   await page.waitForURL(/\/(whiteboards?|$)/, { timeout: 15000 })
 }
