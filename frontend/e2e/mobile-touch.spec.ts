@@ -203,6 +203,52 @@ test('two-finger pan moves the viewport without committing a stroke', async ({ p
   await expect.poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] }).toBe(baseline)
 })
 
+test('two-finger pinch-zoom zooms the viewport without committing a stroke', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+
+  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
+  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+  await mobileToolbar.getByTitle('Pen (P)').click()
+  await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+  const cx = box.x + box.width * 0.5
+  const cy = box.y + box.height * 0.4
+  const spread = 60
+  const zoomedSpread = 2 * spread
+
+  // Pinch OUT: both fingers move away from the (fixed) centroid, doubling the
+  // finger distance (120 → 240) → zoom doubles to 2x. Konva bakes zoom into the
+  // layer pixels, so the fingerprint MUST change (the pinch took effect)…
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: cx - spread, clientY: cy },
+    { type: 'pointerdown', pointerId: 2, clientX: cx + spread, clientY: cy },
+    { type: 'pointermove', pointerId: 1, clientX: cx - zoomedSpread, clientY: cy },
+    { type: 'pointermove', pointerId: 2, clientX: cx + zoomedSpread, clientY: cy },
+    { type: 'pointerup', pointerId: 1, clientX: cx - zoomedSpread, clientY: cy, buttons: 0 },
+    { type: 'pointerup', pointerId: 2, clientX: cx + zoomedSpread, clientY: cy, buttons: 0 },
+  ])
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+
+  // …and pinching back in by the exact inverse restores the original viewport
+  // with no elements committed (a touch draw would have left pixels behind that
+  // no zoom can undo).
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: cx - zoomedSpread, clientY: cy },
+    { type: 'pointerdown', pointerId: 2, clientX: cx + zoomedSpread, clientY: cy },
+    { type: 'pointermove', pointerId: 1, clientX: cx - spread, clientY: cy },
+    { type: 'pointermove', pointerId: 2, clientX: cx + spread, clientY: cy },
+    { type: 'pointerup', pointerId: 1, clientX: cx - spread, clientY: cy, buttons: 0 },
+    { type: 'pointerup', pointerId: 2, clientX: cx + spread, clientY: cy, buttons: 0 },
+  ])
+  await expect.poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] }).toBe(baseline)
+})
+
 test('a two-finger gesture started mid-stroke cancels the partial stroke (regression)', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
