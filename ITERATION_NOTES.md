@@ -4,6 +4,14 @@
 Harden PNG/PDF export with regression tests and fix any bugs they surface: unit tests for the export logic (frontend/composables/useExport.ts — filename generation, PNG via Konva stage toDataURL, PDF via jsPDF embedding) and e2e coverage that opens a whiteboard, draws content, triggers the export dialog, and intercepts the download to verify a real non-empty PNG and PDF are produced. Cover the edge cases: exporting an EMPTY canvas, a canvas with strokes/shapes, a canvas with PDF/image document layers (must not taint — the code already catches the tainted-canvas error), and a large canvas. Fix anything broken (empty-canvas export must not produce a corrupt/blank file, tainted canvas should show a clear error, PDF page should size to the canvas). Keep npm run typecheck + npm test green and the existing e2e suite passing.
 
 ## State
+### Iteration 2 (2026-08-07) — e2e coverage for real PNG/PDF downloads
+- Added `frontend/e2e/export.spec.ts` (2 tests, both passing against the full stack): Playwright intercepts the REAL browser download via `page.waitForEvent('download')`, then verifies the file on disk — PNG magic bytes `89 50 4E 47 0D 0A 1A 0A`, PDF `%PDF` header, and size > 100 bytes (non-corrupt/non-empty). Covers the empty-canvas case AND a canvas with a committed pen stroke (drawn via the desktop mouse path, rendered confirmed via `canvasFingerprint`).
+- Added `data-testid` selectors to `ExportDialog.vue` (`export-format-png`, `export-format-pdf`, `export-submit`) so the spec targets the dialog buttons unambiguously (the desktop + mobile toolbars both carry a `title="Export canvas"` button, so a bare `getByTitle` would trip strict-mode).
+- No export-code bugs surfaced: empty-canvas export produces a valid PNG/PDF (page geometry + Konva `toDataURL` both fine), the drawn-canvas download is non-empty, and the tainted-canvas path is already covered by the unit tests.
+- Verified: `npm run typecheck` exit 0; `npm test` → 435 passed; `npx playwright test` → 25 passed (3 flagged flaky on COLD first boot — login-button hydration race in smoke/approvals/mobile-touch, pre-existing, all green on re-run).
+- Next: the e2e goal for PDF/image document layers (upload an image, export, confirm no taint crash) is the remaining edge case; alternatively fold the `generateFilename` trailing-dash gotcha (noted in Iteration 1) into the implementation.
+- Gotcha: e2e stack must boot cold with `TEST=1`; the first `playwright test` run has a warm-up cost (Nuxt dev SSR) that can make login-button hydration assertions flaky — re-run to confirm, don't chase.
+
 ### Iteration 1 (2026-08-07) — unit tests for export logic
 - Added `frontend/composables/useExport.test.ts` (15 tests, all passing):
   - `getTimestamp` format (YYYY-MM-DDTHH-mm-ss).
