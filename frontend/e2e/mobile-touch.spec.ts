@@ -155,6 +155,48 @@ test('two-finger pan moves the viewport without committing a stroke', async ({ p
   await expectCanvasToReturn(page, baseline)
 })
 
+test('mobile toolbar selects the pan tool; a one-finger touch drag pans the viewport without committing a stroke', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await waitForCanvas(page)
+
+  // Pan (H) is a primary tool in the collapsed md:hidden strip (next to pen).
+  // Unlike the two-finger gesture tests, this exercises the PAN TOOL's manual
+  // drag path (panStartPointer/panStartViewport → setViewportDirect), which is
+  // a single-finger interaction and a genuinely different code path.
+  const mobileToolbar = await openMobileToolbar(page)
+  await mobileToolbar.getByTitle('Pan (H)').click()
+  await expect(mobileToolbar.getByTitle('Pan (H)')).toHaveClass(/bg-blue-100/)
+
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+  const cx = box.x + box.width * 0.5
+  const cy = box.y + box.height * 0.4
+  const dx = 40
+  const dy = 30
+
+  // A one-finger drag with the pan tool active must move the viewport (the
+  // content renders with the viewport baked in, so the fingerprint MUST change)…
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: cx, clientY: cy },
+    { type: 'pointermove', pointerId: 1, clientX: cx + dx, clientY: cy + dy },
+    { type: 'pointerup', pointerId: 1, clientX: cx + dx, clientY: cy + dy, buttons: 0 },
+  ])
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+
+  // …and dragging back by the exact inverse restores the original viewport with
+  // no elements committed (the pan tool never draws, but if the touch mapping
+  // broke the drag the fingerprint would not have changed in the first place).
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: cx + dx, clientY: cy + dy },
+    { type: 'pointermove', pointerId: 1, clientX: cx, clientY: cy },
+    { type: 'pointerup', pointerId: 1, clientX: cx, clientY: cy, buttons: 0 },
+  ])
+  await expectCanvasToReturn(page, baseline)
+})
+
 test('two-finger pinch-zoom zooms the viewport without committing a stroke', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
