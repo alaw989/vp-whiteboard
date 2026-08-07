@@ -47,24 +47,50 @@ function parseCookies(cookieHeader) {
   return cookies
 }
 
-async function fetchJson(url, cookieHeader, timeoutMs) {
+/**
+ * Resolve the Origin/Referer values the relay should present to Laravel when
+ * checking a session. Prefer the browser's real handshake headers (matching
+ * SANCTUM_STATEFUL_DOMAINS for the frontend). A WS handshake carries only
+ * `Origin` (never `Referer`), and Sanctum's stateful check reads `referer`
+ * before `origin` — so we must NOT synthesize a referer when only the client
+ * origin is available, or a fabricated one (e.g. the API origin) would win and
+ * skip session auth. Fall back to LARAVEL_URL-derived values only when the
+ * handshake carried neither header.
+ */
+export function resolveStatefulOrigin(clientOrigin, clientReferer, laravelUrl = LARAVEL_URL) {
+  let fallbackOrigin = laravelUrl
+  try { fallbackOrigin = new URL(laravelUrl).origin } catch {}
+  if (!clientOrigin && !clientReferer) {
+    return { origin: fallbackOrigin, referer: `${laravelUrl}/` }
+  }
+  let origin = clientOrigin || undefined
+  if (origin) { try { origin = new URL(origin).origin } catch {} }
+  return { origin, referer: clientReferer || undefined }
+}
+
+async function fetchJson(url, cookieHeader, timeoutMs, clientOrigin, clientReferer) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   // Sanctum's stateful guard only authenticates the session cookie on requests
   // whose Origin/Referer matches SANCTUM_STATEFUL_DOMAINS. Browsers send these
-  // automatically; the relay must too, or /api/user returns 401 and every
-  // connection is rejected (causing an infinite reconnect loop that resets the
-  // Yjs doc and wipes just-added layers).
-  let origin = LARAVEL_URL
-  try { origin = new URL(LARAVEL_URL).origin } catch {}
+  // automatically on the WS handshake; the relay must forward them, or
+  // /api/user returns 401 and every connection is rejected (causing an infinite
+  // reconnect loop that resets the Yjs doc and wipes just-added layers).
+  //
+  // Do NOT synthesize them from LARAVEL_URL when the real handshake headers are
+  // present: the frontend origin often differs from the API origin (local dev:
+  // :3000 vs :8002), and Sanctum's stateful check only matches the frontend
+  // domain — so a fabricated referer 401s even a validly-logged-in owner.
+  const { origin, referer } = resolveStatefulOrigin(clientOrigin, clientReferer)
+  const headers = {
+    cookie: cookieHeader || '',
+    accept: 'application/json',
+  }
+  if (origin) headers.origin = origin
+  if (referer) headers.referer = referer
   try {
     const res = await fetch(url, {
-      headers: {
-        cookie: cookieHeader || '',
-        accept: 'application/json',
-        origin,
-        referer: `${LARAVEL_URL}/`,
-      },
+      headers,
       signal: controller.signal,
     })
     return {
@@ -86,17 +112,22 @@ async function fetchJson(url, cookieHeader, timeoutMs) {
 // (carried by nginx on the handshake) OR, when nginx does not forward the Cookie
 // header to this relay, as the ?share= query param appended by the client.
 // Verdicts are cached briefly per credential.
-async function isAuthed(cookieHeader, roomId, queryShareToken) {
+async function isAuthed(cookieHeader, roomId, queryShareToken, req) {
   if (!cookieHeader && !queryShareToken) return false
   const cookies = parseCookies(cookieHeader || '')
   const now = Date.now()
+
+  // The browser sends Origin/Referer on the WS handshake; pass them through so
+  // Laravel's stateful guard runs session auth (see fetchJson).
+  const clientOrigin = req?.headers?.origin
+  const clientReferer = req?.headers?.referer
 
   // 1. Logged-in user (Sanctum session cookie)
   const session = cookies[SESSION_COOKIE] || cookies['laravel-session'] || cookies['laravel_session']
   if (session) {
     const cached = authCache.get('sess:' + session)
     if (cached && cached.exp > now) return cached.ok
-    const { status } = await fetchJson(`${LARAVEL_URL}/api/user`, cookieHeader, AUTH_TIMEOUT_MS)
+    const { status } = await fetchJson(`${LARAVEL_URL}/api/user`, cookieHeader, AUTH_TIMEOUT_MS, clientOrigin, clientReferer)
     const ok = status === 200
     authCache.set('sess:' + session, { ok, exp: now + AUTH_CACHE_TTL_MS })
     if (ok) return true
@@ -111,7 +142,7 @@ async function isAuthed(cookieHeader, roomId, queryShareToken) {
     const cached = authCache.get(key)
     if (cached && cached.exp > now) return cached.ok
     const url = `${LARAVEL_URL}/api/shares/${encodeURIComponent(shareToken)}`
-    const { status, data } = await fetchJson(url, cookieHeader, AUTH_TIMEOUT_MS)
+    const { status, data } = await fetchJson(url, cookieHeader, AUTH_TIMEOUT_MS, clientOrigin, clientReferer)
     const ok = status === 200 && data && data.success && data.data && data.data.whiteboard_id === roomId
     authCache.set(key, { ok, exp: now + AUTH_CACHE_TTL_MS })
     if (ok) return true
@@ -168,7 +199,7 @@ wss.on('connection', async (ws, req) => {
   // header on WebSocket upgrades, so session/share cookies do reach us.
   const skipAuth = process.env.WS_ALLOW_ANON === '1'
   if (!skipAuth) {
-    const authed = await isAuthed(req.headers.cookie, roomId, url.searchParams.get('share'))
+    const authed = await isAuthed(req.headers.cookie, roomId, url.searchParams.get('share'), req)
     if (!authed) {
       console.log(`[Yjs WS] 🚫 Rejected unauthenticated connection to room=${roomId}`)
       ws.close(4001, 'Authentication required')
@@ -316,9 +347,11 @@ setInterval(() => {
   })
 }, HEARTBEAT_INTERVAL)
 
-// Start the server
-server.listen(PORT, HOST, () => {
-  console.log(`
+// Start the server (skip when imported for tests, e.g. to unit-test helpers).
+const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`
+if (isMain) {
+  server.listen(PORT, HOST, () => {
+    console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║           VP Whiteboard Yjs WebSocket Server              ║
 ╠══════════════════════════════════════════════════════════╣
@@ -329,7 +362,8 @@ server.listen(PORT, HOST, () => {
 
 Waiting for Yjs connections...
   `)
-})
+  })
+}
 
 // Graceful shutdown
 process.on('SIGINT', () => {
