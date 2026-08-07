@@ -142,6 +142,24 @@ describe('exportAsPNG', () => {
     expect(error.value).toBe('konva exploded')
     expect(toastErrorMock).toHaveBeenCalledWith('Export failed')
   })
+
+  it('exports a large canvas at its full pixel size without hanging', async () => {
+    const stage = makeStage(4096, 3072)
+    const { exportAsPNG, error, isExporting } = useExport()
+
+    await exportAsPNG(stage)
+
+    expect(stage.toDataURL).toHaveBeenCalledWith({
+      pixelRatio: 1,
+      x: 0,
+      y: 0,
+      width: 4096,
+      height: 3072,
+    })
+    expect(lastClickTarget?.download).toMatch(/\.png$/)
+    expect(error.value).toBeNull()
+    expect(isExporting.value).toBe(false)
+  })
 })
 
 describe('exportAsPDF', () => {
@@ -219,5 +237,30 @@ describe('exportAsPDF', () => {
 
     expect(error.value).toBe('pdf broken')
     expect(toastErrorMock).toHaveBeenCalledWith('PDF export failed')
+  })
+
+  it('sizes the PDF page to a large canvas without tripping jsPDF limits', async () => {
+    const stage = makeStage(4096, 3072)
+    const { exportAsPDF, error, isExporting } = useExport()
+
+    await exportAsPDF(stage)
+
+    expect(stage.toDataURL).toHaveBeenCalledWith({
+      pixelRatio: 2,
+      x: 0,
+      y: 0,
+      width: 4096,
+      height: 3072,
+    })
+    expect(instances[0]?.config).toEqual({
+      orientation: 'landscape',
+      unit: 'px',
+      format: [4096, 3072],
+      compress: true,
+    })
+    expect(addImageMock).toHaveBeenCalledWith('data:image/png;base64,AAAA', 'PNG', 0, 0, 4096, 3072)
+    expect(lastClickTarget?.download).toMatch(/\.pdf$/)
+    expect(error.value).toBeNull()
+    expect(isExporting.value).toBe(false)
   })
 })

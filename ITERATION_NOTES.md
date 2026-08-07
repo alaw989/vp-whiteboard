@@ -4,6 +4,16 @@
 Harden PNG/PDF export with regression tests and fix any bugs they surface: unit tests for the export logic (frontend/composables/useExport.ts — filename generation, PNG via Konva stage toDataURL, PDF via jsPDF embedding) and e2e coverage that opens a whiteboard, draws content, triggers the export dialog, and intercepts the download to verify a real non-empty PNG and PDF are produced. Cover the edge cases: exporting an EMPTY canvas, a canvas with strokes/shapes, a canvas with PDF/image document layers (must not taint — the code already catches the tainted-canvas error), and a large canvas. Fix anything broken (empty-canvas export must not produce a corrupt/blank file, tainted canvas should show a clear error, PDF page should size to the canvas). Keep npm run typecheck + npm test green and the existing e2e suite passing.
 
 ## State
+### Iteration 4 (2026-08-07) — large-canvas export regression tests
+- Added 2 unit tests to `frontend/composables/useExport.test.ts` covering the goal's remaining unit-level edge case (large canvas):
+  - PNG: a 4096×3072 stage exports at full pixel size — `toDataURL` called with `{pixelRatio:1, x:0, y:0, width:4096, height:3072}`, `.png` download fires, no error, `isExporting` resets.
+  - PDF: same large stage → `toDataURL` at 2x, jsPDF page sized `format:[4096,3072]` landscape, `addImage` embeds at full dims, `.pdf` download fires, no error.
+- Verified against real jsPDF 4.1.0 (`node -e` probe): jsPDF only **warns** above 14400 userUnit (`A page in a PDF can not be wider or taller than 14400`) and still emits a valid PDF — no crash, so a large canvas is safe without code changes; the tests lock in the "page sized to canvas" behavior for a dimension well below that limit.
+- TDD: wrote the tests first (they pass against existing code — no bug surfaced, as with the empty-canvas case).
+- Verified: `npm run typecheck` exit 0; `npm test` → 438 passed (44 files). No e2e re-run needed (no export-code change).
+- Next: the only remaining goal edge case is e2e for PDF/image document layers (upload an image, export, confirm no taint crash / clear error toast) — that needs the full stack (`TEST=1` boot) + a fixture image upload via `useFileUpload`; worth doing as its own iteration since the loop gate can't run e2e.
+- Gotcha: the large-canvas PDF test asserts `instances[0]` is the mock captured by THIS `useExport()` call — keep the pattern of a fresh `useExport()` per large-canvas test (the shared `instances` array is cleared in `beforeEach`).
+
 ### Iteration 3 (2026-08-07) — `generateFilename` trailing-dash bug fix
 - Fixed the gotcha flagged in Iteration 1: `generateFilename('My Design v2!', 'png')` now yields `my-design-v2-<timestamp>.png` instead of `my-design-v2--<timestamp>.png`. `useExport.ts` now collapses consecutive dashes, trims leading/trailing dashes, and falls back to `whiteboard` when the sanitized base is empty/all-symbols (previously an empty board name produced a filename starting with a bare `-`).
 - TDD: updated/extended `useExport.test.ts` `generateFilename` block first — sanitization test now asserts single-dash, new tests for dash-collapse/trim and the `whiteboard` fallback (empty, whitespace, all-symbols bases).
