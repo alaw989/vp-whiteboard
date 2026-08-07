@@ -244,6 +244,38 @@ test('a two-finger gesture started mid-stroke cancels the partial stroke (regres
   await expectCanvasToReturn(page, baseline)
 })
 
+test('a pointercancel mid-stroke cancels the partial stroke instead of committing it (regression)', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await waitForCanvas(page)
+
+  await selectMobilePen(page)
+
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+  const sx = box.x + box.width * 0.3
+  const sy = box.y + box.height * 0.35
+
+  // Finger 1 draws a couple of points (down + moves, NO pointerup), then the
+  // browser cancels the pointer (palm rejection, notification shade, system
+  // gesture). That must CANCEL the partial stroke — no stray element committed,
+  // canvas returns to its pre-stroke state. The old handler treated
+  // pointercancel like a pointerup (touch always reports buttons: 0, so the
+  // mouse-button check always passed) and committed the half-drawn stroke as a
+  // stray shape.
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: sx, clientY: sy },
+    { type: 'pointermove', pointerId: 1, clientX: sx + 20, clientY: sy + 10 },
+    { type: 'pointermove', pointerId: 1, clientX: sx + 40, clientY: sy + 20 },
+    { type: 'pointercancel', pointerId: 1, clientX: sx + 40, clientY: sy + 20 },
+  ])
+
+  // A pure cancel leaves the viewport untouched, so returning to the baseline
+  // fingerprint — and STAYING there after the settle window — proves the partial
+  // stroke was cancelled, not committed.
+  await expectCanvasToReturn(page, baseline)
+})
+
 test('a touch pen stroke lands exactly where the finger drew (coordinate probe)', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
@@ -394,6 +426,64 @@ test('a remote touch stroke preview appears on a peer and clears when the drawer
     // owner must NOT have committed a stray element either — the cancel
     // broadcast reaches the peer, so no stuck preview remains. Both settle:
     // the preview stays gone (it was cancelled, not committed).
+    await expectCanvasToReturn(peer, peerBaseline)
+    await expectCanvasToReturn(owner, ownerBaseline)
+  } finally {
+    await ownerCtx.close()
+    await peerCtx.close()
+  }
+})
+
+test('a remote touch stroke preview clears when the browser cancels the pointer mid-stroke (regression)', async ({ browser }) => {
+  // Same two-browser, same-owner setup as the gesture-cancel test: the peer tab
+  // gets a RANDOM per-page userId, so the owner's in-flight stroke renders on
+  // the peer as a live remote preview. This variant cancels via pointercancel
+  // instead of a second finger — proving handlePointerCancel goes through the
+  // same cancelActiveStroke broadcast (the Iteration-3 gesture-cancel fix) and
+  // clears the peer's preview, rather than committing a stray element.
+  const mobile = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }
+  const ownerCtx = await browser.newContext(mobile)
+  const peerCtx = await browser.newContext(mobile)
+  try {
+    const owner = await ownerCtx.newPage()
+    await login(owner)
+    const whiteboardId = await createWhiteboard(owner)
+    await waitForCanvas(owner)
+    await waitForConnected(owner)
+
+    const peer = await peerCtx.newPage()
+    await login(peer)
+    await peer.goto(`/whiteboard/${whiteboardId}`)
+    await waitForCanvas(peer)
+    await waitForConnected(peer)
+
+    const ownerBaseline = await canvasFingerprint(owner)
+    const peerBaseline = await canvasFingerprint(peer)
+
+    await selectMobilePen(owner)
+
+    const box = await canvasBox(owner)
+    const sx = box.x + box.width * 0.35
+    const sy = box.y + box.height * 0.35
+    await touchPointer(owner, [
+      { type: 'pointerdown', pointerId: 1, clientX: sx, clientY: sy },
+      { type: 'pointermove', pointerId: 1, clientX: sx + 20, clientY: sy + 10 },
+      { type: 'pointermove', pointerId: 1, clientX: sx + 40, clientY: sy + 20 },
+    ])
+
+    // The peer sees the in-progress stroke as a live preview.
+    await expect
+      .poll(() => canvasFingerprint(peer), { timeout: 15000, intervals: [250] })
+      .not.toBe(peerBaseline)
+
+    // The browser cancels the pointer mid-stroke — NO finger-up, NO gesture.
+    // The cancel must abort the partial stroke and broadcast cancelActiveStroke,
+    // so the peer's preview clears too (a commit would leave a real element
+    // that no cancel could undo, and the peer fingerprint would never return).
+    await touchPointer(owner, [
+      { type: 'pointercancel', pointerId: 1, clientX: sx + 40, clientY: sy + 20 },
+    ])
+
     await expectCanvasToReturn(peer, peerBaseline)
     await expectCanvasToReturn(owner, ownerBaseline)
   } finally {

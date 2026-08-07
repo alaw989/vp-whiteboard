@@ -1,5 +1,9 @@
 <template>
-  <div class="whiteboard-container" ref="containerRef">
+  <div
+    class="whiteboard-container"
+    ref="containerRef"
+    @pointercancel.capture="handlePointerCancel"
+  >
     <!-- Stage (Konva container) -->
     <v-stage
       ref="stageRef"
@@ -10,7 +14,6 @@
       @pointermove="handlePointerMove"
       @pointerup="handlePointerUp"
       @pointerleave="handlePointerLeave"
-      @pointercancel="handlePointerCancel"
       @click="handleStageClick"
     >
       <!-- Main Layer (background, document layers, drawings, annotations) -->
@@ -2602,14 +2605,41 @@ function handlePointerLeave(event: any) {
   // If still drawing and button pressed, the stroke will continue when pointer re-enters
 }
 
-// Track pointer cancellation (e.g., palm rejection, system gesture)
+// Track pointer cancellation (e.g., palm rejection, system gesture). A
+// pointercancel means the browser/OS took the gesture away from the page (the
+// notification shade was pulled, a system back/scroll gesture started, palm
+// rejection kicked in). An in-progress stroke must be CANCELLED, not committed —
+// otherwise a stray partial shape lands on the board.
+//
+// This listener is attached in the CAPTURE phase on the container div (not on
+// the v-stage): Konva never emits a Konva `pointercancel` — its Stage._pointercancel
+// re-emits the native event as a Konva `pointerup`, so a plain @pointercancel on
+// the stage would be dead code and the stroke would commit as if it were a
+// normal lift. The capture-phase container listener runs BEFORE Konva's content
+// listener, cancelling the stroke (isDrawing → false) so the re-emitted
+// pointerup finds no drawing in progress.
 function handlePointerCancel(event: any) {
   const evt = event.evt || event
+  const pointerId = evt.pointerId
 
-  // Only end drawing if mouse button is not still pressed
-  if (!isDrawing.value || (evt.buttons & 1) === 0) {
-    handlePointerUp(event)
+  // Remove pointer from active tracking
+  activePointers.value.delete(pointerId)
+
+  if (isDrawing.value) {
+    // Abort the partial stroke the same way a second finger does: the tool's
+    // cancel() resets its stroke state and broadcasts cancelActiveStroke so
+    // collaborators' in-progress preview clears — but no element is committed.
+    toolRegistry.dispatchCancel(props.currentTool as any)
+    isDrawing.value = false
+    currentPressure.value = 0.5
+    if (evt.pointerType) {
+      currentPointerType.value = evt.pointerType
+    }
+    return
   }
+
+  // Not mid-stroke — fall through to normal pointer-up cleanup.
+  handlePointerUp(event)
 }
 
 // Cache for stroke outlines keyed by element ID to avoid redundant getStroke() calls

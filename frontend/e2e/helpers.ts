@@ -148,7 +148,7 @@ export async function darkRowSpan(
 }
 
 export type TouchEvent = {
-  type: 'pointerdown' | 'pointermove' | 'pointerup'
+  type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel'
   pointerId: number
   clientX: number
   clientY: number
