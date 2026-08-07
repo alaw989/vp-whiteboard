@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveStatefulOrigin, relayClientMessage } from './ws-server'
+import { resolveStatefulOrigin, relayClientMessage, runHeartbeat, HEARTBEAT_TIMEOUT_MS } from './ws-server'
 
 const API_URL = 'http://localhost:8002'
 
@@ -120,5 +120,74 @@ describe('ws-server — relayClientMessage (frame routing = live-edit propagatio
     expect(c.sent).toHaveLength(1)
     expect(b.sent).toEqual([])
     expect(a.sent).toEqual([])
+  })
+})
+
+describe('ws-server — runHeartbeat (server-side stale-connection pruning)', () => {
+  function fakeWs(id: string, opts: { open?: boolean; lastPong?: number } = {}) {
+    const { open = true, lastPong } = opts
+    const sent: ({ json: Record<string, unknown> } | { binary: Buffer })[] = []
+    return {
+      id,
+      readyState: open ? 1 : 3,
+      lastPong: lastPong ?? Date.now(),
+      roomId: `room-${id}`,
+      userName: id,
+      sent,
+      terminated: false,
+      terminate() {
+        this.terminated = true
+        this.readyState = 3
+      },
+      send(d: string | Buffer) {
+        if (typeof d === 'string') sent.push({ json: JSON.parse(d) })
+        else sent.push({ binary: d })
+      },
+    }
+  }
+
+  it('pings a healthy client (recent lastPong) and does NOT terminate it', () => {
+    const a = fakeWs('a')
+    const result = runHeartbeat([a], a.lastPong + 1000)
+
+    expect(result).toEqual({ pinged: 1, terminated: 0 })
+    expect(a.sent).toEqual([{ json: { type: 'ping' } }])
+    expect(a.terminated).toBe(false)
+  })
+
+  it('terminates a client whose lastPong is older than HEARTBEAT_TIMEOUT_MS — regression for candidate #5', () => {
+    // A live tab answers the client-side keepalive every 25s (< 60s), so lastPong
+    // stays fresh; only a genuinely-dead connection (no pong in >60s) is pruned.
+    // The heartbeat must never kill idle-but-alive collaborators.
+    const a = fakeWs('a', { lastPong: Date.now() - HEARTBEAT_TIMEOUT_MS - 1 })
+    const result = runHeartbeat([a], Date.now())
+
+    expect(result).toEqual({ pinged: 0, terminated: 1 })
+    expect(a.terminated).toBe(true)
+    expect(a.sent).toEqual([])
+  })
+
+  it('skips non-OPEN clients entirely (no ping, no terminate)', () => {
+    const closed = fakeWs('c', { open: false, lastPong: 0 })
+    const result = runHeartbeat([closed], Date.now())
+
+    expect(result).toEqual({ pinged: 0, terminated: 0 })
+    expect(closed.terminated).toBe(false)
+    expect(closed.sent).toEqual([])
+  })
+
+  it('mixes healthy and stale clients in one pass with correct counts', () => {
+    const now = Date.now()
+    const healthy = fakeWs('h')
+    const stale = fakeWs('s', { lastPong: now - HEARTBEAT_TIMEOUT_MS - 1000 })
+    const closed = fakeWs('c', { open: false, lastPong: 0 })
+
+    const result = runHeartbeat([healthy, stale, closed], now)
+
+    expect(result).toEqual({ pinged: 1, terminated: 1 })
+    expect(healthy.sent).toEqual([{ json: { type: 'ping' } }])
+    expect(healthy.terminated).toBe(false)
+    expect(stale.terminated).toBe(true)
+    expect(closed.terminated).toBe(false)
   })
 })

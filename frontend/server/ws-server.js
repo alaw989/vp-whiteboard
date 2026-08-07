@@ -212,6 +212,41 @@ export function relayClientMessage(ws, data, room) {
   return { kind: 'binary', relayed, bytes }
 }
 
+export const HEARTBEAT_INTERVAL_MS = 30_000
+export const HEARTBEAT_TIMEOUT_MS = 60_000
+
+/**
+ * Run one server-side heartbeat pass: ping every live client and terminate any
+ * that haven't been heard from within HEARTBEAT_TIMEOUT_MS.
+ *
+ * `ws.lastPong` is refreshed whenever the client sends its own keepalive
+ * `{type:'ping'}` (relayClientMessage sets lastPong and answers `pong`). The
+ * client sends that every 25s (< 60s), so a healthy client is never pruned;
+ * only connections whose browser tab is gone (no pong in 60s) get terminated.
+ * This is root-cause candidate #5 — a heartbeat must NOT kill idle-but-alive
+ * clients (extracted from the `isMain` block so it can be regression-tested).
+ *
+ * @param {Iterable<{readyState:number,lastPong:number,roomId?:string,userName?:string,terminate:()=>void,send:(d:string|Buffer)=>void}>} clients
+ * @param {number} [now]
+ * @returns {{pinged:number, terminated:number}}
+ */
+export function runHeartbeat(clients, now = Date.now()) {
+  let pinged = 0
+  let terminated = 0
+  for (const ws of clients) {
+    if (ws.readyState !== 1) continue
+    if (now - ws.lastPong > HEARTBEAT_TIMEOUT_MS) {
+      console.log(`[Yjs WS] 💔 Heartbeat timeout: room=${ws.roomId || '?'}, user=${ws.userName || '?'}`)
+      ws.terminate()
+      terminated++
+      continue
+    }
+    sendJson(ws, { type: 'ping' })
+    pinged++
+  }
+  return { pinged, terminated }
+}
+
 // Create HTTP server for WebSocket upgrade
 const server = createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' })
@@ -365,20 +400,9 @@ function broadcastToRoom(roomId, msg, exclude) {
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`
 if (isMain) {
   // Server-side heartbeat — ping every 30s, disconnect clients unresponsive for 60s
-  const HEARTBEAT_INTERVAL = 30000
-  const HEARTBEAT_TIMEOUT = 60000
   setInterval(() => {
-    const now = Date.now()
-    wss.clients.forEach((ws) => {
-      if (ws.readyState !== 1) return
-      if (now - ws.lastPong > HEARTBEAT_TIMEOUT) {
-        console.log(`[Yjs WS] 💔 Heartbeat timeout: room=${ws.roomId || '?'}, user=${ws.userName || '?'}`)
-        ws.terminate()
-        return
-      }
-      sendJson(ws, { type: 'ping' })
-    })
-  }, HEARTBEAT_INTERVAL)
+    runHeartbeat(wss.clients)
+  }, HEARTBEAT_INTERVAL_MS)
 
   server.listen(PORT, HOST, () => {
     console.log(`
