@@ -858,3 +858,45 @@ test('mobile toolbar color and size selection flow through to a stroke', async (
     .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
     .not.toBe(baseline)
 })
+
+test('mobile toolbar undo removes a committed touch stroke; redo restores it', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await waitForCanvas(page)
+
+  const mobileToolbar = await openMobileToolbar(page)
+  await selectMobilePen(page)
+
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+  await touchStroke(
+    page,
+    { x: box.x + box.width * 0.3, y: box.y + box.height * 0.3 },
+    { x: box.x + box.width * 0.6, y: box.y + box.height * 0.5 },
+  )
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+
+  // Undo is only clickable once canUndo is true (the Yjs UndoManager must have
+  // captured the committed stroke). The button's disabled state is driven by
+  // the canUndo/canRedo props, so waiting for it to be enabled proves the
+  // reactive undo-state wiring flows through the mobile toolbar.
+  const undoBtn = mobileToolbar.getByTitle('Undo', { exact: true })
+  const redoBtn = mobileToolbar.getByTitle('Redo', { exact: true })
+  await expect(undoBtn).toBeEnabled({ timeout: 10000 })
+
+  // Undo removes the committed stroke → canvas returns to baseline (settled).
+  await undoBtn.click()
+  await expectCanvasToReturn(page, baseline)
+
+  // Redo re-adds the stroke → canvas differs from baseline again. This proves
+  // the element was really removed/restored, not merely covered up.
+  await expect(redoBtn).toBeEnabled({ timeout: 10000 })
+  await redoBtn.click()
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+  await page.waitForTimeout(750)
+  expect(await canvasFingerprint(page)).not.toBe(baseline)
+})
