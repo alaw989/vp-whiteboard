@@ -180,3 +180,31 @@ export async function expectCanvasToChange(page: Page, baseline: string) {
   await page.waitForTimeout(750)
   expect(await canvasFingerprint(page)).not.toBe(baseline)
 }
+
+/**
+ * Poll `page` until its canvas pixels return to `baseline`, then re-check after
+ * a settle window — proving a cancelled stroke or restored viewport did NOT
+ * commit (a stray element rendering after the viewport returned would re-dirty
+ * the fingerprint and fail the settle re-check). Symmetric to
+ * `expectCanvasToChange`.
+ */
+export async function expectCanvasToReturn(page: Page, baseline: string) {
+  await expect.poll(() => canvasFingerprint(page), {
+    timeout: 20000,
+    intervals: [250],
+  }).toBe(baseline)
+  await page.waitForTimeout(750)
+  expect(await canvasFingerprint(page)).toBe(baseline)
+}
+
+/** Wait until the whiteboard stage canvas is attached (mounts after fetch). */
+export async function waitForCanvas(page: Page) {
+  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+}
+
+/** The md:hidden mobile bottom toolbar, once visible. */
+export async function openMobileToolbar(page: Page) {
+  const toolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
+  await expect(toolbar).toBeVisible({ timeout: 20000 })
+  return toolbar
+}

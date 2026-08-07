@@ -5,6 +5,7 @@ import {
   canvasFingerprint,
   pixelAt,
   waitForConnected,
+  waitForCanvas,
   expectCanvasToChange,
 } from './helpers'
 
@@ -74,7 +75,7 @@ test('owner and anonymous share viewer stay in live sync (both directions, no re
     const owner = await ownerContext.newPage()
     await login(owner)
     const whiteboardId = await createWhiteboard(owner)
-    await expect(owner.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+    await waitForCanvas(owner)
     await waitForConnected(owner)
 
     // --- Owner creates an edit-role share link. ---
@@ -88,7 +89,7 @@ test('owner and anonymous share viewer stay in live sync (both directions, no re
     const sharePath = new URL(shareUrl, FRONTEND_URL).pathname
     await viewer.goto(`${FRONTEND_URL}${sharePath}`)
     await viewer.waitForURL(/\/whiteboard\//, { timeout: 15000 })
-    await expect(viewer.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+    await waitForCanvas(viewer)
     await waitForConnected(viewer)
 
     // Both clients are authenticated to the relay (owner session + share token).
@@ -118,7 +119,7 @@ test('owner and anonymous share viewer stay in live sync (both directions, no re
 test('desktop mouse highlighter renders translucent; pen renders opaque (regression)', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
-  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+  await waitForCanvas(page)
 
   const box = await page.locator('.whiteboard-container canvas').first().boundingBox()
   if (!box) throw new Error('whiteboard stage not visible')

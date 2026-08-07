@@ -8,26 +8,23 @@ import {
   touchStroke,
   canvasBox,
   waitForConnected,
+  waitForCanvas,
+  expectCanvasToReturn,
+  openMobileToolbar,
 } from './helpers'
 
 // Mobile device emulation: small viewport + touch + mobile UA, so the app
 // renders the md:hidden bottom toolbar and pointer events can be `touch`.
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
 
-async function waitForCanvas(page: Page) {
-  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
-}
-
 async function selectMobilePen(page: Page) {
-  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
-  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+  const mobileToolbar = await openMobileToolbar(page)
   await mobileToolbar.getByTitle('Pen (P)').click()
   await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
 }
 
 async function selectMobileHighlighter(page: Page) {
-  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
-  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+  const mobileToolbar = await openMobileToolbar(page)
   await mobileToolbar.getByTitle('Highlighter (B)').click()
   await expect(mobileToolbar.getByTitle('Highlighter (B)')).toHaveClass(/bg-blue-100/)
 }
@@ -38,8 +35,7 @@ test('mobile toolbar selects pen; a touch pen stroke lands on the canvas', async
   await waitForCanvas(page)
 
   // md:hidden bottom toolbar is shown on a mobile viewport.
-  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
-  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+  const mobileToolbar = await openMobileToolbar(page)
 
   // Pick the pen from the mobile primary strip and wait until it's active
   // (currentTool must propagate to the canvas before we draw).
@@ -63,8 +59,7 @@ test('mobile toolbar selects the highlighter; a touch highlight renders as a tra
   await createWhiteboard(page)
   await waitForCanvas(page)
 
-  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
-  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+  const mobileToolbar = await openMobileToolbar(page)
 
   // Highlighter (B) is in the collapsed primary strip, like the pen.
   await selectMobileHighlighter(page)
@@ -149,7 +144,7 @@ test('two-finger pan moves the viewport without committing a stroke', async ({ p
     { type: 'pointerup', pointerId: 1, clientX: cx - spread, clientY: cy, buttons: 0 },
     { type: 'pointerup', pointerId: 2, clientX: cx + spread, clientY: cy, buttons: 0 },
   ])
-  await expect.poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] }).toBe(baseline)
+  await expectCanvasToReturn(page, baseline)
 })
 
 test('two-finger pinch-zoom zooms the viewport without committing a stroke', async ({ page }) => {
@@ -192,7 +187,7 @@ test('two-finger pinch-zoom zooms the viewport without committing a stroke', asy
     { type: 'pointerup', pointerId: 1, clientX: cx - spread, clientY: cy, buttons: 0 },
     { type: 'pointerup', pointerId: 2, clientX: cx + spread, clientY: cy, buttons: 0 },
   ])
-  await expect.poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] }).toBe(baseline)
+  await expectCanvasToReturn(page, baseline)
 })
 
 test('a two-finger gesture started mid-stroke cancels the partial stroke (regression)', async ({ page }) => {
@@ -239,7 +234,7 @@ test('a two-finger gesture started mid-stroke cancels the partial stroke (regres
     { type: 'pointerup', pointerId: 1, clientX: cx - spread - 10, clientY: cy - 20, buttons: 0 },
     { type: 'pointerup', pointerId: 2, clientX: cx + spread, clientY: cy, buttons: 0 },
   ])
-  await expect.poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] }).toBe(baseline)
+  await expectCanvasToReturn(page, baseline)
 })
 
 test('a remote touch stroke preview appears on a peer and clears when the drawer cancels into a gesture', async ({ browser }) => {
@@ -300,18 +295,10 @@ test('a remote touch stroke preview appears on a peer and clears when the drawer
 
     // The peer's preview must clear (fingerprint returns to baseline) and the
     // owner must NOT have committed a stray element either — the cancel
-    // broadcast reaches the peer, so no stuck preview remains.
-    await expect
-      .poll(() => canvasFingerprint(peer), { timeout: 15000, intervals: [250] })
-      .toBe(peerBaseline)
-    await expect
-      .poll(() => canvasFingerprint(owner), { timeout: 15000, intervals: [250] })
-      .toBe(ownerBaseline)
-
-    // Settle: the preview stays gone (it was cancelled, not committed).
-    await peer.waitForTimeout(750)
-    expect(await canvasFingerprint(peer)).toBe(peerBaseline)
-    expect(await canvasFingerprint(owner)).toBe(ownerBaseline)
+    // broadcast reaches the peer, so no stuck preview remains. Both settle:
+    // the preview stays gone (it was cancelled, not committed).
+    await expectCanvasToReturn(peer, peerBaseline)
+    await expectCanvasToReturn(owner, ownerBaseline)
   } finally {
     await ownerCtx.close()
     await peerCtx.close()
@@ -323,8 +310,7 @@ test('mobile toolbar color and size selection flow through to a stroke', async (
   await createWhiteboard(page)
   await waitForCanvas(page)
 
-  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
-  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+  const mobileToolbar = await openMobileToolbar(page)
   await selectMobilePen(page)
 
   // Expand the toolbar via the collapsed color swatch (the strip's button whose
