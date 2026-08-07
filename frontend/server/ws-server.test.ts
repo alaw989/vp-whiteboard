@@ -413,6 +413,75 @@ describe('ws-server — connection lifecycle (close/error/cleanup) — regressio
     expect(b.sent).toHaveLength(1)
   })
 
+  it('error then close (real ws fires both) teardowns ONCE — no double-decrement, no duplicate user-left, no double cleanup', () => {
+    // A real socket that errors ALSO emits 'close' afterwards, so both lifecycle
+    // handlers run. removeClientFromRoom's idempotency guard must make the
+    // second pass a no-op: totalConnections decremented once, user-left sent
+    // once, and the still-occupied room NOT scheduled for empty-room cleanup.
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b])]])
+    const counter = { value: 2 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('error', new Error('boom'))
+    a.emit('close')
+
+    expect(counter.value).toBe(1) // decremented exactly once
+    expect(rooms.get('r1')!.has(a)).toBe(false)
+    expect(rooms.get('r1')!.size).toBe(1) // b still present
+    expect(recorder.calls).toHaveLength(1) // user-left broadcast once, not twice
+    expect(recorder.calls[0]!.msg.type).toBe('user-left')
+    expect(recorder.calls[0]!.msg.userId).toBe('user-a')
+    expect(b.sent).toHaveLength(1)
+
+    // The room still has a live peer → it must survive the cleanup delay (the
+    // repeat close pass must not have scheduled an erroneous cleanup).
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(rooms.has('r1')).toBe(true)
+    expect(rooms.get('r1')!.size).toBe(1)
+  })
+
+  it('error then close on a solo client schedules the empty-room cleanup exactly once', () => {
+    // Repeat-pass cleanup suppression: error empties the room (schedules the
+    // 60s timer), then the follow-up close pass must NOT schedule a second
+    // timer — the room is still deleted exactly once when the (single) timer
+    // fires.
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a])]])
+    const counter = { value: 1 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('error', new Error('boom'))
+    a.emit('close')
+
+    expect(counter.value).toBe(0)
+    expect(recorder.calls).toHaveLength(0) // empty room → no user-left
+    expect(rooms.has('r1')).toBe(true)
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(rooms.has('r1')).toBe(false)
+  })
+
+  it('close fired twice (duplicate close event) is idempotent', () => {
+    // Some runtimes can emit close more than once; the second close must not
+    // decrement again or re-broadcast to the remaining peer.
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b])]])
+    const counter = { value: 2 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('close')
+    a.emit('close')
+
+    expect(counter.value).toBe(1)
+    expect(recorder.calls).toHaveLength(1)
+    expect(b.sent).toHaveLength(1)
+  })
+
   it('error on a solo client empties the room and schedules its cleanup (no room leak)', () => {
     const a = fakeSocket('a', { roomId: 'r1' })
     const rooms = new Map<string, Set<any>>([['r1', new Set([a])]])

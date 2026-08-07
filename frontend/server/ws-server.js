@@ -430,10 +430,23 @@ export function rejectConnection(ws, totalConnectionsRef, code = 4001, reason = 
  * @param {{value:number}} totalConnectionsRef shared connection counter holder
  * @param {(roomId:string, msg:object, exclude?:object)=>void} broadcastToRoomFn
  * @param {number} [now] injectable clock (tests)
- * @returns {{roomId:string, roomSize:number, broadcastUserLeft:boolean}}
+ * @returns {{roomId:string, roomSize:number, broadcastUserLeft:boolean, alreadyHandled:boolean}}
  */
 export function removeClientFromRoom(ws, rooms, totalConnectionsRef, broadcastToRoomFn, now = Date.now()) {
   const roomId = ws.roomId
+
+  // Idempotency guard: a real socket that errors ALSO emits 'close' afterwards
+  // (ws fires error then close), so both lifecycle handlers run this teardown.
+  // The first pass un-accounts + broadcasts; subsequent passes must NOT
+  // re-decrement the counter or re-broadcast user-left — but they must still
+  // report the REAL room size, or handleClientClose would schedule an empty-room
+  // cleanup for a room that still has live peers (deleting a live room).
+  if (ws.lifecycleHandled) {
+    const room = rooms.get(roomId)
+    return { roomId, roomSize: room ? room.size : 0, broadcastUserLeft: false, alreadyHandled: true }
+  }
+  ws.lifecycleHandled = true
+
   if (totalConnectionsRef.value > 0) totalConnectionsRef.value--
   const room = rooms.get(roomId)
   if (room) room.delete(ws)
@@ -448,7 +461,7 @@ export function removeClientFromRoom(ws, rooms, totalConnectionsRef, broadcastTo
     })
     broadcastUserLeft = true
   }
-  return { roomId, roomSize, broadcastUserLeft }
+  return { roomId, roomSize, broadcastUserLeft, alreadyHandled: false }
 }
 
 /**
@@ -473,9 +486,13 @@ export function scheduleEmptyRoomCleanup(roomId, rooms, delayMs = EMPTY_ROOM_CLE
  * the room just emptied.
  */
 export function handleClientClose(ws, rooms, totalConnectionsRef, broadcastToRoomFn, now = Date.now(), cleanupDelayMs = EMPTY_ROOM_CLEANUP_DELAY_MS) {
-  const { roomId, roomSize } = removeClientFromRoom(ws, rooms, totalConnectionsRef, broadcastToRoomFn, now)
+  const result = removeClientFromRoom(ws, rooms, totalConnectionsRef, broadcastToRoomFn, now)
+  const { roomId, roomSize, alreadyHandled } = result
   console.log(`[Yjs WS] ❌ Disconnection: room=${roomId}, user=${ws.userName} (${ws.userId}), room now has ${roomSize} clients`)
-  if (roomSize === 0) {
+  // Only the FIRST teardown pass schedules the empty-room cleanup. A repeat pass
+  // (error already fired close, or close fired twice) must not schedule a second
+  // timer — the room's fate was decided by the first pass.
+  if (roomSize === 0 && !alreadyHandled) {
     scheduleEmptyRoomCleanup(roomId, rooms, cleanupDelayMs)
   }
 }
@@ -495,7 +512,10 @@ export function handleClientError(error, ws, rooms, totalConnectionsRef, broadca
  * Register a socket's connection-lifetime handlers. Both `close` and `error`
  * drive the same cleanup, and a heartbeat termination — `ws.terminate()` fires
  * the `close` event — ends up in the close path too, so a pruned stale client
- * never leaks either.
+ * never leaks either. Because a real socket that errors ALSO emits `close`
+ * afterwards, both handlers may run for the same departure; `removeClientFromRoom`
+ * guards teardown so the second pass is a no-op (no double-decrement, no
+ * duplicate user-left, no duplicate empty-room cleanup).
  */
 export function registerLifecycleHandlers(ws, rooms, totalConnectionsRef, broadcastToRoomFn) {
   ws.on('close', () => {
