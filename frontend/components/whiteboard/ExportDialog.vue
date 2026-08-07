@@ -44,6 +44,7 @@
             <label class="block text-sm font-medium text-neutral-700 mb-2">Export Format</label>
             <div class="grid grid-cols-2 gap-3">
               <button
+                data-testid="export-format-png"
                 :class="[
                   'p-3 rounded-lg border-2 text-left transition-colors',
                   format === 'png'
@@ -60,6 +61,7 @@
               </button>
 
               <button
+                data-testid="export-format-pdf"
                 :class="[
                   'p-3 rounded-lg border-2 text-left transition-colors',
                   format === 'pdf'
@@ -102,6 +104,7 @@
               Cancel
             </button>
             <button
+              data-testid="export-submit"
               :disabled="isExporting"
               class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 flex items-center gap-2 hover:shadow-md disabled:shadow-none"
               @click="handleExport"
