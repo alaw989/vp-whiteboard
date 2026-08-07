@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { spawn } from 'child_process'
 import http from 'http'
 import { createServer as createTcpServer } from 'net'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdtemp, rm, writeFile, symlink } from 'fs/promises'
 import os from 'os'
 import { fileURLToPath, pathToFileURL } from 'url'
 import path from 'path'
@@ -66,6 +66,20 @@ describe('ws-server — isEntryPoint (bind decision: direct node run AND pm2 for
 
   it('returns true for a direct `node server/ws-server.js` run', () => {
     expect(isEntryPoint(serverPath, undefined)).toBe(true)
+  })
+
+  it('returns true when launched via a symlink to this script (realpath, not string/pathToFileURL compare)', async () => {
+    // `node /usr/local/bin/ws-relay` where that path is a symlink to this file:
+    // pathToFileURL(argv[1]).href would be the symlink's URL ≠ import.meta.url,
+    // so the direct-run check must resolve realpaths, not compare URLs/strings.
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ws-symlink-'))
+    const link = path.join(tmpDir, 'ws-server-link.js')
+    await symlink(serverPath, link)
+    try {
+      expect(isEntryPoint(link, undefined)).toBe(true)
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true })
+    }
   })
 
   it('returns true under pm2 fork mode — regression: argv[1] is pm2\'s loader, not ours', () => {
