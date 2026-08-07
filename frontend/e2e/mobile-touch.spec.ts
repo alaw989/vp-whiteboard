@@ -197,6 +197,56 @@ test('two-finger pinch-zoom zooms the viewport without committing a stroke', asy
   await expectCanvasToReturn(page, baseline)
 })
 
+test('a two-finger pinch started mid-stroke cancels the partial stroke (regression)', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await waitForCanvas(page)
+
+  await selectMobilePen(page)
+
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+  const cx = box.x + box.width * 0.5
+  const cy = box.y + box.height * 0.4
+  const spread = 60
+  const zoomedSpread = 2 * spread
+
+  // Finger 1 starts a stroke and draws a point, THEN finger 2 lands. That must
+  // transition to a two-finger gesture and CANCEL the partial stroke — the same
+  // Iteration-3 fix the pan variant covers, but exercised through the PINCH path
+  // (the "thumb lands mid-stroke, then I pinch-zoom" scenario): no stray
+  // pixels, no committed element, and the pinch must still engage cleanly.
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: cx - spread, clientY: cy },
+    { type: 'pointermove', pointerId: 1, clientX: cx - spread - 20, clientY: cy },
+    { type: 'pointermove', pointerId: 1, clientX: cx - spread, clientY: cy },
+    { type: 'pointerdown', pointerId: 2, clientX: cx + spread, clientY: cy },
+    { type: 'pointermove', pointerId: 1, clientX: cx - zoomedSpread, clientY: cy },
+    { type: 'pointermove', pointerId: 2, clientX: cx + zoomedSpread, clientY: cy },
+    { type: 'pointerup', pointerId: 1, clientX: cx - zoomedSpread, clientY: cy, buttons: 0 },
+    { type: 'pointerup', pointerId: 2, clientX: cx + zoomedSpread, clientY: cy, buttons: 0 },
+  ])
+
+  // The pinch zoomed the viewport (finger distance 120 → 240 = 2x), so the
+  // fingerprint MUST differ from baseline…
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+
+  // …but pinching back in by the exact inverse restores the original viewport
+  // with no elements committed: the partial stroke was cancelled, not committed
+  // (a committed stroke would leave pixels no zoom can undo).
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: cx - zoomedSpread, clientY: cy },
+    { type: 'pointerdown', pointerId: 2, clientX: cx + zoomedSpread, clientY: cy },
+    { type: 'pointermove', pointerId: 1, clientX: cx - spread, clientY: cy },
+    { type: 'pointermove', pointerId: 2, clientX: cx + spread, clientY: cy },
+    { type: 'pointerup', pointerId: 1, clientX: cx - spread, clientY: cy, buttons: 0 },
+    { type: 'pointerup', pointerId: 2, clientX: cx + spread, clientY: cy, buttons: 0 },
+  ])
+  await expectCanvasToReturn(page, baseline)
+})
+
 test('a two-finger gesture started mid-stroke cancels the partial stroke (regression)', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
