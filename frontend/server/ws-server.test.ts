@@ -6,6 +6,7 @@ import { mkdtemp, rm, writeFile, symlink } from 'fs/promises'
 import os from 'os'
 import { fileURLToPath, pathToFileURL } from 'url'
 import path from 'path'
+import { WebSocket } from 'ws'
 import {
   resolveStatefulOrigin,
   relayClientMessage,
@@ -14,6 +15,16 @@ import {
   clearAuthCache,
   isEntryPoint,
   HEARTBEAT_TIMEOUT_MS,
+  EMPTY_ROOM_CLEANUP_DELAY_MS,
+  removeClientFromRoom,
+  scheduleEmptyRoomCleanup,
+  handleClientClose,
+  handleClientError,
+  registerLifecycleHandlers,
+  rejectConnection,
+  sendJson,
+  broadcastToRoom,
+  announceJoin,
 } from './ws-server'
 
 const API_URL = 'http://localhost:8002'
@@ -261,6 +272,414 @@ describe('ws-server — runHeartbeat (server-side stale-connection pruning)', ()
   })
 })
 
+describe('ws-server — connection lifecycle (close/error/cleanup) — regression for leaks', () => {
+  // The close/error/cleanup logic used to be buried in the connection callback
+  // (untested) and the error path leaked: it removed the client from its room
+  // but never decremented totalConnections, never broadcast `user-left`, and
+  // never scheduled the empty-room cleanup. These tests lock the extracted
+  // helpers — and prove heartbeat termination lands in the close path too.
+  //
+  // Fake timers keep the 60s empty-room cleanup deterministic.
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  function fakeSocket(id: string, opts: { roomId?: string; userId?: string; userName?: string } = {}) {
+    const handlers: Record<string, (arg?: any) => void> = {}
+    const ws: any = {
+      id,
+      roomId: opts.roomId,
+      userId: opts.userId ?? `user-${id}`,
+      userName: opts.userName ?? `User ${id}`,
+      readyState: 1,
+      lastPong: Date.now(),
+      sent: [] as { json: Record<string, unknown> }[],
+      send(d: string) {
+        ws.sent.push({ json: JSON.parse(d) })
+      },
+      on(evt: string, cb: (arg?: any) => void) {
+        handlers[evt] = cb
+      },
+      emit(evt: string, arg?: any) {
+        handlers[evt]?.(arg)
+      },
+      terminate() {
+        ws.readyState = 3
+        handlers.close?.()
+      },
+    }
+    return ws
+  }
+
+  // Mimics the real broadcastToRoom: sends the payload to every OPEN peer still
+  // in the room, and records the call.
+  function makeBroadcastRecorder(rooms: Map<string, Set<any>>) {
+    const calls: { roomId: string; msg: Record<string, unknown> }[] = []
+    const fn = (roomId: string, msg: Record<string, unknown>) => {
+      calls.push({ roomId, msg })
+      const room = rooms.get(roomId)
+      if (room) {
+        for (const client of room) {
+          if (client.readyState === 1 && typeof client.send === 'function') {
+            client.send(JSON.stringify(msg))
+          }
+        }
+      }
+    }
+    return { calls, fn }
+  }
+
+  it('close removes the client from its room, decrements totalConnections, and broadcasts user-left to remaining peers only', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const c = fakeSocket('c', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b, c])]])
+    const counter = { value: 3 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('close')
+
+    expect(counter.value).toBe(2)
+    expect(rooms.get('r1')!.has(a)).toBe(false)
+    expect(rooms.get('r1')!.size).toBe(2)
+
+    // user-left is announced once, to the room that still has peers.
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0]!.roomId).toBe('r1')
+    expect(recorder.calls[0]!.msg.type).toBe('user-left')
+    expect(recorder.calls[0]!.msg.userId).toBe('user-a')
+    expect(recorder.calls[0]!.msg.timestamp).toEqual(expect.any(Number))
+
+    // Both remaining OPEN peers actually received the frame; the closer (a) did not.
+    expect(b.sent).toEqual([{ json: { type: 'user-left', userId: 'user-a', timestamp: expect.any(Number) } }])
+    expect(c.sent).toEqual([{ json: { type: 'user-left', userId: 'user-a', timestamp: expect.any(Number) } }])
+    expect(a.sent).toEqual([])
+
+    // Room is not empty → NO cleanup timer is scheduled; it survives past the delay.
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(rooms.has('r1')).toBe(true)
+  })
+
+  it('does NOT broadcast user-left when the room just became empty (nobody to receive), but schedules cleanup', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a])]])
+    const counter = { value: 1 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('close')
+
+    expect(counter.value).toBe(0)
+    expect(recorder.calls).toHaveLength(0)
+    expect(a.sent).toEqual([])
+
+    // The empty room is deleted once the delayed cleanup fires…
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(rooms.has('r1')).toBe(false)
+  })
+
+  it('delayed empty-room cleanup deletes the room only if it is STILL empty when it fires', () => {
+    // Empty room → deleted after the delay.
+    const roomsEmpty = new Map<string, Set<any>>([['r1', new Set()]])
+    scheduleEmptyRoomCleanup('r1', roomsEmpty)
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(roomsEmpty.has('r1')).toBe(false)
+
+    // A client rejoined within the window → the room survives the timer.
+    const rejoined = fakeSocket('x', { roomId: 'r2' })
+    const roomsRejoined = new Map<string, Set<any>>([['r2', new Set([rejoined])]])
+    scheduleEmptyRoomCleanup('r2', roomsRejoined)
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(roomsRejoined.has('r2')).toBe(true)
+    expect(roomsRejoined.get('r2')!.size).toBe(1)
+  })
+
+  it('error path performs the SAME cleanup as close (decrement, user-left, cleanup) — no leak', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b])]])
+    const counter = { value: 2 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('error', new Error('boom'))
+
+    expect(counter.value).toBe(1)
+    expect(rooms.get('r1')!.has(a)).toBe(false)
+    expect(rooms.get('r1')!.size).toBe(1)
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0]!.msg.type).toBe('user-left')
+    expect(recorder.calls[0]!.msg.userId).toBe('user-a')
+    expect(b.sent).toHaveLength(1)
+  })
+
+  it('error then close (real ws fires both) teardowns ONCE — no double-decrement, no duplicate user-left, no double cleanup', () => {
+    // A real socket that errors ALSO emits 'close' afterwards, so both lifecycle
+    // handlers run. removeClientFromRoom's idempotency guard must make the
+    // second pass a no-op: totalConnections decremented once, user-left sent
+    // once, and the still-occupied room NOT scheduled for empty-room cleanup.
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b])]])
+    const counter = { value: 2 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('error', new Error('boom'))
+    a.emit('close')
+
+    expect(counter.value).toBe(1) // decremented exactly once
+    expect(rooms.get('r1')!.has(a)).toBe(false)
+    expect(rooms.get('r1')!.size).toBe(1) // b still present
+    expect(recorder.calls).toHaveLength(1) // user-left broadcast once, not twice
+    expect(recorder.calls[0]!.msg.type).toBe('user-left')
+    expect(recorder.calls[0]!.msg.userId).toBe('user-a')
+    expect(b.sent).toHaveLength(1)
+
+    // The room still has a live peer → it must survive the cleanup delay (the
+    // repeat close pass must not have scheduled an erroneous cleanup).
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(rooms.has('r1')).toBe(true)
+    expect(rooms.get('r1')!.size).toBe(1)
+  })
+
+  it('error then close on a solo client schedules the empty-room cleanup exactly once', () => {
+    // Repeat-pass cleanup suppression: error empties the room (schedules the
+    // 60s timer), then the follow-up close pass must NOT schedule a second
+    // timer — the room is still deleted exactly once when the (single) timer
+    // fires.
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a])]])
+    const counter = { value: 1 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('error', new Error('boom'))
+    a.emit('close')
+
+    expect(counter.value).toBe(0)
+    expect(recorder.calls).toHaveLength(0) // empty room → no user-left
+    expect(rooms.has('r1')).toBe(true)
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(rooms.has('r1')).toBe(false)
+  })
+
+  it('close fired twice (duplicate close event) is idempotent', () => {
+    // Some runtimes can emit close more than once; the second close must not
+    // decrement again or re-broadcast to the remaining peer.
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b])]])
+    const counter = { value: 2 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('close')
+    a.emit('close')
+
+    expect(counter.value).toBe(1)
+    expect(recorder.calls).toHaveLength(1)
+    expect(b.sent).toHaveLength(1)
+  })
+
+  it('error on a solo client empties the room and schedules its cleanup (no room leak)', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a])]])
+    const counter = { value: 1 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('error', new Error('boom'))
+
+    expect(counter.value).toBe(0)
+    expect(recorder.calls).toHaveLength(0)
+    expect(rooms.has('r1')).toBe(true)
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(rooms.has('r1')).toBe(false)
+  })
+
+  it('heartbeat-terminated socket drives the close path (cleanup runs, no leak)', () => {
+    // runHeartbeat calls ws.terminate() on a stale client; a real socket then
+    // fires its 'close' event, which must run the SAME cleanup as a manual
+    // close. The fake socket's terminate() emits 'close' to simulate that.
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b])]])
+    const counter = { value: 2 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.lastPong = 0
+    const now = Date.now() + HEARTBEAT_TIMEOUT_MS + 1000
+    runHeartbeat([a], now)
+
+    expect(a.readyState).toBe(3)
+    expect(counter.value).toBe(1)
+    expect(rooms.get('r1')!.has(a)).toBe(false)
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0]!.msg.type).toBe('user-left')
+    expect(b.sent).toHaveLength(1)
+  })
+
+  it('a socket that never joined a room (auth-reject path) is a no-op for room state but still un-accounted', () => {
+    // The 4001-reject path increments the counter on connect but never adds the
+    // socket to a room; its eventual close must decrement without crashing,
+    // broadcasting, or creating a phantom room entry (getRoom used to CREATE it).
+    const a = fakeSocket('a', { roomId: 'ghost' })
+    const rooms = new Map<string, Set<any>>()
+    const counter = { value: 1 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('close')
+
+    expect(counter.value).toBe(0)
+    expect(rooms.size).toBe(0)
+    expect(recorder.calls).toHaveLength(0)
+  })
+
+  it('removeClientFromRoom guards against double-decrement (idempotent teardown)', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a])]])
+    const counter = { value: 1 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    // The same socket closes twice (belt-and-suspenders) — the counter must
+    // not go negative and the room must not be double-broadcast.
+    handleClientClose(a, rooms, counter, recorder.fn, 1000, 0)
+    handleClientClose(a, rooms, counter, recorder.fn, 2000, 0)
+
+    expect(counter.value).toBe(0)
+    expect(recorder.calls).toHaveLength(0)
+  })
+
+  it('rejectConnection un-accounts the rejected socket and closes 4001 (auth-reject count leak)', () => {
+    // The connection handler increments totalConnections BEFORE running auth;
+    // a socket that fails auth returns early WITHOUT registering lifecycle
+    // handlers, so its eventual close would never decrement the counter. The
+    // original inline `ws.close(4001); return` leaked one count per rejected
+    // connection. rejectConnection must undo the connect-time increment.
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const closeSpy = vi.fn()
+    a.close = closeSpy
+    const counter = { value: 1 }
+
+    rejectConnection(a, counter)
+
+    expect(counter.value).toBe(0)
+    expect(closeSpy).toHaveBeenCalledWith(4001, 'Authentication required')
+    // Never joined a room, so teardown must not touch rooms or broadcast.
+    expect(a.sent).toEqual([])
+  })
+
+  it('rejectConnection never drives the counter below zero and honors a custom code/reason', () => {
+    const a = fakeSocket('a')
+    const closeSpy = vi.fn()
+    a.close = closeSpy
+
+    rejectConnection(a, { value: 0 }, 4401, 'Banned')
+
+    expect(closeSpy).toHaveBeenCalledWith(4401, 'Banned')
+  })
+
+  it('handleClientClose accepts an injectable clock for deterministic timestamps', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b])]])
+    const counter = { value: 2 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    handleClientClose(a, rooms, counter, recorder.fn, 1234567890)
+
+    expect(recorder.calls[0]!.msg.timestamp).toBe(1234567890)
+    expect(b.sent).toEqual([{ json: { type: 'user-left', userId: 'user-a', timestamp: 1234567890 } }])
+  })
+})
+
+describe('ws-server — sendJson/broadcastToRoom/announceJoin (join presence contract)', () => {
+  function fakeSocket(id: string, opts: { roomId?: string; userId?: string; userName?: string; open?: boolean } = {}) {
+    const sent: ({ json: Record<string, unknown> } | { binary: Buffer })[] = []
+    return {
+      id,
+      roomId: opts.roomId,
+      userId: opts.userId ?? `user-${id}`,
+      userName: opts.userName ?? `User ${id}`,
+      readyState: opts.open === false ? 3 : 1,
+      sent,
+      send(d: string | Buffer) {
+        if (typeof d === 'string') sent.push({ json: JSON.parse(d) })
+        else sent.push({ binary: d })
+      },
+    }
+  }
+
+  it('sendJson serializes and sends only to an OPEN socket (skips closed/CLOSING)', () => {
+    const open = fakeSocket('open')
+    const closed = fakeSocket('closed', { open: false })
+
+    sendJson(open, { type: 'connected', roomId: 'r1' })
+    sendJson(closed, { type: 'connected', roomId: 'r1' })
+
+    expect(open.sent).toEqual([{ json: { type: 'connected', roomId: 'r1' } }])
+    expect(closed.sent).toEqual([])
+  })
+
+  it('broadcastToRoom sends to every other OPEN peer, excluding the sender and closed clients', () => {
+    const sender = fakeSocket('sender')
+    const peer1 = fakeSocket('p1')
+    const peer2 = fakeSocket('p2')
+    const closed = fakeSocket('closed', { open: false })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([sender, peer1, peer2, closed])]])
+
+    broadcastToRoom('r1', { type: 'user-joined', userId: 'user-sender', userName: 'S' }, sender, rooms)
+
+    expect(peer1.sent).toEqual([{ json: { type: 'user-joined', userId: 'user-sender', userName: 'S' } }])
+    expect(peer2.sent).toEqual([{ json: { type: 'user-joined', userId: 'user-sender', userName: 'S' } }])
+    expect(sender.sent).toEqual([])
+    expect(closed.sent).toEqual([])
+  })
+
+  it('broadcastToRoom to a nonexistent room is a NO-OP and does NOT create a phantom room', () => {
+    const rooms = new Map<string, Set<any>>()
+    broadcastToRoom('ghost', { type: 'user-joined' }, undefined, rooms)
+    expect(rooms.size).toBe(0)
+  })
+
+  it('announceJoin sends connected to the joiner and user-joined to all other peers only', () => {
+    const joiner = fakeSocket('j', { roomId: 'r1', userName: 'Joiner' })
+    const peer1 = fakeSocket('p1', { roomId: 'r1' })
+    const peer2 = fakeSocket('p2', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([joiner, peer1, peer2])]])
+
+    announceJoin(joiner, rooms, 1234567890)
+
+    // The joiner hears `connected` with the room size INCLUDING itself (the
+    // connection handler adds the socket to the room BEFORE announcing).
+    expect(joiner.sent).toEqual([
+      { json: { type: 'connected', roomId: 'r1', userId: 'user-j', userCount: 3, instantRetry: true } },
+    ])
+    // Peers hear `user-joined` with the joiner's identity + timestamp; the
+    // joiner itself does not.
+    expect(peer1.sent).toEqual([
+      { json: { type: 'user-joined', userId: 'user-j', userName: 'Joiner', timestamp: 1234567890 } },
+    ])
+    expect(peer2.sent).toEqual([
+      { json: { type: 'user-joined', userId: 'user-j', userName: 'Joiner', timestamp: 1234567890 } },
+    ])
+  })
+
+  it('announceJoin with a joiner in no room still sends connected (userCount 0) and broadcasts to nobody', () => {
+    const joiner = fakeSocket('solo', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>()
+
+    announceJoin(joiner, rooms, 1234567890)
+
+    expect(joiner.sent).toEqual([
+      { json: { type: 'connected', roomId: 'r1', userId: 'user-solo', userCount: 0, instantRetry: true } },
+    ])
+  })
+})
+
 describe('ws-server — isAuthed (connection gate: owners + share viewers)', () => {
   // isAuthed performs real `fetch` calls against LARAVEL_URL, so stub the
   // global fetch with a route table and spy on the calls it makes.
@@ -403,52 +822,52 @@ describe('ws-server — isAuthed (connection gate: owners + share viewers)', () 
   })
 })
 
-describe('ws-server — actually listens when launched as the entry point (regression for pm2 never binding)', () => {
-  const SERVER_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ws-server.js')
+const SERVER_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ws-server.js')
 
-  function freePort(): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const srv = createTcpServer()
-      srv.unref()
-      srv.on('error', reject)
-      srv.listen(0, '127.0.0.1', () => {
-        const port = (srv.address() as { port: number }).port
-        srv.close(() => resolve(port))
-      })
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createTcpServer()
+    srv.unref()
+    srv.on('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const port = (srv.address() as { port: number }).port
+      srv.close(() => resolve(port))
     })
-  }
+  })
+}
 
-  // Poll the relay's HTTP endpoint until it answers with its banner (proves the
-  // listen() actually happened), or reject after timeoutMs.
-  function waitForBanner(port: number, timeoutMs: number): Promise<string> {
-    const deadline = Date.now() + timeoutMs
-    return new Promise((resolve, reject) => {
-      const attempt = () => {
-        if (Date.now() > deadline) {
-          reject(new Error(`relay did not answer on :${port} within ${timeoutMs}ms`))
-          return
-        }
-        const req = http.get({ host: '127.0.0.1', port, path: '/', timeout: 500 }, (res) => {
-          let body = ''
-          res.on('data', (c) => (body += c))
-          res.on('end', () => {
-            if (res.statusCode === 200 && body.includes('VP Whiteboard Yjs WebSocket Server')) {
-              resolve(body)
-            } else {
-              setTimeout(attempt, 200)
-            }
-          })
-        })
-        req.on('timeout', () => {
-          req.destroy()
-          setTimeout(attempt, 200)
-        })
-        req.on('error', () => setTimeout(attempt, 200))
+// Poll the relay's HTTP endpoint until it answers with its banner (proves the
+// listen() actually happened), or reject after timeoutMs.
+function waitForBanner(port: number, timeoutMs: number): Promise<string> {
+  const deadline = Date.now() + timeoutMs
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      if (Date.now() > deadline) {
+        reject(new Error(`relay did not answer on :${port} within ${timeoutMs}ms`))
+        return
       }
-      attempt()
-    })
-  }
+      const req = http.get({ host: '127.0.0.1', port, path: '/', timeout: 500 }, (res) => {
+        let body = ''
+        res.on('data', (c) => (body += c))
+        res.on('end', () => {
+          if (res.statusCode === 200 && body.includes('VP Whiteboard Yjs WebSocket Server')) {
+            resolve(body)
+          } else {
+            setTimeout(attempt, 200)
+          }
+        })
+      })
+      req.on('timeout', () => {
+        req.destroy()
+        setTimeout(attempt, 200)
+      })
+      req.on('error', () => setTimeout(attempt, 200))
+    }
+    attempt()
+  })
+}
 
+describe('ws-server — actually listens when launched as the entry point (regression for pm2 never binding)', () => {
   it('spawns `node server/ws-server.js` on a free port and serves the banner', async () => {
     const port = await freePort()
     const child = spawn(process.execPath, [SERVER_PATH], {
@@ -515,4 +934,276 @@ describe('ws-server — actually listens when launched as the entry point (regre
       await rm(tmpDir, { recursive: true, force: true })
     }
   }, 15000)
+})
+
+describe('ws-server — live wire integration (spawned relay + real WS clients, WS_ALLOW_ANON=1)', () => {
+  // The unit tests above cover the connection lifecycle with fake sockets; these
+  // integration tests prove the same contract over a REAL wire against a spawned
+  // relay process — closing the last relay gap: the `WS_ALLOW_ANON` skip-auth
+  // connection path is otherwise only exercised by banner tests that never open
+  // a socket. Two clients connect to the same room and observe the full
+  // lifecycle: `connected` (self, with room size), `user-joined` (peer), binary
+  // Yjs relay, JSON control relay, and `user-left` on close.
+
+  async function spawnRelay() {
+    const port = await freePort()
+    const child = spawn(process.execPath, [SERVER_PATH], {
+      env: {
+        ...process.env,
+        WS_PORT: String(port),
+        WS_HOST: '127.0.0.1',
+        // Skip auth (the exact connection path this suite exists to exercise).
+        LARAVEL_URL: 'http://127.0.0.1:9',
+        WS_ALLOW_ANON: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const exited = new Promise<void>((resolve) => {
+      if (child.exitCode !== null) return resolve()
+      child.once('exit', () => resolve())
+    })
+    await waitForBanner(port, 5000)
+    return { port, child, exited }
+  }
+
+  interface WireClient {
+    ws: WebSocket
+    messages: Record<string, unknown>[]
+    binary: Buffer[]
+    waitFor(type: string, timeoutMs?: number): Promise<Record<string, unknown>>
+    waitForBinary(timeoutMs?: number): Promise<Buffer>
+  }
+
+  function connectClient(port: number, roomId: string, userId: string, userName: string): Promise<WireClient> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${port}/whiteboard:${roomId}?userId=${encodeURIComponent(userId)}&userName=${encodeURIComponent(userName)}`,
+      )
+      const messages: Record<string, unknown>[] = []
+      const binary: Buffer[] = []
+      ws.on('message', (data, isBinary) => {
+        if (isBinary) binary.push(data as Buffer)
+        else messages.push(JSON.parse(data.toString()) as Record<string, unknown>)
+      })
+      ws.on('error', reject)
+      ws.on('open', () => {
+        resolve({
+          ws,
+          messages,
+          binary,
+          waitFor: (type, timeoutMs = 5000) => waitForMessage(messages, type, timeoutMs),
+          waitForBinary: (timeoutMs = 5000) => waitForBinaryMessage(binary, timeoutMs),
+        })
+      })
+    })
+  }
+
+  function waitForMessage(messages: Record<string, unknown>[], type: string, timeoutMs: number): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      const deadline = Date.now() + timeoutMs
+      const attempt = () => {
+        const found = messages.find((m) => m.type === type)
+        if (found) return resolve(found)
+        if (Date.now() > deadline) return reject(new Error(`timed out waiting for message type "${type}"`))
+        setTimeout(attempt, 20)
+      }
+      attempt()
+    })
+  }
+
+  function waitForBinaryMessage(binary: Buffer[], timeoutMs: number): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const deadline = Date.now() + timeoutMs
+      const attempt = () => {
+        const head = binary[0]
+        if (head !== undefined) return resolve(head)
+        if (Date.now() > deadline) return reject(new Error('timed out waiting for a binary frame'))
+        setTimeout(attempt, 20)
+      }
+      attempt()
+    })
+  }
+
+  it('relays the full lifecycle between two clients over the wire', async () => {
+    const { port, child, exited } = await spawnRelay()
+    const sockets: WebSocket[] = []
+    try {
+      // Client A joins an empty room → hears `connected` with userCount 1 (self).
+      const clientA = await connectClient(port, 'room-wire', 'user-a', 'Alice')
+      sockets.push(clientA.ws)
+      const connectedA = await clientA.waitFor('connected')
+      expect(connectedA.roomId).toBe('room-wire')
+      expect(connectedA.userId).toBe('user-a')
+      expect(connectedA.userCount).toBe(1)
+
+      // Client B joins the same room → hears `connected` with userCount 2 (self
+      // + A), and A hears `user-joined` for B.
+      const clientB = await connectClient(port, 'room-wire', 'user-b', 'Bob')
+      sockets.push(clientB.ws)
+      const connectedB = await clientB.waitFor('connected')
+      expect(connectedB.roomId).toBe('room-wire')
+      expect(connectedB.userId).toBe('user-b')
+      expect(connectedB.userCount).toBe(2)
+
+      const joined = await clientA.waitFor('user-joined')
+      expect(joined.userId).toBe('user-b')
+      expect(joined.userName).toBe('Bob')
+      expect(joined.timestamp).toEqual(expect.any(Number))
+
+      // A never hears its own `user-joined`; B never hears B's own either.
+      await new Promise((r) => setTimeout(r, 100))
+      expect(clientA.messages.filter((m) => m.type === 'user-joined')).toHaveLength(1)
+      expect(clientB.messages.filter((m) => m.type === 'user-joined')).toHaveLength(0)
+
+      // Binary Yjs frame from A is relayed verbatim to B (live-draw path).
+      const frame = Buffer.from([0x02, 1, 2, 3, 4])
+      clientA.ws.send(frame)
+      const relayed = await clientB.waitForBinary()
+      expect(relayed).toEqual(frame)
+      expect(clientA.binary).toHaveLength(0)
+
+      // JSON control frame from B reaches A.
+      clientB.ws.send(JSON.stringify({ type: 'cursor', x: 10, y: 20 }))
+      const cursor = await clientA.waitFor('cursor')
+      expect(cursor.x).toBe(10)
+
+      // B closes → A hears `user-left` for B.
+      clientB.ws.close()
+      const left = await clientA.waitFor('user-left')
+      expect(left.userId).toBe('user-b')
+    } finally {
+      for (const s of sockets) s.close()
+      child.kill('SIGTERM')
+      await exited
+    }
+  }, 20000)
+})
+
+describe('ws-server — live auth-reject (4001) + accept over the wire against a mock Laravel', () => {
+  // The spawn-based suites above run the relay with WS_ALLOW_ANON=1, so the
+  // REAL auth gate (`isAuthed` → `/api/user`/`/api/shares`) is only unit-tested.
+  // This suite spawns the relay with auth ON and points LARAVEL_URL at a local
+  // mock Laravel, proving end-to-end that an unauthenticated socket is rejected
+  // with close code 4001 while a valid session is admitted — and that a
+  // rejection does not wedge the relay (a follow-up valid connection works).
+
+  function startMockLaravel(): Promise<{ port: number; close: () => Promise<void> }> {
+    return new Promise((resolve, reject) => {
+      const server = http.createServer((req, res) => {
+        const url = new URL(req.url || '/', 'http://localhost')
+        if (url.pathname === '/api/user') {
+          const session = (req.headers.cookie || '').match(/laravel_session=([^;]+)/)
+          if (session && session[1] === 'valid-session') {
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ id: 1 }))
+          } else {
+            res.writeHead(401, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ message: 'Unauthenticated.' }))
+          }
+          return
+        }
+        res.writeHead(404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ message: 'Not found' }))
+      })
+      server.on('error', reject)
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address() as { port: number }
+        resolve({
+          port: address.port,
+          close: () => new Promise((r) => server.close(() => r())),
+        })
+      })
+    })
+  }
+
+  async function spawnRelayWithAuth(laravelUrl: string) {
+    const port = await freePort()
+    const child = spawn(process.execPath, [SERVER_PATH], {
+      env: {
+        ...process.env,
+        WS_PORT: String(port),
+        WS_HOST: '127.0.0.1',
+        LARAVEL_URL: laravelUrl,
+        // No WS_ALLOW_ANON — auth must be ON for this suite.
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const exited = new Promise<void>((resolve) => {
+      if (child.exitCode !== null) return resolve()
+      child.once('exit', () => resolve())
+    })
+    await waitForBanner(port, 5000)
+    return { port, child, exited }
+  }
+
+  function connectExpectReject(port: number, roomId: string): Promise<{ code?: number }> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/whiteboard:${roomId}?userId=anon&userName=Anon`)
+      ws.on('open', () => {
+        // The upgrade completes before the relay's async auth resolves, so
+        // `open` fires first; the reject arrives as the follow-up close 4001.
+      })
+      ws.on('error', reject)
+      ws.on('close', (code) => resolve({ code }))
+    })
+  }
+
+  function connectExpectConnected(port: number, roomId: string, cookie: string): Promise<{ messages: Record<string, unknown>[]; ws: WebSocket }> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/whiteboard:${roomId}?userId=user-1&userName=Alice`, {
+        headers: { cookie },
+      })
+      const messages: Record<string, unknown>[] = []
+      ws.on('message', (data) => messages.push(JSON.parse(data.toString()) as Record<string, unknown>))
+      ws.on('error', reject)
+      ws.on('open', () => {})
+      // Resolve once the relay admits us (connected frame) or the socket dies.
+      const timer = setInterval(() => {
+        const connected = messages.find((m) => m.type === 'connected')
+        if (connected) {
+          clearInterval(timer)
+          resolve({ messages, ws })
+        }
+      }, 20)
+      ws.on('close', () => {
+        clearInterval(timer)
+        reject(new Error('socket closed before the connected frame arrived'))
+      })
+    })
+  }
+
+  it('rejects an unauthenticated socket with 4001, admits a valid session, and stays healthy', async () => {
+    const mock = await startMockLaravel()
+    const { port, child, exited } = await spawnRelayWithAuth(`http://127.0.0.1:${mock.port}`)
+    const sockets: WebSocket[] = []
+    try {
+      // 1. No session cookie → the relay must close with 4001 (Authentication required).
+      const rejected = await connectExpectReject(port, 'room-auth')
+      expect(rejected.code).toBe(4001)
+
+      // 2. A valid session → admitted, hears `connected` with itself counted.
+      const valid = await connectExpectConnected(port, 'room-auth', 'laravel_session=valid-session')
+      sockets.push(valid.ws)
+      const connected = valid.messages.find((m) => m.type === 'connected')
+      expect(connected).toBeDefined()
+      expect(connected!.roomId).toBe('room-auth')
+      expect(connected!.userId).toBe('user-1')
+
+      // 3. The rejected connection did not leak a room slot: the admitted client
+      //    is the room's only occupant (userCount 1, not 2).
+      expect(connected!.userCount).toBe(1)
+
+      // 4. The relay stayed healthy after the rejection — a second valid session
+      //    is still admitted (no wedged/leaked totalConnections).
+      const second = await connectExpectConnected(port, 'room-auth', 'laravel_session=valid-session')
+      sockets.push(second.ws)
+      const connected2 = second.messages.find((m) => m.type === 'connected')
+      expect(connected2!.userCount).toBe(2)
+    } finally {
+      for (const s of sockets) s.close()
+      child.kill('SIGTERM')
+      await exited
+      await mock.close()
+    }
+  }, 20000)
 })

@@ -347,6 +347,15 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'pong' }))
         }
+      } else if (message.type === 'user-joined' || message.type === 'user-left') {
+        // Relay presence broadcasts: seed an immediate entry on join and drop
+        // the peer on leave. A leaving peer's socket is gone, so remove their
+        // shared cursor entry too — otherwise the yCursors observer below
+        // would resurrect them for up to the 30s cursor-expiry window.
+        applyPresenceMessage(connectedUsers.value, message)
+        if (message.type === 'user-left' && message.userId && message.userId !== userId) {
+          yCursors.delete(message.userId)
+        }
       }
       return
     } catch (e) {
@@ -992,4 +1001,36 @@ function getUserColor(userId: string): string {
     hash = userId.charCodeAt(i) + ((hash << 5) - hash)
   }
   return colors[Math.abs(hash) % colors.length]!
+}
+
+/**
+ * Consume the relay's presence broadcasts (`user-joined` / `user-left`) into
+ * the local connected-users map. The relay emits these when peers' sockets open
+ * and close; they supplement (not replace) the yCursors-derived presence list:
+ * - `user-joined` seeds an immediate entry so the "N users online" count is
+ *   accurate before the peer's first cursor-awareness frame lands (the seed is
+ *   superseded once yCursors carries the peer's real entry).
+ * - `user-left` removes the peer immediately. The caller also deletes the
+ *   peer's yCursors entry so the observer below doesn't resurrect them for the
+ *   rest of the 30s cursor-expiry window.
+ */
+export function applyPresenceMessage(
+  users: Map<string, UserPresence>,
+  message: { type?: string; userId?: string; userName?: string },
+  now = Date.now(),
+): Map<string, UserPresence> {
+  if (!message.userId) return users
+  if (message.type === 'user-joined') {
+    if (!users.has(message.userId)) {
+      users.set(message.userId, {
+        id: message.userId,
+        name: message.userName || 'Guest',
+        color: getUserColor(message.userId),
+        lastSeen: now,
+      })
+    }
+  } else if (message.type === 'user-left') {
+    users.delete(message.userId)
+  }
+  return users
 }
