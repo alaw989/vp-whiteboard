@@ -47,24 +47,50 @@ function parseCookies(cookieHeader) {
   return cookies
 }
 
-async function fetchJson(url, cookieHeader, timeoutMs) {
+/**
+ * Resolve the Origin/Referer values the relay should present to Laravel when
+ * checking a session. Prefer the browser's real handshake headers (matching
+ * SANCTUM_STATEFUL_DOMAINS for the frontend). A WS handshake carries only
+ * `Origin` (never `Referer`), and Sanctum's stateful check reads `referer`
+ * before `origin` — so we must NOT synthesize a referer when only the client
+ * origin is available, or a fabricated one (e.g. the API origin) would win and
+ * skip session auth. Fall back to LARAVEL_URL-derived values only when the
+ * handshake carried neither header.
+ */
+export function resolveStatefulOrigin(clientOrigin, clientReferer, laravelUrl = LARAVEL_URL) {
+  let fallbackOrigin = laravelUrl
+  try { fallbackOrigin = new URL(laravelUrl).origin } catch {}
+  if (!clientOrigin && !clientReferer) {
+    return { origin: fallbackOrigin, referer: `${laravelUrl}/` }
+  }
+  let origin = clientOrigin || undefined
+  if (origin) { try { origin = new URL(origin).origin } catch {} }
+  return { origin, referer: clientReferer || undefined }
+}
+
+async function fetchJson(url, cookieHeader, timeoutMs, clientOrigin, clientReferer) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   // Sanctum's stateful guard only authenticates the session cookie on requests
   // whose Origin/Referer matches SANCTUM_STATEFUL_DOMAINS. Browsers send these
-  // automatically; the relay must too, or /api/user returns 401 and every
-  // connection is rejected (causing an infinite reconnect loop that resets the
-  // Yjs doc and wipes just-added layers).
-  let origin = LARAVEL_URL
-  try { origin = new URL(LARAVEL_URL).origin } catch {}
+  // automatically on the WS handshake; the relay must forward them, or
+  // /api/user returns 401 and every connection is rejected (causing an infinite
+  // reconnect loop that resets the Yjs doc and wipes just-added layers).
+  //
+  // Do NOT synthesize them from LARAVEL_URL when the real handshake headers are
+  // present: the frontend origin often differs from the API origin (local dev:
+  // :3000 vs :8002), and Sanctum's stateful check only matches the frontend
+  // domain — so a fabricated referer 401s even a validly-logged-in owner.
+  const { origin, referer } = resolveStatefulOrigin(clientOrigin, clientReferer)
+  const headers = {
+    cookie: cookieHeader || '',
+    accept: 'application/json',
+  }
+  if (origin) headers.origin = origin
+  if (referer) headers.referer = referer
   try {
     const res = await fetch(url, {
-      headers: {
-        cookie: cookieHeader || '',
-        accept: 'application/json',
-        origin,
-        referer: `${LARAVEL_URL}/`,
-      },
+      headers,
       signal: controller.signal,
     })
     return {
@@ -86,17 +112,22 @@ async function fetchJson(url, cookieHeader, timeoutMs) {
 // (carried by nginx on the handshake) OR, when nginx does not forward the Cookie
 // header to this relay, as the ?share= query param appended by the client.
 // Verdicts are cached briefly per credential.
-async function isAuthed(cookieHeader, roomId, queryShareToken) {
+export async function isAuthed(cookieHeader, roomId, queryShareToken, req, laravelUrl = LARAVEL_URL) {
   if (!cookieHeader && !queryShareToken) return false
   const cookies = parseCookies(cookieHeader || '')
   const now = Date.now()
+
+  // The browser sends Origin/Referer on the WS handshake; pass them through so
+  // Laravel's stateful guard runs session auth (see fetchJson).
+  const clientOrigin = req?.headers?.origin
+  const clientReferer = req?.headers?.referer
 
   // 1. Logged-in user (Sanctum session cookie)
   const session = cookies[SESSION_COOKIE] || cookies['laravel-session'] || cookies['laravel_session']
   if (session) {
     const cached = authCache.get('sess:' + session)
     if (cached && cached.exp > now) return cached.ok
-    const { status } = await fetchJson(`${LARAVEL_URL}/api/user`, cookieHeader, AUTH_TIMEOUT_MS)
+    const { status } = await fetchJson(`${laravelUrl}/api/user`, cookieHeader, AUTH_TIMEOUT_MS, clientOrigin, clientReferer)
     const ok = status === 200
     authCache.set('sess:' + session, { ok, exp: now + AUTH_CACHE_TTL_MS })
     if (ok) return true
@@ -110,14 +141,115 @@ async function isAuthed(cookieHeader, roomId, queryShareToken) {
     const key = 'share:' + shareToken + ':' + roomId
     const cached = authCache.get(key)
     if (cached && cached.exp > now) return cached.ok
-    const url = `${LARAVEL_URL}/api/shares/${encodeURIComponent(shareToken)}`
-    const { status, data } = await fetchJson(url, cookieHeader, AUTH_TIMEOUT_MS)
+    const url = `${laravelUrl}/api/shares/${encodeURIComponent(shareToken)}`
+    const { status, data } = await fetchJson(url, cookieHeader, AUTH_TIMEOUT_MS, clientOrigin, clientReferer)
     const ok = status === 200 && data && data.success && data.data && data.data.whiteboard_id === roomId
     authCache.set(key, { ok, exp: now + AUTH_CACHE_TTL_MS })
     if (ok) return true
   }
 
   return false
+}
+
+// Test helper: drop cached auth verdicts so a fresh run observes real fetches.
+export function clearAuthCache() {
+  authCache.clear()
+}
+
+/**
+ * Route one client frame to the rest of its room.
+ *
+ * Extracted from the connection handler so the relay's core routing behavior
+ * can be unit-tested (regression-locks candidate root cause #2: a Yjs binary
+ * update must be relayed as binary, never misclassified as a JSON control
+ * message and dropped).
+ *
+ * - JSON frames with a `type`: `ping` is answered in-place with a `pong` to the
+ *   sender; every other type (sync-request, presence, cursor, …) is forwarded
+ *   to all OTHER open peers, never echoed back to the sender.
+ * - Anything that isn't JSON is a Yjs binary frame and is relayed verbatim to
+ *   all OTHER open peers (this is the live-edit path: incremental deltas and
+ *   full-state snapshots).
+ *
+ * @returns {{kind:'json', type?:string, forwarded:number}|
+ *           {kind:'binary', relayed:number, bytes:number}}
+ */
+export function relayClientMessage(ws, data, room) {
+  let text
+  if (typeof data === 'string' || data instanceof Buffer) {
+    text = typeof data === 'string' ? data : data.toString('utf8')
+  } else {
+    text = Buffer.from(data).toString('utf8')
+  }
+
+  let json
+  try { json = JSON.parse(text) } catch { /* not JSON — binary Yjs message */ }
+  if (json && json.type) {
+    if (json.type === 'ping') {
+      ws.lastPong = Date.now()
+      sendJson(ws, { type: 'pong' })
+      return { kind: 'json', type: 'ping', forwarded: 0 }
+    }
+
+    // Forward other JSON messages (presence, cursor, etc.) to the room
+    const payload = JSON.stringify(json)
+    let forwarded = 0
+    room.forEach((client) => {
+      if (client !== ws && client.readyState === 1) {
+        client.send(payload)
+        forwarded++
+      }
+    })
+    return { kind: 'json', type: json.type, forwarded }
+  }
+
+  // Binary message — relay to all other clients in the room (Yjs sync)
+  const rawBuffer = typeof data === 'string' ? Buffer.from(data, 'utf8') : data
+  const bytes = rawBuffer.byteLength || rawBuffer.length || 0
+
+  let relayed = 0
+  room.forEach((client) => {
+    if (client !== ws && client.readyState === 1) {
+      client.send(rawBuffer)
+      relayed++
+    }
+  })
+  return { kind: 'binary', relayed, bytes }
+}
+
+export const HEARTBEAT_INTERVAL_MS = 30_000
+export const HEARTBEAT_TIMEOUT_MS = 60_000
+
+/**
+ * Run one server-side heartbeat pass: ping every live client and terminate any
+ * that haven't been heard from within HEARTBEAT_TIMEOUT_MS.
+ *
+ * `ws.lastPong` is refreshed whenever the client sends its own keepalive
+ * `{type:'ping'}` (relayClientMessage sets lastPong and answers `pong`). The
+ * client sends that every 25s (< 60s), so a healthy client is never pruned;
+ * only connections whose browser tab is gone (no pong in 60s) get terminated.
+ * This is root-cause candidate #5 — a heartbeat must NOT kill idle-but-alive
+ * clients (extracted from the `isMain` block so it can be regression-tested).
+ *
+ * @param {Iterable<{readyState:number,lastPong:number,roomId?:string,userName?:string,terminate:()=>void,send:(d:string|Buffer)=>void}>} clients
+ * @param {number} [now]
+ * @returns {{pinged:number, terminated:number}}
+ */
+export function runHeartbeat(clients, now = Date.now()) {
+  let pinged = 0
+  let terminated = 0
+  for (const ws of clients) {
+    if (ws.readyState !== 1) continue
+    if (now - ws.lastPong > HEARTBEAT_TIMEOUT_MS) {
+      console.log(`[Yjs WS] 💔 Heartbeat timeout: room=${ws.roomId || '?'}, user=${ws.userName || '?'}`)
+      ws.terminate()
+      terminated++
+      continue
+    }
+    sendJson(ws, { type: 'ping' })
+    pinged++
+  }
+  return { pinged, terminated }
 }
 
 // Create HTTP server for WebSocket upgrade
@@ -168,7 +300,7 @@ wss.on('connection', async (ws, req) => {
   // header on WebSocket upgrades, so session/share cookies do reach us.
   const skipAuth = process.env.WS_ALLOW_ANON === '1'
   if (!skipAuth) {
-    const authed = await isAuthed(req.headers.cookie, roomId, url.searchParams.get('share'))
+    const authed = await isAuthed(req.headers.cookie, roomId, url.searchParams.get('share'), req)
     if (!authed) {
       console.log(`[Yjs WS] 🚫 Rejected unauthenticated connection to room=${roomId}`)
       ws.close(4001, 'Authentication required')
@@ -214,42 +346,9 @@ wss.on('connection', async (ws, req) => {
 
   // Handle incoming messages
   ws.on('message', (data) => {
-    // Try to parse as JSON for control messages (ping, presence)
-    let text
-    if (typeof data === 'string' || data instanceof Buffer) {
-      text = typeof data === 'string' ? data : data.toString('utf8')
-    } else {
-      text = Buffer.from(data).toString('utf8')
-    }
-
-    let json
-    try { json = JSON.parse(text) } catch { /* not JSON — binary Yjs message */ }
-    if (json && json.type) {
-      if (json.type === 'ping') {
-        ws.lastPong = Date.now()
-        sendJson(ws, { type: 'pong' })
-        return
-      }
-
-      // Forward other JSON messages (presence, cursor, etc.) to the room
-      broadcastToRoom(ws.roomId || roomId, json, ws)
-      return
-    }
-
-    // Binary message — relay to all other clients in the room (Yjs sync)
-    const currentRoom = getRoom(ws.roomId || roomId)
-    const rawBuffer = typeof data === 'string' ? Buffer.from(data, 'utf8') : data
-    const msgSize = rawBuffer.byteLength || rawBuffer.length || 0
-
-    let relayed = 0
-    currentRoom.forEach((client) => {
-      if (client !== ws && client.readyState === 1) {
-        client.send(rawBuffer)
-        relayed++
-      }
-    })
-    if (msgSize > 0) {
-      console.log(`[Yjs WS] 📨 Binary: room=${ws.roomId || roomId}, size=${msgSize}B, relayed to ${relayed}`)
+    const result = relayClientMessage(ws, data, getRoom(ws.roomId || roomId))
+    if (result.kind === 'binary' && result.bytes > 0) {
+      console.log(`[Yjs WS] 📨 Binary: room=${ws.roomId || roomId}, size=${result.bytes}B, relayed to ${result.relayed}`)
     }
   })
 
@@ -300,25 +399,18 @@ function broadcastToRoom(roomId, msg, exclude) {
   })
 }
 
-// Server-side heartbeat — ping every 30s, disconnect clients unresponsive for 60s
-const HEARTBEAT_INTERVAL = 30000
-const HEARTBEAT_TIMEOUT = 60000
-setInterval(() => {
-  const now = Date.now()
-  wss.clients.forEach((ws) => {
-    if (ws.readyState !== 1) return
-    if (now - ws.lastPong > HEARTBEAT_TIMEOUT) {
-      console.log(`[Yjs WS] 💔 Heartbeat timeout: room=${ws.roomId || '?'}, user=${ws.userName || '?'}`)
-      ws.terminate()
-      return
-    }
-    sendJson(ws, { type: 'ping' })
-  })
-}, HEARTBEAT_INTERVAL)
+// Start the server + heartbeat only when run directly (skip when imported for
+// tests, e.g. to unit-test helpers — the module-scope heartbeat interval would
+// otherwise keep the vitest/node process alive).
+const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`
+if (isMain) {
+  // Server-side heartbeat — ping every 30s, disconnect clients unresponsive for 60s
+  setInterval(() => {
+    runHeartbeat(wss.clients)
+  }, HEARTBEAT_INTERVAL_MS)
 
-// Start the server
-server.listen(PORT, HOST, () => {
-  console.log(`
+  server.listen(PORT, HOST, () => {
+    console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║           VP Whiteboard Yjs WebSocket Server              ║
 ╠══════════════════════════════════════════════════════════╣
@@ -329,7 +421,8 @@ server.listen(PORT, HOST, () => {
 
 Waiting for Yjs connections...
   `)
-})
+  })
+}
 
 // Graceful shutdown
 process.on('SIGINT', () => {

@@ -3,6 +3,89 @@ import * as Y from 'yjs'
 import type { CanvasElement, UserPresence, DrawingTool, ViewportState, SharedViewportState } from '~/types'
 
 /**
+ * Origin used to tag updates we receive from a peer so we don't re-broadcast
+ * them back (which caused an infinite echo storm: A applies B's full-state
+ * update -> A's observers fire -> A broadcasts full state back -> B applies
+ * -> B's observers fire -> ... payloads growing, duplicates accumulating, and
+ * the corrupted doc's autosave PATCHing the DB with wiped state).
+ */
+export const REMOTE_ORIGIN = 'remote'
+
+/**
+ * Binary frame types for the WebSocket sync protocol.
+ *
+ * Both are Yjs updates prefixed with a single type byte so the receiver can
+ * distinguish a full-state snapshot from an incremental delta.
+ *
+ * - SYNC_FULL:  `encodeStateAsUpdate(ydoc)` — the whole shared doc. Sent after
+ *   a DB/localStorage import and in reply to a peer's `sync-request`. The
+ *   receiver applies it and then deduplicates elements by id.
+ * - SYNC_DELTA: an incremental `ydoc.on('update')` delta for a single local
+ *   edit. Only reliably applicable once the two docs share the same CRDT item
+ *   graph, which the SYNC_FULL exchange establishes.
+ */
+const SYNC_FULL = 0x01
+const SYNC_DELTA = 0x02
+
+export function encodeSyncFrame(update: Uint8Array, isFull: boolean): Uint8Array {
+  const frame = new Uint8Array(update.byteLength + 1)
+  frame[0] = isFull ? SYNC_FULL : SYNC_DELTA
+  frame.set(update, 1)
+  return frame
+}
+
+export function decodeSyncFrame(frame: Uint8Array): { isFull: boolean; update: Uint8Array } {
+  const isFull = frame[0] === SYNC_FULL
+  return { isFull, update: frame.slice(1) }
+}
+
+/**
+ * Remove duplicate elements (same `id`) from a Yjs elements array, keeping the
+ * last occurrence. Duplicates accumulate when every client independently
+ * re-imports the same DB `canvas_state` — each import creates fresh CRDT
+ * structs under that client's own Yjs clientId, so merging two docs that both
+ * imported the same state yields two copies of every element.
+ *
+ * Runs inside a `REMOTE_ORIGIN` transaction so the deletions are NOT
+ * broadcast: they are positional, and a peer applying our positional deletes
+ * against its own (differently-ordered) doc would delete the WRONG items and
+ * wipe content. Each client converges on its own copy instead; the element
+ * content (ids/order) ends up identical everywhere.
+ */
+export function deduplicateYjsElements(yElements: Y.Array<any>): number {
+  const doc = yElements.doc
+  if (!doc) return 0
+  let removed = 0
+  doc.transact(() => {
+    const seen = new Set<string>()
+    for (let i = yElements.length - 1; i >= 0; i--) {
+      const el = yElements.get(i)
+      if (el && seen.has(el.id)) {
+        yElements.delete(i, 1)
+        removed++
+      } else if (el) {
+        seen.add(el.id)
+      }
+    }
+  }, REMOTE_ORIGIN)
+  return removed
+}
+
+/**
+ * Apply an incoming sync frame to the local doc. Full-state frames also
+ * reconcile duplicate elements (see deduplicateYjsElements). Both the apply
+ * and the dedupe are tagged REMOTE_ORIGIN so nothing is echoed back.
+ */
+export function applyRemoteSyncFrame(ydoc: Y.Doc, yElements: Y.Array<any>, frame: Uint8Array): void {
+  const { isFull, update } = decodeSyncFrame(frame)
+  if (update.byteLength === 0) return
+  Y.applyUpdate(ydoc, update, REMOTE_ORIGIN)
+  if (isFull) {
+    deduplicateYjsElements(yElements)
+  }
+}
+
+/**
  * Exponential backoff configuration for WebSocket reconnection
  */
 interface ReconnectConfig {
@@ -147,6 +230,11 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         // Request initial sync state from server
         sendSyncMessage()
 
+        // Announce our full state too: content imported or drawn before the
+        // connection opened never got broadcast (sendBinary drops frames while
+        // the socket isn't OPEN), so peers reconcile onto our snapshot now.
+        sendFullStateSync()
+
         // Clear any pending reconnect
         if (reconnectTimeout) {
           clearTimeout(reconnectTimeout)
@@ -247,21 +335,13 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       const message = JSON.parse(text)
 
       if (message.type === 'sync-request') {
-        // Send current state
-        const state = exportState()
-        ws?.send(JSON.stringify({ type: 'sync-state', state }))
-      } else if (message.type === 'sync-state' && message.state) {
-        // The DB is the source of truth on initial load. If we already have
-        // content (restored from the DB or from user edits), ignore a peer's
-        // sync-state entirely — a stale peer that joined before the PDF/layers
-        // were added would otherwise REPLACE our freshly-restored documentLayers
-        // with its older state ('flash then gone'). Live edits propagate via the
-        // binary Yjs deltas instead, so we only use sync-state when we have
-        // nothing yet.
-        const hasLocalContent = yElements.length > 0 || yDocumentLayers.size > 0
-        if (!hasLocalContent) {
-          importState(message.state)
-        }
+        // Send the full doc as a binary snapshot. Applying a plain incremental
+        // delta would silently drop on a peer whose CRDT structs diverge from
+        // ours (guaranteed when both of us independently re-imported the same
+        // DB canvas_state as fresh structs). A full-state snapshot + dedupe is
+        // the only frame both sides can reconcile, which then makes subsequent
+        // incremental deltas applicable in both directions.
+        sendFullStateSync()
       } else if (message.type === 'ping') {
         // Server heartbeat — respond immediately so the relay knows we're alive
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -274,9 +354,10 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     }
 
     // Apply binary Yjs update (CRDT sync) — tag with REMOTE_ORIGIN so the
-    // ydoc 'update' handler above doesn't echo it back to peers.
+    // ydoc 'update' handler above doesn't echo it back to peers. Full-state
+    // frames also reconcile duplicates from divergent struct re-imports.
     try {
-      Y.applyUpdate(ydoc, data, REMOTE_ORIGIN)
+      applyRemoteSyncFrame(ydoc, yElements, data)
     } catch (e) {
       console.error('[Yjs WS] Failed to apply Yjs update:', e)
     }
@@ -288,6 +369,18 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   function sendBinary(data: Uint8Array) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(data)
+    }
+  }
+
+  /**
+   * Broadcast the full shared doc as a SYNC_FULL frame. Sent after content is
+   * imported (DB/localStorage) and in reply to a peer's sync-request, so peers
+   * with divergent CRDT structs can reconcile onto our canonical copy.
+   */
+  function sendFullStateSync() {
+    const update = Y.encodeStateAsUpdate(ydoc)
+    if (update && update.byteLength > 0) {
+      sendBinary(encodeSyncFrame(update, true))
     }
   }
 
@@ -577,18 +670,11 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   // Remove duplicate elements from the Yjs array in-place.
   // Duplicates can accumulate from WebSocket sync interruptions and bloat
   // the canvas_state payload past PHP/MySQL limits.
+  // Runs in a REMOTE_ORIGIN transaction so the positional deletions are never
+  // broadcast (a peer applying our positional deletes against its own ordering
+  // would delete the wrong items — each side converges on its own copy).
   function deduplicateYElements() {
-    const seen = new Set<string>()
-    let removed = 0
-    for (let i = yElements.length - 1; i >= 0; i--) {
-      const el = yElements.get(i)
-      if (el && seen.has(el.id)) {
-        yElements.delete(i, 1)
-        removed++
-      } else if (el) {
-        seen.add(el.id)
-      }
-    }
+    const removed = deduplicateYjsElements(yElements)
     if (removed > 0) console.log(`[dedup] removed ${removed} duplicate elements`)
   }
 
@@ -646,6 +732,13 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         }
       }
     }, 'import')
+
+    // Announce our freshly-imported canonical state. Importing the same DB
+    // canvas_state creates NEW CRDT structs under THIS client's id — a peer's
+    // structs will differ, so plain incremental deltas are inapplicable there.
+    // Broadcasting a full-state snapshot lets peers reconcile (apply + dedupe)
+    // onto our copy, after which incremental deltas flow both ways.
+    sendFullStateSync()
   }
 
   // Get current shared viewport state from yMeta
@@ -705,13 +798,6 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     ydoc.destroy()
   }
 
-  // Origin used to tag updates we receive from a peer so we don't re-broadcast
-  // them back (which caused an infinite echo storm: A applies B's full-state
-  // update -> A's observers fire -> A broadcasts full state back -> B applies
-  // -> B's observers fire -> ... payloads growing, duplicates accumulating, and
-  // the corrupted doc's autosave PATCHing the DB with wiped state).
-  const REMOTE_ORIGIN = 'remote'
-
   // Observe Yjs document updates and broadcast only the delta to peers.
   // ydoc.on('update') fires with the incremental update (not the full state)
   // and its origin, so a change we apply from a peer (origin 'remote') is
@@ -719,7 +805,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   ydoc.on('update', (update: Uint8Array, origin: unknown) => {
     if (origin === REMOTE_ORIGIN) return
     if (update && update.byteLength > 0) {
-      sendBinary(update)
+      sendBinary(encodeSyncFrame(update, false))
     }
   })
 
