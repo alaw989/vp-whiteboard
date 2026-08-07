@@ -28,3 +28,7 @@ logs
 
 # TypeScript
 *.tsbuildinfo
+
+# Playwright e2e output
+test-results
+playwright-report

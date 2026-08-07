@@ -6,6 +6,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   const config = useRuntimeConfig()
   const laravelUrl = (config.public.laravelUrl as string) || 'http://localhost:8000'
+  const siteUrl = (config.public.siteUrl as string) || 'http://localhost:3000'
 
   // During SSR, forward the incoming request's cookie to Laravel so the
   // session cookie (laravel_session) reaches the /api/user endpoint.
@@ -15,9 +16,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // runs session auth on requests whose Origin/Referer matches
   // SANCTUM_STATEFUL_DOMAINS. Browsers send these automatically, but the
   // server-side fetch does not — and the browser's headers don't reliably
-  // survive the nginx→Nuxt proxy chain. Synthesize them from LARAVEL_URL so
-  // /api/user doesn't return 401 for a logged-in user on hard refresh (same
-  // fix applied to the WS relay in b036f3d).
+  // survive the nginx→Nuxt proxy chain. Synthesize them from the FRONTEND URL
+  // (siteUrl): Sanctum's stateful domain is the frontend origin (e.g.
+  // localhost:3000 in dev, the site host in prod), so claiming the API origin
+  // (laravelUrl, localhost:8002 locally) makes the stateful guard skip session
+  // auth and /api/user returns 401 — logging the user out on every hard refresh
+  // (the same failure the WS relay's resolveStatefulOrigin fixes for handshakes).
   let cookie: string | undefined
   let origin: string | undefined
   let referer: string | undefined
@@ -25,11 +29,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
     const headers = useRequestHeaders(['cookie'])
     cookie = headers.cookie
     try {
-      origin = new URL(laravelUrl).origin
+      origin = new URL(siteUrl).origin
     } catch {
-      origin = laravelUrl
+      origin = siteUrl
     }
-    referer = `${laravelUrl}/`
+    referer = `${siteUrl}/`
   }
 
   try {
