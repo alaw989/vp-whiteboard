@@ -175,7 +175,7 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 - `WhiteboardController@update` + `WhiteboardFileController@store` accept a share credential (cookie `vp_share_token`, header `X-Share-Token`, or `?share=` query) in place of auth. View-role shares can't rename. Public `GET /api/whiteboards/{id}` no longer leaks `share_token`.
 - `/s/{token}` Nitro route resolves via `/api/shares/{token}` and sets an httpOnly `vp_share_token` cookie (7 days).
 - WS relay (`frontend/server/ws-server.js`) checks the share token against `/api/shares/{token}` (expects `data.whiteboard_id`). **Auth is now ON by default** — the old `HOST === '0.0.0.0'` default silently disabled it in prod. Set `WS_ALLOW_ANON=1` to bypass (don't).
-- **Deploy-time requirements:** add `proxy_set_header Cookie $http_cookie;` to the nginx `/whiteboard:` location (done on staging + prod); set `ADMIN_EMAIL` + real `MAIL_*` SMTP in the env (prod still needs this); `MAIL_MAILER` is `log` until then, so approval emails go to the log file only.
+- **Deploy-time requirements:** add `proxy_set_header Cookie $http_cookie;` to the nginx `/whiteboard:` location (done on staging + prod). **Prod mail is configured + verified (Aug 7, 2026):** `MAIL_MAILER=smtp` → Brevo (`smtp-relay.brevo.com:587`), `MAIL_FROM_ADDRESS=no-reply@vp-associates.com`, `ADMIN_EMAIL=vphan@vp-associates.com,alaw989@gmail.com`. Confirmed working via `Mail::raw` send + a real pending-registration approval dispatch (no `Failed to send registration-approval email` in the log). Staging still uses `MAIL_MAILER=log`.
 
 ### Tests
 
