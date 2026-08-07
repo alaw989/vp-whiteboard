@@ -719,6 +719,17 @@ const remoteCursors = ref<Map<number, any>>(new Map())
 
 // Initialize canvas on client side
 onMounted(() => {
+  // One-time share token handed over by the /s/{token} redirect. Stash it in
+  // sessionStorage for the WS handshake (?share=) then scrub it from the URL.
+  const shareParam = (route.query as any).share as string | undefined
+  if (shareParam) {
+    try {
+      sessionStorage.setItem('vp_share_token', shareParam)
+    } catch { /* ignore storage errors */ }
+    const clean = window.location.href.replace(/[?&]share=[^&]+/, '').replace(/\?$/, '')
+    window.history.replaceState(null, '', clean)
+  }
+
   canvasInstance.value = useCollaborativeCanvas(
     whiteboardId,
     currentUser.id,
