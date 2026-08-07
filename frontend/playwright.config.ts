@@ -21,5 +21,14 @@ export default defineConfig({
       port: 3000,
       reuseExistingServer: true,
     },
+    {
+      // Yjs WS relay — the collab spec's live-sync assertions depend on it.
+      // Auth is ON (share token / session cookie), so the relay reaches Laravel
+      // at :8002 to validate every connection.
+      command: 'LARAVEL_URL=http://localhost:8002 WS_PORT=3001 node server/ws-server.js',
+      port: 3001,
+      cwd: '.',
+      reuseExistingServer: true,
+    },
   ],
 })
