@@ -3854,6 +3854,11 @@ defineExpose({
 .whiteboard-container {
   touch-action: none;
   /* Prevent browser default gestures like pinch-zoom and scroll */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  /* Prevent iOS long-press callout / magnifier from hijacking a touch draw */
+  -webkit-touch-callout: none;
 }
 </style>
 

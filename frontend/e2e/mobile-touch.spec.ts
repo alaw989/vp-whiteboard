@@ -44,6 +44,14 @@ test('mobile toolbar selects pen; a touch pen stroke lands on the canvas', async
   await createWhiteboard(page)
   await waitForCanvas(page)
 
+  // Mobile-hardening guard: the canvas container must opt out of browser text
+  // selection and the iOS long-press callout/magnifier. Without these, a slow
+  // touch draw (or a long-press select) on a real device can open the magnifier
+  // or select DOM text, hijacking the gesture mid-stroke. touch-action: none
+  // only kills scroll/zoom — selection is a separate CSS property.
+  await expect(page.locator('.whiteboard-container')).toHaveCSS('user-select', 'none')
+  await expect(page.locator('.whiteboard-container')).toHaveCSS('-webkit-user-select', 'none')
+
   // md:hidden bottom toolbar is shown on a mobile viewport.
   const mobileToolbar = await openMobileToolbar(page)
 
