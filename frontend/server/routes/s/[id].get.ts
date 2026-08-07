@@ -26,7 +26,12 @@ export default defineEventHandler(async (event) => {
       path: '/',
     })
 
-    return sendRedirect(event, `/whiteboard/${res.data.whiteboard_id}`, 302)
+    // Carry the raw token to the whiteboard page via a one-time query param.
+    // The page stashes it (sessionStorage) for the WS handshake and scrubs the
+    // URL, so anonymous share collaboration works even if nginx does not forward
+    // the httpOnly vp_share_token cookie to the WS relay. The cookie itself is
+    // kept for API/autosave auth.
+    return sendRedirect(event, `/whiteboard/${res.data.whiteboard_id}?share=${encodeURIComponent(token)}`, 302)
   } catch {
     return sendRedirect(event, '/', 302)
   }

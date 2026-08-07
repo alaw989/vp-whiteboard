@@ -122,6 +122,16 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
       url.pathname = `/whiteboard:${whiteboardId}`
       url.searchParams.set('userId', userId)
       url.searchParams.set('userName', userName)
+      // Anonymous share-link viewers: carry their share token in the handshake
+      // query (not just the httpOnly cookie) so the relay can authorize them even
+      // if nginx does not forward the Cookie header to the WS relay on /whiteboard:.
+      let shareToken: string | null = null
+      if (typeof sessionStorage !== 'undefined') {
+        try { shareToken = sessionStorage.getItem('vp_share_token') } catch { /* ignore */ }
+      }
+      if (shareToken) {
+        url.searchParams.set('share', shareToken)
+      }
 
       ws = new WebSocket(url.toString())
 
