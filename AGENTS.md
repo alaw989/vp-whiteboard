@@ -190,3 +190,31 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 - The `--check` runs from the repo root (harness fixed Aug 2026) and writes to `logs/opencode-loop-*/iter-N.check.log`. A failed check is a real gate — do NOT ship a stalled iteration without re-running the check yourself.
 - The loop **re-seeds** `ITERATION_NOTES.md` (wiping any extra Context section) whenever the `--goal` arg doesn't byte-match the Goal section's first line — make them identical, or put critical context inside the goal string, or re-add the Context section after seeding.
 - A stall does NOT mean the code is bad: it usually means the loop's own gate tripped on the environment. Re-verify (`npm run typecheck && npm test`) and ship manually if green.
+
+## Backlog & session resume (the loop-driven continuous improvement program)
+
+**Trigger phrase:** when the user says something like *"let's get to work on the next item in the backlog with the opencode-loop"* (or just "next item in the backlog"), DO THIS: pick the **next open item** in the backlog below, and run the standard loop workflow for it:
+
+1. `git checkout develop && git pull origin develop`; create `fix/<slug>` or `feat/<slug>` branch off develop.
+2. Write `ITERATION_NOTES.md` with the Goal (first line MUST byte-match the `--goal` string you will pass) + a Context section (root causes, repro, verification, gotchas). Commit it so the tree is clean.
+3. Launch the loop detached: `setsid nohup ~/.local/bin/opencode-loop 20 --goal "<exact goal>" --check "cd frontend && npm run typecheck && npm test" > logs/opencode-loop-run.out 2>&1 < /dev/null &`.
+4. Monitor; on ALL_DONE (or stall/halt), re-verify `npm run typecheck && npm test` + run `npm run test:e2e` yourself before shipping.
+5. Ship per the CI/CD protocol: push branch → PR to `develop` → wait `test` + `backend-test` → merge → watch staging deploy → verify on staging (relay bound, WS works) → PR `develop`→`master` → merge → watch prod deploy → verify.
+6. Mark the item done below (move to "Shipped") and continue to the next item when asked.
+
+**Backlog (in priority order):**
+1. **Share-link expiry UX** — `whiteboard_shares` have `expires_at`; the resolver 404s expired/revoked tokens, but the viewer UX is unhandled (see `GET /api/shares/{token}` → 404, `/s/{token}` redirects to `/`). Add a clear "link expired/revoked" page instead of a silent redirect; e2e it (expired token → friendly message, valid token → board). Backend `WhiteboardShare::findActiveByToken` already filters expired.
+2. **Fresh full-tool audit** — drive every tool (pen, highlighter, line, arrow, rectangle, circle, ellipse, polyline, arc, revision-cloud, stamp, text-annotation, dimension, measure distance/area, eraser, select, offset, mirror, rotate, scale, trim, extend, fillet, pan) through the e2e harness (mouse + touch) asserting each creates/persists an element; fix anything that doesn't. Reuses `frontend/e2e/helpers.ts`.
+3. (Ideas for later) — PDF layer rendering perf, viewport-clipping correctness on zoom, admin approval email test on staging with real SMTP, onboarding/empty-state UX.
+
+**Shipped (all merged to develop + master, deployed to staging + prod):**
+- Live-sync collab fix (relay auth Origin forwarding + Yjs SYNC_FULL/SYNC_DELTA protocol) — PRs #42/#43.
+- WS relay close-path hardening (lifecycle helpers, error-path leak, phantom-room leak, client presence) — #47/#48.
+- Reconnect/resume hardening (4001-cancel backoff, empty-doc suppression, mocked-WS suite) — #49/#50.
+- E2E collab guardrail (2-browser live sync) + auth-middleware dev refresh-logout fix — #51/#52.
+- Prod approval email SMTP verified (Brevo) — no code change.
+- Mobile/touch drawing hardening (pointercancel commit bug, toolbar, gestures, 17 touch e2e) — #53/#54.
+- Admin approval UI (/approvals, useApprovals, admin nav link) — #55/#56.
+- Export hardening (sanitized filenames, 18 unit + 3 e2e edge cases) — #57/#58.
+
+**Current health (Aug 7, 2026):** `npm run typecheck` clean, `npm test` 438/438 (43 files), `npm run test:e2e` 26/26, `php artisan test` 47 passed. All branch-protection checks (`test`, `backend-test`) green. Local dev stack ports: Laravel :8002, Nuxt :3000, WS relay :3001. Droplets: staging+prod on `165.245.141.179` (relay :3003 staging / :3001 prod). e2e must run with Nuxt `TEST=1` (disables devtools overlay) and a clean stack — a stale Nuxt on :3000 makes a fresh one fall back to :3001 and collide with the WS relay.
