@@ -75,6 +75,46 @@ export function canvasFingerprint(page: Page): Promise<string> {
 }
 
 /**
+ * Fingerprint of the TRANSFORMER layer canvas — the LAST canvas (Konva renders
+ * layers in template order; the transformer layer is declared after the main
+ * layer). Selection handles (blue border + anchors) render here, so a
+ * select-tool tap that successfully selects an element changes this hash while
+ * the main layer (canvasFingerprint) stays put. Empty = no selection.
+ */
+export function transformerFingerprint(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const container = document.querySelector('.whiteboard-container')
+    if (!container) return 'no-container'
+    const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
+    if (canvases.length === 0) return 'no-canvas'
+    const layer = canvases[canvases.length - 1]!
+    const ctx = layer.getContext('2d')!
+    const data = ctx.getImageData(0, 0, layer.width, layer.height).data
+    // Hash only the alpha channel on a coarse grid: the transformer draws thin
+    // blue handles + a dashed border, so a handful of opaque pixels distinguishes
+    // "selected" from the empty (all-transparent) layer.
+    const grid = 24
+    const gw = grid
+    const gh = Math.max(1, Math.round((grid * layer.height) / layer.width))
+    const sums = new Array<number>(gw * gh).fill(0)
+    for (let y = 0; y < layer.height; y++) {
+      const gy = Math.min(gh - 1, Math.floor((y * gh) / layer.height))
+      for (let x = 0; x < layer.width; x++) {
+        const gx = Math.min(gw - 1, Math.floor((x * gw) / layer.width))
+        sums[gy * gw + gx]! += data[(y * layer.width + x) * 4 + 3]!
+      }
+    }
+    const per = Math.max(1, Math.floor((layer.width * layer.height) / (gw * gh)))
+    let h = 2166136261
+    for (let i = 0; i < sums.length; i++) {
+      h ^= Math.round(sums[i]! / per)
+      h = Math.imul(h, 16777619)
+    }
+    return (h >>> 0).toString(16)
+  })
+}
+
+/**
  * Sample a single RGBA pixel from the largest Konva layer canvas at a CSS
  * (viewport) coordinate, mapping through the canvas's own devicePixelRatio.
  * The highlighter renders at opacity 0.5, so a black highlight over the
@@ -187,6 +227,92 @@ export async function touchPointer(page: Page, events: TouchEvent[]) {
       )
     }
   }, events)
+}
+
+/**
+ * A single-finger touch DRAG of an already-selected element. Konva's draggable
+ * machinery (DragAndDrop) listens for NATIVE touch events on window
+ * (touchstart/touchmove/touchend), NOT pointer events — the app's own drawing
+ * and gesture handlers use the unified pointer pipeline, but moving a selected
+ * element goes through Konva's drag. A real device fires BOTH, so this helper
+ * dispatches the pointer sequence (for the app's handlers) AND the native touch
+ * sequence (for Konva's drag) with matching identifiers.
+ */
+export async function touchDrag(page: Page, start: { x: number; y: number }, end: { x: number; y: number }) {
+  await page.evaluate(({ start, end }) => {
+    const canvas = document.querySelector('.whiteboard-container canvas')
+    if (!canvas) throw new Error('stage canvas not found')
+    const content = canvas.parentElement
+    if (!content) throw new Error('stage content element not found')
+
+    const mkTouch = (clientX: number, clientY: number) =>
+      new Touch({ identifier: 1, target: content, clientX, clientY })
+
+    // Pointer sequence (unified pipeline: selection, gesture state)…
+    const pointerEvents: { type: string; clientX: number; clientY: number }[] = [
+      { type: 'pointerdown', clientX: start.x, clientY: start.y },
+    ]
+    const steps = 8
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps
+      pointerEvents.push({
+        type: 'pointermove',
+        clientX: start.x + (end.x - start.x) * t,
+        clientY: start.y + (end.y - start.y) * t,
+      })
+    }
+    pointerEvents.push({ type: 'pointerup', clientX: end.x, clientY: end.y })
+    for (const evt of pointerEvents) {
+      content.dispatchEvent(
+        new PointerEvent(evt.type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId: 1,
+          pointerType: 'touch',
+          isPrimary: true,
+          clientX: evt.clientX,
+          clientY: evt.clientY,
+          pressure: 0.5,
+          buttons: evt.type === 'pointerup' ? 0 : 1,
+        }),
+      )
+    }
+
+    // Native touch sequence (Konva's drag)…
+    content.dispatchEvent(
+      new TouchEvent('touchstart', {
+        bubbles: true,
+        cancelable: true,
+        touches: [mkTouch(start.x, start.y)],
+        targetTouches: [mkTouch(start.x, start.y)],
+        changedTouches: [mkTouch(start.x, start.y)],
+      }),
+    )
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps
+      const cx = start.x + (end.x - start.x) * t
+      const cy = start.y + (end.y - start.y) * t
+      window.dispatchEvent(
+        new TouchEvent('touchmove', {
+          bubbles: true,
+          cancelable: true,
+          touches: [mkTouch(cx, cy)],
+          targetTouches: [mkTouch(cx, cy)],
+          changedTouches: [mkTouch(cx, cy)],
+        }),
+      )
+    }
+    window.dispatchEvent(
+      new TouchEvent('touchend', {
+        bubbles: true,
+        cancelable: true,
+        touches: [],
+        targetTouches: [],
+        changedTouches: [mkTouch(end.x, end.y)],
+      }),
+    )
+  }, { start, end })
 }
 
 /** A single-finger touch pen stroke from start to end (pressure 0.5). */

@@ -3,10 +3,12 @@ import {
   login,
   createWhiteboard,
   canvasFingerprint,
+  transformerFingerprint,
   pixelAt,
   darkRowSpan,
   touchPointer,
   touchStroke,
+  touchDrag,
   canvasBox,
   waitForConnected,
   waitForCanvas,
@@ -100,12 +102,16 @@ test('mobile toolbar selects the highlighter; a touch highlight renders as a tra
   }
 
   // The pen over the same canvas at its own midpoint is opaque black — the
-  // contrast confirms the sampled translucency is highlighter-specific.
+  // contrast confirms the sampled translucency is highlighter-specific. Capture
+  // the post-highlight fingerprint as the new baseline: polling against the
+  // ORIGINAL baseline would resolve instantly (the highlight already changed
+  // it), letting pixelAt sample the pen stroke before it rendered.
   await selectMobilePen(page)
+  const postHighlight = await canvasFingerprint(page)
   await touchStroke(page, penStart, penEnd)
   await expect
     .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
-    .not.toBe(baseline)
+    .not.toBe(postHighlight)
 
   const penPx = await pixelAt(page, penMid)
   for (const ch of penPx.slice(0, 3)) {
@@ -457,6 +463,82 @@ test('mobile toolbar selects the eraser; a touch tap removes a committed stroke'
   // The stroke is gone: the fingerprint returns to the pre-stroke baseline and
   // stays there (the element was deleted, not just covered up).
   await expectCanvasToReturn(page, baseline)
+})
+
+test('mobile toolbar selects the select tool; a touch tap selects a committed stroke and a touch drag moves it', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await waitForCanvas(page)
+
+  // Select is the FIRST tool in the primary strip and the DEFAULT tool — the
+  // last of the five primary tools (select/pan/pen/highlighter/eraser) with no
+  // touch coverage. Its interaction is genuinely different: it hit-tests the
+  // element under the finger (selectElementAtPosition → getAllIntersections),
+  // makes it draggable, and moves it via Konva draggable + element-update.
+  const mobileToolbar = await openMobileToolbar(page)
+  await mobileToolbar.getByTitle('Select (V)').click()
+  await expect(mobileToolbar.getByTitle('Select (V)')).toHaveClass(/bg-blue-100/)
+
+  // Draw a committed pen stroke at known coords (identity viewport, same
+  // geometry as the coordinate-probe/eraser tests) so select can tap it.
+  await selectMobilePen(page)
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+  const x0 = box.x + 120
+  const x1 = box.x + 320
+  const y = box.y + 220
+  const midX = (x0 + x1) / 2
+
+  await touchStroke(page, { x: x0, y }, { x: x1, y })
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+  const strokeBaseline = await canvasFingerprint(page)
+
+  // Re-select the select tool (drawing above switched to pen) and TOUCH-TAP the
+  // stroke's midpoint. The selection renders as a transformer (blue border +
+  // anchors) on the transformer layer canvas — a fingerprint there MUST change,
+  // while the main canvas fingerprint stays put (selection commits nothing).
+  await mobileToolbar.getByTitle('Select (V)').click()
+  await expect(mobileToolbar.getByTitle('Select (V)')).toHaveClass(/bg-blue-100/)
+
+  const emptyTransformer = await transformerFingerprint(page)
+  await touchPointer(page, [
+    { type: 'pointerdown', pointerId: 1, clientX: midX, clientY: y },
+    { type: 'pointerup', pointerId: 1, clientX: midX, clientY: y, buttons: 0 },
+  ])
+  await expect
+    .poll(() => transformerFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(emptyTransformer)
+  expect(await canvasFingerprint(page)).toBe(strokeBaseline)
+
+  // Now TOUCH-DRAG the selected stroke by (+60, +40): the element must move
+  // (element-update), shifting its ink to the new row/column. If the tap hadn't
+  // selected it, the drag would do nothing (no draggable element, no
+  // element-update) and the fingerprint would stay dirty. touchDrag dispatches
+  // both the pointer sequence (app's unified handlers) and native touch events
+  // (Konva's draggable machinery) — a real device fires both. The drag starts
+  // on the stroke BODY a bit off the midpoint: the transformer's resize anchors
+  // sit exactly on a thin stroke's centerline, so grabbing dead-center grabs an
+  // anchor (scale transform), not the element.
+  const dx = 60
+  const dy = 40
+  await touchDrag(page, { x: midX - 40, y }, { x: midX - 40 + dx, y: y + dy })
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(strokeBaseline)
+
+  // The ink really moved: the old row is empty again and the new row holds a
+  // stroke whose head is at the original x0 shifted by the drag delta.
+  await expect
+    .poll(() => darkRowSpan(page, y + dy), { timeout: 10000, intervals: [250] })
+    .toMatchObject({ count: expect.any(Number) })
+  const oldRow = await darkRowSpan(page, y)
+  expect(oldRow!.count).toBe(0)
+  const newRow = await darkRowSpan(page, y + dy)
+  expect(newRow).not.toBeNull()
+  expect(newRow!.count).toBeGreaterThan(0)
+  expect(Math.abs(newRow!.minX - (x0 + dx))).toBeLessThan(12)
 })
 
 test('a remote touch stroke preview appears on a peer and clears when the drawer cancels into a gesture', async ({ browser }) => {
