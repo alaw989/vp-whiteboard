@@ -484,6 +484,94 @@ test('a remote touch stroke preview appears on a peer and clears when the drawer
   }
 })
 
+test('a remote touch stroke preview appears on a peer and clears when the drawer cancels into a pinch (regression)', async ({ browser }) => {
+  // The Iteration-13 single-browser pinch-cancel is combined here with the
+  // Iteration-7 two-browser preview-clear, exercised over the real relay: the
+  // peer must see the owner's in-flight stroke as a live preview, then when
+  // finger 2 lands mid-stroke and the owner pinches, BOTH the partial stroke
+  // and the peer's preview must be cancelled (no element committed on either
+  // tab) while the pinch still zooms the owner's viewport.
+  const mobile = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }
+  const ownerCtx = await browser.newContext(mobile)
+  const peerCtx = await browser.newContext(mobile)
+  try {
+    const owner = await ownerCtx.newPage()
+    await login(owner)
+    const whiteboardId = await createWhiteboard(owner)
+    await waitForCanvas(owner)
+    await waitForConnected(owner)
+
+    const peer = await peerCtx.newPage()
+    await login(peer)
+    await peer.goto(`/whiteboard/${whiteboardId}`)
+    await waitForCanvas(peer)
+    await waitForConnected(peer)
+
+    const ownerBaseline = await canvasFingerprint(owner)
+    const peerBaseline = await canvasFingerprint(peer)
+
+    await selectMobilePen(owner)
+
+    const box = await canvasBox(owner)
+    const cx = box.x + box.width * 0.5
+    const cy = box.y + box.height * 0.4
+    const spread = 60
+    const zoomedSpread = 2 * spread
+
+    // Finger 1 starts a stroke, drawing one point and ending back at its own
+    // down point (±spread) so the gesture's startDistance is exactly 120 — the
+    // same reversibility discipline as the single-browser pinch-cancel
+    // regression (the round trip must be exactly reversible).
+    await touchPointer(owner, [
+      { type: 'pointerdown', pointerId: 1, clientX: cx - spread, clientY: cy },
+      { type: 'pointermove', pointerId: 1, clientX: cx - spread - 20, clientY: cy },
+      { type: 'pointermove', pointerId: 1, clientX: cx - spread, clientY: cy },
+    ])
+
+    // The peer must see the in-progress stroke as a live preview BEFORE the
+    // gesture cancels it (same assertion as the Iteration-7 pan-cancel test).
+    await expect
+      .poll(() => canvasFingerprint(peer), { timeout: 15000, intervals: [250] })
+      .not.toBe(peerBaseline)
+
+    // Finger 2 lands mid-stroke → the stroke must cancel AND the pinch engage.
+    // Pinch OUT: finger distance 120 → 240 = exactly 2× zoom, so the owner's
+    // viewport changes…
+    await touchPointer(owner, [
+      { type: 'pointerdown', pointerId: 2, clientX: cx + spread, clientY: cy },
+      { type: 'pointermove', pointerId: 1, clientX: cx - zoomedSpread, clientY: cy },
+      { type: 'pointermove', pointerId: 2, clientX: cx + zoomedSpread, clientY: cy },
+      { type: 'pointerup', pointerId: 1, clientX: cx - zoomedSpread, clientY: cy, buttons: 0 },
+      { type: 'pointerup', pointerId: 2, clientX: cx + zoomedSpread, clientY: cy, buttons: 0 },
+    ])
+    await expect
+      .poll(() => canvasFingerprint(owner), { timeout: 10000, intervals: [250] })
+      .not.toBe(ownerBaseline)
+
+    // …and pinching back in by the exact inverse restores the owner's original
+    // viewport. The partial stroke was cancelled, not committed — a committed
+    // element would leave pixels no zoom round-trip can undo.
+    await touchPointer(owner, [
+      { type: 'pointerdown', pointerId: 1, clientX: cx - zoomedSpread, clientY: cy },
+      { type: 'pointerdown', pointerId: 2, clientX: cx + zoomedSpread, clientY: cy },
+      { type: 'pointermove', pointerId: 1, clientX: cx - spread, clientY: cy },
+      { type: 'pointermove', pointerId: 2, clientX: cx + spread, clientY: cy },
+      { type: 'pointerup', pointerId: 1, clientX: cx - spread, clientY: cy, buttons: 0 },
+      { type: 'pointerup', pointerId: 2, clientX: cx + spread, clientY: cy, buttons: 0 },
+    ])
+
+    // Owner: viewport restored + no stray element. Peer: preview cleared AND
+    // nothing committed arrived (the owner's remote viewport round-trip also
+    // returns the peer to identity — a committed stroke would survive it, so
+    // returning to the peer baseline proves the cancel broadcast landed).
+    await expectCanvasToReturn(owner, ownerBaseline)
+    await expectCanvasToReturn(peer, peerBaseline)
+  } finally {
+    await ownerCtx.close()
+    await peerCtx.close()
+  }
+})
+
 test('a remote touch stroke preview clears when the browser cancels the pointer mid-stroke (regression)', async ({ browser }) => {
   // Same two-browser, same-owner setup as the gesture-cancel test: the peer tab
   // gets a RANDOM per-page userId, so the owner's in-flight stroke renders on
