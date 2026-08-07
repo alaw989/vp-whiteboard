@@ -114,6 +114,13 @@ async function selectPen(page: Page) {
   ).toHaveAttribute('aria-pressed', 'true')
 }
 
+async function selectHighlighter(page: Page) {
+  await page.getByRole('button', { name: 'Highlighter tool, press B', exact: true }).click()
+  await expect(
+    page.getByRole('button', { name: 'Highlighter tool, press B', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true')
+}
+
 async function drawStroke(page: Page) {
   const box = await page.locator('.whiteboard-container canvas').first().boundingBox()
   if (!box) throw new Error('whiteboard stage not visible')
@@ -121,6 +128,30 @@ async function drawStroke(page: Page) {
   await page.mouse.down()
   await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5, { steps: 8 })
   await page.mouse.up()
+}
+
+/**
+ * Sample a single RGBA pixel from the largest Konva layer canvas at a CSS
+ * (viewport) coordinate, mapping through the canvas's own devicePixelRatio.
+ * The highlighter renders at opacity 0.5, so a black highlight over the
+ * #f5f5f5 background blends to ~mid-gray while a pen stroke is opaque black —
+ * pixel color distinguishes which tool actually rendered.
+ */
+function pixelAt(page: Page, point: { x: number; y: number }): Promise<[number, number, number, number]> {
+  return page.evaluate(({ x, y }) => {
+    const container = document.querySelector('.whiteboard-container')
+    if (!container) return [0, 0, 0, 0]
+    const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
+    if (canvases.length === 0) return [0, 0, 0, 0]
+    const main = canvases.reduce((a, b) =>
+      a.width * a.height >= b.width * b.height ? a : b,
+    )
+    const rect = main.getBoundingClientRect()
+    const px = Math.round((x - rect.left) * (main.width / rect.width))
+    const py = Math.round((y - rect.top) * (main.height / rect.height))
+    const d = main.getContext('2d')!.getImageData(px, py, 1, 1).data
+    return [d[0], d[1], d[2], d[3]]
+  }, point)
 }
 
 /**
@@ -183,5 +214,56 @@ test('owner and anonymous share viewer stay in live sync (both directions, no re
   } finally {
     await ownerContext.close()
     await viewerContext.close()
+  }
+})
+
+test('desktop mouse highlighter renders translucent; pen renders opaque (regression)', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+
+  const box = await page.locator('.whiteboard-container canvas').first().boundingBox()
+  if (!box) throw new Error('whiteboard stage not visible')
+
+  // Highlighter over the MOUSE path (the globalAlpha→opacity bug predated
+  // touch, so guard both input paths): a committed highlight must blend at
+  // 50% alpha → ~mid-gray, not opaque black.
+  await selectHighlighter(page)
+  const hlStart = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.2 }
+  const hlEnd = { x: box.x + box.width * 0.6, y: box.y + box.height * 0.35 }
+  const hlMid = { x: box.x + box.width * 0.45, y: box.y + box.height * 0.275 }
+  const hlBaseline = await canvasFingerprint(page)
+  await page.mouse.move(hlStart.x, hlStart.y)
+  await page.mouse.down()
+  await page.mouse.move(hlEnd.x, hlEnd.y, { steps: 8 })
+  await page.mouse.up()
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(hlBaseline)
+
+  const hlPx = await pixelAt(page, hlMid)
+  for (const ch of hlPx.slice(0, 3)) {
+    expect(ch).toBeGreaterThan(60)
+    expect(ch).toBeLessThan(200)
+  }
+
+  // Pen over the same canvas at its own midpoint is opaque black — the
+  // contrast confirms the translucency is highlighter-specific.
+  await selectPen(page)
+  const penStart = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.35 }
+  const penEnd = { x: box.x + box.width * 0.6, y: box.y + box.height * 0.5 }
+  const penMid = { x: box.x + box.width * 0.45, y: box.y + box.height * 0.425 }
+  const penBaseline = await canvasFingerprint(page)
+  await page.mouse.move(penStart.x, penStart.y)
+  await page.mouse.down()
+  await page.mouse.move(penEnd.x, penEnd.y, { steps: 8 })
+  await page.mouse.up()
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(penBaseline)
+
+  const penPx = await pixelAt(page, penMid)
+  for (const ch of penPx.slice(0, 3)) {
+    expect(ch).toBeLessThan(80)
   }
 })
