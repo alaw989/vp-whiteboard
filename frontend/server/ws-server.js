@@ -82,10 +82,13 @@ async function fetchJson(url, cookieHeader, timeoutMs) {
 
 // Accept a connection if the caller is EITHER a logged-in user (valid Sanctum
 // session) OR a share-link viewer whose vp_share_token resolves (via Laravel) to
-// THIS room's whiteboard. Verdicts are cached briefly per credential.
-async function isAuthed(cookieHeader, roomId) {
-  if (!cookieHeader) return false
-  const cookies = parseCookies(cookieHeader)
+// THIS room's whiteboard. The share token can arrive as the httpOnly cookie
+// (carried by nginx on the handshake) OR, when nginx does not forward the Cookie
+// header to this relay, as the ?share= query param appended by the client.
+// Verdicts are cached briefly per credential.
+async function isAuthed(cookieHeader, roomId, queryShareToken) {
+  if (!cookieHeader && !queryShareToken) return false
+  const cookies = parseCookies(cookieHeader || '')
   const now = Date.now()
 
   // 1. Logged-in user (Sanctum session cookie)
@@ -99,8 +102,10 @@ async function isAuthed(cookieHeader, roomId) {
     if (ok) return true
   }
 
-  // 2. Share-link viewer (token must resolve to this room's whiteboard id)
-  const shareToken = cookies['vp_share_token']
+  // 2. Share-link viewer (token must resolve to this room's whiteboard id).
+  // Prefer the query param (present for anonymous share viewers regardless of
+  // nginx cookie forwarding); fall back to the httpOnly cookie.
+  const shareToken = queryShareToken || cookies['vp_share_token']
   if (shareToken) {
     const key = 'share:' + shareToken + ':' + roomId
     const cached = authCache.get(key)
@@ -163,7 +168,7 @@ wss.on('connection', async (ws, req) => {
   // header on WebSocket upgrades, so session/share cookies do reach us.
   const skipAuth = process.env.WS_ALLOW_ANON === '1'
   if (!skipAuth) {
-    const authed = await isAuthed(req.headers.cookie, roomId)
+    const authed = await isAuthed(req.headers.cookie, roomId, url.searchParams.get('share'))
     if (!authed) {
       console.log(`[Yjs WS] 🚫 Rejected unauthenticated connection to room=${roomId}`)
       ws.close(4001, 'Authentication required')
