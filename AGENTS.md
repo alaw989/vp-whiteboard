@@ -181,3 +181,12 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 
 - New: `tests/Feature/ApprovalApiTest.php` (6 tests), `tests/Feature/ShareApiTest.php` (7 tests). Registration test updated for pending flow. Backend suite now 43 assertions of tests / 92 assertions. Frontend 320 tests still green.
 - Verified live on staging: pending register → login blocked → admin approve → login works; share create in UI; `/s/{token}` redirect; anonymous autosave persists (share token only); WS relay accepts valid token, rejects invalid with 4001.
+
+## Loop-driven work (opencode-loop) — operational notes
+
+- One goal per run: `~/.local/bin/opencode-loop 20 --goal "<goal>" --check "cd frontend && npm run typecheck && npm test"`. The loop makes one focused improvement per iteration, commits atomically, and halts after `STALL_LIMIT` (3) consecutive no-progress iterations.
+- Branch off `develop`; the worktree must be clean at start; it refuses to run on `master`/`main`/`develop`.
+- Launch **detached**: `setsid nohup ~/.local/bin/opencode-loop ... > logs/opencode-loop-run.out 2>&1 < /dev/null &`. A plain `&` job dies if the launching shell's process group is reaped (e.g. a monitoring command hitting its timeout). Never `pkill -f "opencode-loop"` or `pkill -f "server/ws-server.js"` broadly — the pattern matches the invoking shell itself.
+- The `--check` runs from the repo root (harness fixed Aug 2026) and writes to `logs/opencode-loop-*/iter-N.check.log`. A failed check is a real gate — do NOT ship a stalled iteration without re-running the check yourself.
+- The loop **re-seeds** `ITERATION_NOTES.md` (wiping any extra Context section) whenever the `--goal` arg doesn't byte-match the Goal section's first line — make them identical, or put critical context inside the goal string, or re-add the Context section after seeding.
+- A stall does NOT mean the code is bad: it usually means the loop's own gate tripped on the environment. Re-verify (`npm run typecheck && npm test`) and ship manually if green.
