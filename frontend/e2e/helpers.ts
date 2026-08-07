@@ -101,6 +101,52 @@ export function pixelAt(
   }, point)
 }
 
+/**
+ * Scan a horizontal row of the largest Konva layer canvas (at viewport CSS
+ * `yCss`) and return the horizontal span of "ink" (luma < threshold) in CSS
+ * x-coordinates, or null if the canvas isn't ready. Used by the coordinate-probe
+ * regression: a fresh board has only the drawn stroke, so its dark pixels on
+ * the stroke's own row must start where the finger touched down — proving touch
+ * client coords map to the same stage position (no container-offset/zoom error).
+ * The ink's HEAD is the coordinate invariant; perfect-freehand's streamline can
+ * pull the tail a few px short of the lift point, so callers assert on the head.
+ */
+export async function darkRowSpan(
+  page: Page,
+  yCss: number,
+  threshold = 128,
+): Promise<{ minX: number; maxX: number; count: number } | null> {
+  return page.evaluate(
+    ({ yCss, threshold }) => {
+      const container = document.querySelector('.whiteboard-container')
+      if (!container) return null
+      const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
+      if (canvases.length === 0) return null
+      const main = canvases.reduce((a, b) => (a.width * a.height >= b.width * b.height ? a : b))
+      const rect = main.getBoundingClientRect()
+      const py = Math.round((yCss - rect.top) * (main.height / rect.height))
+      if (py < 0 || py >= main.height) return { minX: -1, maxX: -1, count: 0 }
+      const ctx = main.getContext('2d')!
+      const data = ctx.getImageData(0, py, main.width, 1).data
+      let minX = -1
+      let maxX = -1
+      let count = 0
+      for (let x = 0; x < main.width; x++) {
+        if (data[x * 4]! < threshold) {
+          if (minX === -1) minX = x
+          maxX = x
+          count++
+        }
+      }
+      const toCss = (px: number) => rect.left + (px / main.width) * rect.width
+      return minX === -1
+        ? { minX: -1, maxX: -1, count: 0 }
+        : { minX: toCss(minX), maxX: toCss(maxX), count }
+    },
+    { yCss, threshold },
+  )
+}
+
 export type TouchEvent = {
   type: 'pointerdown' | 'pointermove' | 'pointerup'
   pointerId: number

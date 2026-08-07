@@ -4,6 +4,7 @@ import {
   createWhiteboard,
   canvasFingerprint,
   pixelAt,
+  darkRowSpan,
   touchPointer,
   touchStroke,
   canvasBox,
@@ -235,6 +236,59 @@ test('a two-finger gesture started mid-stroke cancels the partial stroke (regres
     { type: 'pointerup', pointerId: 2, clientX: cx + spread, clientY: cy, buttons: 0 },
   ])
   await expectCanvasToReturn(page, baseline)
+})
+
+test('a touch pen stroke lands exactly where the finger drew (coordinate probe)', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await waitForCanvas(page)
+
+  await selectMobilePen(page)
+
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+
+  // A short horizontal stroke fully inside the stage canvas (auto-sized to the
+  // container, 390x729 at DPR 1). On a fresh board the viewport is identity
+  // (x:0,y:0,zoom:1), so client coords map 1:1 to stage coords — ink must appear
+  // exactly where the finger touched.
+  const x0 = box.x + 120
+  const x1 = box.x + 320
+  const y = box.y + 220
+  const mid = { x: (x0 + x1) / 2, y }
+
+  await touchStroke(page, { x: x0, y }, { x: x1, y })
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+
+  // Coordinate probe 1: scan the stroke's own row. The ink's LEFT edge is
+  // anchored to where the finger touched down (perfect-freehand never pulls the
+  // head inward), so a container-offset or viewport/zoom mapping error would
+  // shift it away from x0. The TAIL is legitimately rendered a few px short of
+  // x1 — streamline+smoothing shorten the outline's end — so assert it at least
+  // reaches 75% of the way to the lift point.
+  const span = await darkRowSpan(page, y)
+  expect(span).not.toBeNull()
+  expect(span!.count).toBeGreaterThan(0)
+  expect(Math.abs(span!.minX - x0)).toBeLessThan(8)
+  expect(span!.maxX).toBeGreaterThan(x0 + (x1 - x0) * 0.75)
+
+  // Coordinate probe 2: the stroke centerline is on the finger's row. The
+  // midpoint pixel is ink, and a row 12px off the centerline (outside the 4px
+  // stroke width) is still the #f5f5f5 background — proving the stroke did NOT
+  // land offset above or below where the finger drew.
+  const midPx = await pixelAt(page, mid)
+  for (const ch of midPx.slice(0, 3)) {
+    expect(ch).toBeLessThan(80)
+  }
+  const above = await pixelAt(page, { x: mid.x, y: y - 12 })
+  const below = await pixelAt(page, { x: mid.x, y: y + 12 })
+  for (const px of [above, below]) {
+    for (const ch of px.slice(0, 3)) {
+      expect(ch).toBeGreaterThan(230)
+    }
+  }
 })
 
 test('a remote touch stroke preview appears on a peer and clears when the drawer cancels into a gesture', async ({ browser }) => {
