@@ -4,23 +4,23 @@ import jsPDF from 'jspdf'
 import type { ExportFormat, ExportOptions, ExportState } from '~/types'
 import { toastError } from '~/composables/useToast'
 
+// Generate ISO timestamp for filename
+export function getTimestamp(): string {
+  return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+}
+
+// Generate filename from document name or default
+export function generateFilename(baseName: string, format: ExportFormat): string {
+  const sanitized = baseName.replace(/[^a-z0-9]/gi, '-').toLowerCase()
+  const timestamp = getTimestamp()
+  const ext = format === 'pdf' ? 'pdf' : 'png'
+  return `${sanitized}-${timestamp}.${ext}`
+}
+
 export function useExport() {
   const isExporting = ref(false)
   const progress = ref(0)
   const error = ref<string | null>(null)
-
-  // Generate ISO timestamp for filename
-  function getTimestamp(): string {
-    return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  }
-
-  // Generate filename from document name or default
-  function generateFilename(baseName: string, format: ExportFormat): string {
-    const sanitized = baseName.replace(/[^a-z0-9]/gi, '-').toLowerCase()
-    const timestamp = getTimestamp()
-    const ext = format === 'pdf' ? 'pdf' : 'png'
-    return `${sanitized}-${timestamp}.${ext}`
-  }
 
   // Trigger browser download
   function triggerDownload(dataUrl: string, filename: string): void {

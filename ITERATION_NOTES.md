@@ -4,7 +4,17 @@
 Harden PNG/PDF export with regression tests and fix any bugs they surface: unit tests for the export logic (frontend/composables/useExport.ts — filename generation, PNG via Konva stage toDataURL, PDF via jsPDF embedding) and e2e coverage that opens a whiteboard, draws content, triggers the export dialog, and intercepts the download to verify a real non-empty PNG and PDF are produced. Cover the edge cases: exporting an EMPTY canvas, a canvas with strokes/shapes, a canvas with PDF/image document layers (must not taint — the code already catches the tainted-canvas error), and a large canvas. Fix anything broken (empty-canvas export must not produce a corrupt/blank file, tainted canvas should show a clear error, PDF page should size to the canvas). Keep npm run typecheck + npm test green and the existing e2e suite passing.
 
 ## State
-(empty — first iteration will start the log)
+### Iteration 1 (2026-08-07) — unit tests for export logic
+- Added `frontend/composables/useExport.test.ts` (15 tests, all passing):
+  - `getTimestamp` format (YYYY-MM-DDTHH-mm-ss).
+  - `generateFilename`: default png/pdf ext, sanitization (lowercase + non-alnum → dash, incl. trailing-dash edge), empty/whitespace base survives.
+  - `exportAsPNG`: happy path calls `toDataURL` at 1x with x/y/width/height and downloads auto-named `.png`; custom filename + pixelRatio option; null stage → 'Canvas not available' + no download/toast; tainted SecurityError → cross-origin toast message; generic error → 'Export failed'.
+  - `exportAsPDF`: happy path calls `toDataURL` at 2x, `addImage(dataUrl,'PNG',0,0,w,h)`, `output('blob')`, downloads `.pdf` via blob URL; page sized to canvas + landscape/portrait from aspect ratio; null stage; tainted + generic errors.
+- Refactor in `useExport.ts`: `getTimestamp`/`generateFilename` are now **named module exports** (were closed over inside `useExport()`) so the pure functions are unit-testable. No behavior change. (Mirrors `useShareLink.ts` `shareCopyUrl` pattern.)
+- Tests mock: `jspdf` default export (vi.hoisted class w/ shared addImage/output fns + instance tracker), `~/composables/useToast` `toastError`, `URL.createObjectURL/revokeObjectURL`, and `HTMLAnchorElement.prototype.click` to capture the download `<a>`.
+- Verified: `npm run typecheck` exit 0; `npm test` → 435 passed (44 files).
+- Next: e2e spec `frontend/e2e/export.spec.ts` — real PNG + PDF download interception (`page.waitForEvent('download')`), empty-canvas export, drawn-content export. Inspect `ExportDialog.vue` buttons for selectors (no testids yet — may need to add).
+- Gotcha: `generateFilename('My Design v2!','png')` yields `my-design-v2--...` (trailing dash from `!`) — test asserts the actual output; consider trimming trailing dashes in a later iteration if desired.
 
 ## Context (from prior code review — read before changing code)
 
