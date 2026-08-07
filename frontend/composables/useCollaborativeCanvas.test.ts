@@ -314,6 +314,67 @@ describe('useCollaborativeCanvas — live sync (delta propagation both ways)', (
     // would wipe content); they are tagged with the remote origin.
     expect(broadcasted).toEqual([REMOTE_ORIGIN])
   })
+
+  it('a stale-peer SYNC_FULL that is a strict SUBSET cannot wipe newer content already applied as a delta', () => {
+    // A and B both restored the same board, then converged via full-state
+    // exchange + dedupe (shared CRDT item graph).
+    const a = new Y.Doc()
+    const aEl = a.getArray('elements')
+    importState(a, aEl, [A, B])
+    const b = new Y.Doc()
+    const bEl = b.getArray('elements')
+    importState(b, bEl, [A, B])
+
+    applyRemoteSyncFrame(b, bEl, encodeSyncFrame(Y.encodeStateAsUpdate(a), true))
+    applyRemoteSyncFrame(a, aEl, encodeSyncFrame(Y.encodeStateAsUpdate(b), true))
+
+    // A draws C; B applies it as a plain delta.
+    let deltaC: Uint8Array | null = null
+    a.on('update', (u, origin) => { if (origin === 'draw-C') deltaC = u })
+    a.transact(() => aEl.push([C]), 'draw-C')
+    applyRemoteSyncFrame(b, bEl, encodeSyncFrame(deltaC!, false))
+    expect([...ids(bEl)].sort()).toEqual(['A', 'B', 'C'])
+
+    // A STALE peer (e.g. a reconnecting client that restored the DB state but
+    // never saw C) announces a full state that is a strict SUBSET — and it
+    // lands AFTER B already applied C. This must NOT wipe C: Yjs merges the
+    // subset's structs monotonically (no delete op is present) and the dedupe
+    // collapses the duplicate A/B imports, leaving exactly the union.
+    const stale = new Y.Doc()
+    const staleEl = stale.getArray('elements')
+    importState(stale, staleEl, [A, B])
+    applyRemoteSyncFrame(b, bEl, encodeSyncFrame(Y.encodeStateAsUpdate(stale), true))
+
+    const union = ids(bEl)
+    expect([...union].sort()).toEqual(['A', 'B', 'C'])
+    expect(union).toHaveLength(3)
+    expect(new Set(union).size).toBe(union.length)
+  })
+
+  it('a duplicated SYNC_FULL frame applied twice never duplicates elements', () => {
+    const a = new Y.Doc()
+    const aEl = a.getArray('elements')
+    importState(a, aEl, [A, B, C])
+    const b = new Y.Doc()
+    const bEl = b.getArray('elements')
+    importState(b, bEl, [A, B])
+
+    // A announces its full state once; B converges onto it. This is the
+    // classic "two peers both reply to the same sync-request" / re-delivered
+    // reconnect announce case.
+    const aFull = encodeSyncFrame(Y.encodeStateAsUpdate(a), true)
+    applyRemoteSyncFrame(b, bEl, aFull)
+    expect([...ids(bEl)].sort()).toEqual(['A', 'B', 'C'])
+
+    // The SAME frame arrives again. Re-applying identical Yjs structs is a
+    // no-op and dedupe has nothing left to do — the doc must not grow a
+    // second copy of every element.
+    applyRemoteSyncFrame(b, bEl, aFull)
+    const after = ids(bEl)
+    expect([...after].sort()).toEqual(['A', 'B', 'C'])
+    expect(after).toHaveLength(3)
+    expect(new Set(after).size).toBe(after.length)
+  })
 })
 
 describe('useCollaborativeCanvas — reconnect resume (mocked WebSocket)', () => {
