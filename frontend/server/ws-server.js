@@ -112,7 +112,7 @@ async function fetchJson(url, cookieHeader, timeoutMs, clientOrigin, clientRefer
 // (carried by nginx on the handshake) OR, when nginx does not forward the Cookie
 // header to this relay, as the ?share= query param appended by the client.
 // Verdicts are cached briefly per credential.
-async function isAuthed(cookieHeader, roomId, queryShareToken, req) {
+export async function isAuthed(cookieHeader, roomId, queryShareToken, req, laravelUrl = LARAVEL_URL) {
   if (!cookieHeader && !queryShareToken) return false
   const cookies = parseCookies(cookieHeader || '')
   const now = Date.now()
@@ -127,7 +127,7 @@ async function isAuthed(cookieHeader, roomId, queryShareToken, req) {
   if (session) {
     const cached = authCache.get('sess:' + session)
     if (cached && cached.exp > now) return cached.ok
-    const { status } = await fetchJson(`${LARAVEL_URL}/api/user`, cookieHeader, AUTH_TIMEOUT_MS, clientOrigin, clientReferer)
+    const { status } = await fetchJson(`${laravelUrl}/api/user`, cookieHeader, AUTH_TIMEOUT_MS, clientOrigin, clientReferer)
     const ok = status === 200
     authCache.set('sess:' + session, { ok, exp: now + AUTH_CACHE_TTL_MS })
     if (ok) return true
@@ -141,7 +141,7 @@ async function isAuthed(cookieHeader, roomId, queryShareToken, req) {
     const key = 'share:' + shareToken + ':' + roomId
     const cached = authCache.get(key)
     if (cached && cached.exp > now) return cached.ok
-    const url = `${LARAVEL_URL}/api/shares/${encodeURIComponent(shareToken)}`
+    const url = `${laravelUrl}/api/shares/${encodeURIComponent(shareToken)}`
     const { status, data } = await fetchJson(url, cookieHeader, AUTH_TIMEOUT_MS, clientOrigin, clientReferer)
     const ok = status === 200 && data && data.success && data.data && data.data.whiteboard_id === roomId
     authCache.set(key, { ok, exp: now + AUTH_CACHE_TTL_MS })
@@ -149,6 +149,11 @@ async function isAuthed(cookieHeader, roomId, queryShareToken, req) {
   }
 
   return false
+}
+
+// Test helper: drop cached auth verdicts so a fresh run observes real fetches.
+export function clearAuthCache() {
+  authCache.clear()
 }
 
 /**

@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { resolveStatefulOrigin, relayClientMessage, runHeartbeat, HEARTBEAT_TIMEOUT_MS } from './ws-server'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  resolveStatefulOrigin,
+  relayClientMessage,
+  runHeartbeat,
+  isAuthed,
+  clearAuthCache,
+  HEARTBEAT_TIMEOUT_MS,
+} from './ws-server'
 
 const API_URL = 'http://localhost:8002'
 
@@ -189,5 +196,147 @@ describe('ws-server — runHeartbeat (server-side stale-connection pruning)', ()
     expect(healthy.terminated).toBe(false)
     expect(stale.terminated).toBe(true)
     expect(closed.terminated).toBe(false)
+  })
+})
+
+describe('ws-server — isAuthed (connection gate: owners + share viewers)', () => {
+  // isAuthed performs real `fetch` calls against LARAVEL_URL, so stub the
+  // global fetch with a route table and spy on the calls it makes.
+  function mockFetch(routes: Record<string, { status: number; body?: unknown }>) {
+    const calls: { url: string; init?: { headers?: Record<string, string> } }[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: { headers?: Record<string, string> }) => {
+      calls.push({ url, init })
+      const route = routes[url]
+      return {
+        status: route?.status ?? 404,
+        json: async () => route?.body ?? {},
+      }
+    })
+    return calls
+  }
+
+  function req(extra: Record<string, string | undefined> = {}) {
+    return { headers: { origin: 'http://localhost:3000', ...extra } }
+  }
+
+  beforeEach(() => clearAuthCache())
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('rejects when there is no cookie and no share token — no fetch made', async () => {
+    const calls = mockFetch({})
+    expect(await isAuthed(undefined, 'room-1', undefined, req(), API_URL)).toBe(false)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('accepts a logged-in user whose Sanctum session resolves at /api/user', async () => {
+    const calls = mockFetch({
+      [`${API_URL}/api/user`]: { status: 200, body: { id: 7 } },
+    })
+    const ok = await isAuthed('laravel_session=abc123; foo=bar', 'room-1', undefined, req(), API_URL)
+
+    expect(ok).toBe(true)
+    expect(calls).toHaveLength(1)
+    const call = calls[0]!
+    expect(call.url).toBe(`${API_URL}/api/user`)
+    expect(call.init?.headers?.cookie).toBe('laravel_session=abc123; foo=bar')
+    // The browser's WS-handshake Origin is forwarded so Sanctum's stateful
+    // guard runs session auth (regression for the Iteration-1 auth bug).
+    expect(call.init?.headers?.origin).toBe('http://localhost:3000')
+    expect(call.init?.headers?.referer).toBeUndefined()
+  })
+
+  it('accepts a share viewer whose token resolves to THIS room (cookie transport)', async () => {
+    const calls = mockFetch({
+      [`${API_URL}/api/shares/tok-1`]: {
+        status: 200,
+        body: { success: true, data: { whiteboard_id: 'room-1', role: 'edit' } },
+      },
+    })
+    // No session cookie present → /api/user is never consulted; the share
+    // lookup alone admits the viewer.
+    const ok = await isAuthed('vp_share_token=tok-1', 'room-1', undefined, req(), API_URL)
+
+    expect(ok).toBe(true)
+    expect(calls.map((c) => c.url)).toEqual([`${API_URL}/api/shares/tok-1`])
+  })
+
+  it('falls through to the share token when a session cookie 401s', async () => {
+    const calls = mockFetch({
+      [`${API_URL}/api/user`]: { status: 401 },
+      [`${API_URL}/api/shares/tok-f`]: {
+        status: 200,
+        body: { success: true, data: { whiteboard_id: 'room-1' } },
+      },
+    })
+    // A stale/expired session must not block a valid share viewer — the share
+    // lookup runs after the session check fails.
+    const ok = await isAuthed('laravel_session=stale; vp_share_token=tok-f', 'room-1', undefined, req(), API_URL)
+
+    expect(ok).toBe(true)
+    expect(calls.map((c) => c.url)).toEqual([`${API_URL}/api/user`, `${API_URL}/api/shares/tok-f`])
+  })
+
+  it('accepts a share viewer via the ?share= query param (nginx cookie-less path)', async () => {
+    const calls = mockFetch({
+      [`${API_URL}/api/shares/tok-q`]: {
+        status: 200,
+        body: { success: true, data: { whiteboard_id: 'room-1' } },
+      },
+    })
+    // No session cookie at all — the relay never even calls /api/user.
+    const ok = await isAuthed('', 'room-1', 'tok-q', req(), API_URL)
+
+    expect(ok).toBe(true)
+    expect(calls.map((c) => c.url)).toEqual([`${API_URL}/api/shares/tok-q`])
+  })
+
+  it('prefers the query param token over the cookie token', async () => {
+    const calls = mockFetch({
+      [`${API_URL}/api/shares/tok-q`]: {
+        status: 200,
+        body: { success: true, data: { whiteboard_id: 'room-1' } },
+      },
+      [`${API_URL}/api/shares/tok-c`]: {
+        status: 200,
+        body: { success: true, data: { whiteboard_id: 'room-OTHER' } },
+      },
+    })
+    const ok = await isAuthed('vp_share_token=tok-c', 'room-1', 'tok-q', req(), API_URL)
+
+    expect(ok).toBe(true)
+    expect(calls.map((c) => c.url)).toEqual([`${API_URL}/api/shares/tok-q`])
+  })
+
+  it('rejects a share token that resolves to a DIFFERENT whiteboard (room-scoped)', async () => {
+    const calls = mockFetch({
+      [`${API_URL}/api/shares/tok-x`]: {
+        status: 200,
+        body: { success: true, data: { whiteboard_id: 'room-OTHER' } },
+      },
+    })
+    const ok = await isAuthed('vp_share_token=tok-x', 'room-1', undefined, req(), API_URL)
+
+    expect(ok).toBe(false)
+    expect(calls.map((c) => c.url)).toEqual([`${API_URL}/api/shares/tok-x`])
+  })
+
+  it('fails closed when Laravel is unreachable (fetch rejects)', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('connect ECONNREFUSED')
+    })
+    const ok = await isAuthed('laravel_session=abc123', 'room-1', undefined, req(), API_URL)
+    expect(ok).toBe(false)
+  })
+
+  it('caches the session verdict so repeat connections skip the /api/user round-trip', async () => {
+    const calls = mockFetch({
+      [`${API_URL}/api/user`]: { status: 200, body: { id: 7 } },
+    })
+    const creds = 'laravel_session=cacheme'
+
+    await expect(isAuthed(creds, 'room-1', undefined, req(), API_URL)).resolves.toBe(true)
+    await expect(isAuthed(creds, 'room-1', undefined, req(), API_URL)).resolves.toBe(true)
+
+    expect(calls).toHaveLength(1)
   })
 })
