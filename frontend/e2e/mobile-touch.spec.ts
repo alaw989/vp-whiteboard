@@ -155,6 +155,11 @@ async function canvasBox(page: Page) {
   return box
 }
 
+/** Wait until the real-time connection badge reads "connected". */
+async function waitForConnected(page: Page) {
+  await expect(page.getByText('connected', { exact: true })).toBeVisible({ timeout: 20000 })
+}
+
 test('mobile toolbar selects pen; a touch pen stroke lands on the canvas', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
@@ -375,6 +380,85 @@ test('a two-finger gesture started mid-stroke cancels the partial stroke (regres
     { type: 'pointerup', pointerId: 2, clientX: cx + spread, clientY: cy, buttons: 0 },
   ])
   await expect.poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] }).toBe(baseline)
+})
+
+test('a remote touch stroke preview appears on a peer and clears when the drawer cancels into a gesture', async ({ browser }) => {
+  // Two touch browsers logged in as the same owner: each tab gets a RANDOM
+  // per-page userId (pages/whiteboard/[id].vue), so the owner tab's in-flight
+  // stroke is NOT filtered as "own" on the peer tab and renders as a live
+  // remote preview — the same setup collab.spec proves for committed elements,
+  // here for the IN-PROGRESS active-stroke broadcast.
+  const mobile = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }
+  const ownerCtx = await browser.newContext(mobile)
+  const peerCtx = await browser.newContext(mobile)
+  try {
+    const owner = await ownerCtx.newPage()
+    await login(owner)
+    const whiteboardId = await createWhiteboard(owner)
+    await expect(owner.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+    await waitForConnected(owner)
+
+    // Peer tab joins the same board with its own session (same account, fresh
+    // random userId). Both are in the relay's room before we draw.
+    const peer = await peerCtx.newPage()
+    await login(peer)
+    await peer.goto(`/whiteboard/${whiteboardId}`)
+    await expect(peer.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+    await waitForConnected(peer)
+
+    const ownerBaseline = await canvasFingerprint(owner)
+    const peerBaseline = await canvasFingerprint(peer)
+
+    // Owner picks the pen from the md:hidden toolbar and starts a stroke with
+    // finger 1 — down + a couple of moves, but NO pointerup, so it stays an
+    // in-progress active stroke.
+    const mobileToolbar = owner.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
+    await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+    await mobileToolbar.getByTitle('Pen (P)').click()
+    await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+
+    const box = await canvasBox(owner)
+    const sx = box.x + box.width * 0.35
+    const sy = box.y + box.height * 0.35
+    await touchPointer(owner, [
+      { type: 'pointerdown', pointerId: 1, clientX: sx, clientY: sy },
+      { type: 'pointermove', pointerId: 1, clientX: sx + 20, clientY: sy + 10 },
+      { type: 'pointermove', pointerId: 1, clientX: sx + 40, clientY: sy + 20 },
+    ])
+
+    // The peer must see the in-progress stroke as a live preview (pixels
+    // appear) — NOT wait for a commit that never comes.
+    await expect
+      .poll(() => canvasFingerprint(peer), { timeout: 15000, intervals: [250] })
+      .not.toBe(peerBaseline)
+
+    // Finger 2 lands while the stroke is in flight: the app must treat this
+    // as a gesture and CANCEL the partial stroke (Iteration-3 fix). No finger
+    // moves afterwards, so the viewport is unchanged — a pure cancel.
+    await touchPointer(owner, [
+      { type: 'pointerdown', pointerId: 2, clientX: sx + 80, clientY: sy + 30 },
+      { type: 'pointerup', pointerId: 1, clientX: sx + 40, clientY: sy + 20, buttons: 0 },
+      { type: 'pointerup', pointerId: 2, clientX: sx + 80, clientY: sy + 30, buttons: 0 },
+    ])
+
+    // The peer's preview must clear (fingerprint returns to baseline) and the
+    // owner must NOT have committed a stray element either — the cancel
+    // broadcast reaches the peer, so no stuck preview remains.
+    await expect
+      .poll(() => canvasFingerprint(peer), { timeout: 15000, intervals: [250] })
+      .toBe(peerBaseline)
+    await expect
+      .poll(() => canvasFingerprint(owner), { timeout: 15000, intervals: [250] })
+      .toBe(ownerBaseline)
+
+    // Settle: the preview stays gone (it was cancelled, not committed).
+    await peer.waitForTimeout(750)
+    expect(await canvasFingerprint(peer)).toBe(peerBaseline)
+    expect(await canvasFingerprint(owner)).toBe(ownerBaseline)
+  } finally {
+    await ownerCtx.close()
+    await peerCtx.close()
+  }
 })
 
 test('mobile toolbar color and size selection flow through to a stroke', async ({ page }) => {
