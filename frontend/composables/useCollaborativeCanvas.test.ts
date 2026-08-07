@@ -447,4 +447,47 @@ describe('useCollaborativeCanvas — reconnect resume (mocked WebSocket)', () =>
     expectConverged(a, ['A1', 'B1', 'A2', 'A3', 'B2'])
     expectConverged(b, ['A1', 'B1', 'A2', 'A3', 'B2'])
   })
+
+  it('timer hygiene: repeated close/reopen cycles spawn exactly one reconnect socket per close, a close during backoff never double-schedules, and a settled reconnect leaks no pending timers', async () => {
+    const a = useCollaborativeCanvas('board-1', 'user-a', 'A')
+    const a0 = FakeWebSocket.instances[0]!
+    a0._open()
+    expect(FakeWebSocket.instances).toHaveLength(1)
+
+    // First drop -> exactly one reconnect socket is created.
+    a0._close(1006)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    const a1 = FakeWebSocket.instances[1]!
+    a1._open()
+
+    // Second drop -> again exactly one reconnect socket (no accumulation).
+    a1._close(1006)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(FakeWebSocket.instances).toHaveLength(3)
+    const a2 = FakeWebSocket.instances[2]!
+    a2._open()
+
+    // A close landing DURING the reconnect backoff (e.g. a duplicate close
+    // event) must not double-schedule a second socket: scheduleReconnect
+    // bails when a timer is already pending, so only one reconnect fires.
+    a2._close(1006)
+    await vi.advanceTimersByTimeAsync(500) // still inside the >=1000ms backoff
+    expect(FakeWebSocket.instances).toHaveLength(3)
+    a2._close(1006) // spurious second close while the backoff is pending
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(FakeWebSocket.instances).toHaveLength(4) // exactly one new socket
+    const a3 = FakeWebSocket.instances[3]!
+
+    // Once reconnected and settled, the pending reconnect timer must have
+    // been cleared on open: idle time spawns no stray sockets.
+    a3._open()
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000)
+    expect(FakeWebSocket.instances).toHaveLength(4)
+
+    // cleanup() tears the heartbeat interval down; nothing spawns afterwards.
+    a.cleanup()
+    await vi.advanceTimersByTimeAsync(60 * 1000)
+    expect(FakeWebSocket.instances).toHaveLength(4)
+  })
 })
