@@ -27,6 +27,7 @@
           ref="fileInput"
           type="file"
           class="sr-only"
+          data-testid="upload-file-input"
           :accept="acceptedTypes"
           @change="handleFileSelect"
         />
@@ -63,6 +64,7 @@
             v-if="!uploading && !uploadSuccess"
             class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
             title="Upload"
+            data-testid="upload-submit"
             @click="startUpload"
           >
             <Icon name="mdi:upload" class="w-5 h-5" />
