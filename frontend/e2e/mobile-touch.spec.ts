@@ -1,169 +1,41 @@
 import { test, expect, type Page } from '@playwright/test'
-import { E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD } from './global-setup'
+import {
+  login,
+  createWhiteboard,
+  canvasFingerprint,
+  pixelAt,
+  touchPointer,
+  touchStroke,
+  canvasBox,
+  waitForConnected,
+} from './helpers'
 
 // Mobile device emulation: small viewport + touch + mobile UA, so the app
 // renders the md:hidden bottom toolbar and pointer events can be `touch`.
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
 
-async function login(page: Page) {
-  await page.goto('/login')
-  await page.fill('#email', E2E_OWNER_EMAIL)
-  await page.fill('#password', E2E_OWNER_PASSWORD)
-  await page.click('button[type="submit"]')
-  await page.waitForURL(/\/(whiteboards?|$)/, { timeout: 15000 })
+async function waitForCanvas(page: Page) {
+  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
 }
 
-async function createWhiteboard(page: Page): Promise<string> {
-  await page.goto('/whiteboard/new')
-  await page.waitForURL(
-    (url) => /^\/whiteboard\/[^/]+$/.test(url.pathname) && !url.pathname.endsWith('/new'),
-    { timeout: 15000 },
-  )
-  const pathname = new URL(page.url()).pathname
-  return pathname.substring(pathname.lastIndexOf('/') + 1)
+async function selectMobilePen(page: Page) {
+  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
+  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+  await mobileToolbar.getByTitle('Pen (P)').click()
+  await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
 }
 
-/**
- * Coarse, deterministic hash of the main Konva layer's rendered pixels — same
- * helper as collab.spec.ts. Read-only proof that a shape actually rendered.
- */
-function canvasFingerprint(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const container = document.querySelector('.whiteboard-container')
-    if (!container) return 'no-container'
-    const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
-    if (canvases.length === 0) return 'no-canvas'
-    const main = canvases.reduce((a, b) =>
-      a.width * a.height >= b.width * b.height ? a : b,
-    )
-    const ctx = main.getContext('2d')!
-    const data = ctx.getImageData(0, 0, main.width, main.height).data
-    const grid = 24
-    const gw = grid
-    const gh = Math.max(1, Math.round((grid * main.height) / main.width))
-    const sums = new Array<number>(gw * gh).fill(0)
-    for (let y = 0; y < main.height; y++) {
-      const gy = Math.min(gh - 1, Math.floor((y * gh) / main.height))
-      for (let x = 0; x < main.width; x++) {
-        const gx = Math.min(gw - 1, Math.floor((x * gw) / main.width))
-        sums[gy * gw + gx]! += data[(y * main.width + x) * 4]!
-      }
-    }
-    const per = Math.floor((main.width * main.height) / (gw * gh))
-    let h = 2166136261
-    for (let i = 0; i < sums.length; i++) {
-      h ^= Math.round(sums[i]! / per)
-      h = Math.imul(h, 16777619)
-    }
-    return (h >>> 0).toString(16)
-  })
-}
-
-/**
- * Sample a single RGBA pixel from the largest Konva layer canvas at a CSS
- * (viewport) coordinate, mapping through the canvas's own devicePixelRatio.
- * The highlighter renders at globalAlpha 0.5, so a black highlight over the
- * #f5f5f5 background blends to ~mid-gray while a pen stroke is opaque black —
- * pixel color distinguishes which tool actually rendered.
- */
-function pixelAt(page: Page, point: { x: number; y: number }): Promise<[number, number, number, number]> {
-  return page.evaluate(({ x, y }) => {
-    const container = document.querySelector('.whiteboard-container')
-    if (!container) return [0, 0, 0, 0]
-    const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
-    if (canvases.length === 0) return [0, 0, 0, 0]
-    const main = canvases.reduce((a, b) =>
-      a.width * a.height >= b.width * b.height ? a : b,
-    )
-    const rect = main.getBoundingClientRect()
-    const px = Math.round((x - rect.left) * (main.width / rect.width))
-    const py = Math.round((y - rect.top) * (main.height / rect.height))
-    const d = main.getContext('2d')!.getImageData(px, py, 1, 1).data
-    return [d[0], d[1], d[2], d[3]]
-  }, point)
-}
-
-/**
- * Dispatch a real PointerEvent sequence (pointerType 'touch') on the Konva
- * stage content element. Playwright's mouse API always emits pointerType
- * 'mouse' and touchscreen.tap() fires no pointermove, so neither can drive a
- * Konva stroke (down → moves → up). Konva's stage listens on the content div
- * and computes positions from clientX/clientY, so synthetic events carrying
- * those coords behave like real touches.
- */
-async function touchPointer(
-  page: Page,
-  events: Array<{
-    type: 'pointerdown' | 'pointermove' | 'pointerup'
-    pointerId: number
-    clientX: number
-    clientY: number
-    pressure?: number
-    buttons?: number
-  }>,
-) {
-  await page.evaluate((evts) => {
-    const canvas = document.querySelector('.whiteboard-container canvas')
-    if (!canvas) throw new Error('stage canvas not found')
-    const content = canvas.parentElement
-    if (!content) throw new Error('stage content element not found')
-    for (const evt of evts) {
-      content.dispatchEvent(
-        new PointerEvent(evt.type, {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          pointerId: evt.pointerId,
-          pointerType: 'touch',
-          isPrimary: evt.pointerId === 1,
-          clientX: evt.clientX,
-          clientY: evt.clientY,
-          pressure: evt.pressure ?? 0.5,
-          buttons: evt.buttons ?? 1,
-        }),
-      )
-    }
-  }, events)
-}
-
-/** A single-finger touch pen stroke from start to end (pressure 0.5). */
-async function touchStroke(page: Page, start: { x: number; y: number }, end: { x: number; y: number }) {
-  const events: Array<{
-    type: 'pointerdown' | 'pointermove' | 'pointerup'
-    pointerId: number
-    clientX: number
-    clientY: number
-    buttons?: number
-  }> = [{ type: 'pointerdown', pointerId: 1, clientX: start.x, clientY: start.y }]
-  const steps = 10
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps
-    events.push({
-      type: 'pointermove',
-      pointerId: 1,
-      clientX: start.x + (end.x - start.x) * t,
-      clientY: start.y + (end.y - start.y) * t,
-    })
-  }
-  events.push({ type: 'pointerup', pointerId: 1, clientX: end.x, clientY: end.y, buttons: 0 })
-  await touchPointer(page, events)
-}
-
-async function canvasBox(page: Page) {
-  const box = await page.locator('.whiteboard-container canvas').first().boundingBox()
-  if (!box) throw new Error('whiteboard stage not visible')
-  return box
-}
-
-/** Wait until the real-time connection badge reads "connected". */
-async function waitForConnected(page: Page) {
-  await expect(page.getByText('connected', { exact: true })).toBeVisible({ timeout: 20000 })
+async function selectMobileHighlighter(page: Page) {
+  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
+  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
+  await mobileToolbar.getByTitle('Highlighter (B)').click()
+  await expect(mobileToolbar.getByTitle('Highlighter (B)')).toHaveClass(/bg-blue-100/)
 }
 
 test('mobile toolbar selects pen; a touch pen stroke lands on the canvas', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
-  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+  await waitForCanvas(page)
 
   // md:hidden bottom toolbar is shown on a mobile viewport.
   const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
@@ -171,8 +43,7 @@ test('mobile toolbar selects pen; a touch pen stroke lands on the canvas', async
 
   // Pick the pen from the mobile primary strip and wait until it's active
   // (currentTool must propagate to the canvas before we draw).
-  await mobileToolbar.getByTitle('Pen (P)').click()
-  await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+  await selectMobilePen(page)
 
   const baseline = await canvasFingerprint(page)
   const box = await canvasBox(page)
@@ -190,14 +61,13 @@ test('mobile toolbar selects pen; a touch pen stroke lands on the canvas', async
 test('mobile toolbar selects the highlighter; a touch highlight renders as a translucent stroke', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
-  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+  await waitForCanvas(page)
 
   const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
   await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
 
   // Highlighter (B) is in the collapsed primary strip, like the pen.
-  await mobileToolbar.getByTitle('Highlighter (B)').click()
-  await expect(mobileToolbar.getByTitle('Highlighter (B)')).toHaveClass(/bg-blue-100/)
+  await selectMobileHighlighter(page)
 
   const baseline = await canvasFingerprint(page)
   const box = await canvasBox(page)
@@ -228,8 +98,7 @@ test('mobile toolbar selects the highlighter; a touch highlight renders as a tra
 
   // The pen over the same canvas at its own midpoint is opaque black — the
   // contrast confirms the sampled translucency is highlighter-specific.
-  await mobileToolbar.getByTitle('Pen (P)').click()
-  await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+  await selectMobilePen(page)
   await touchStroke(page, penStart, penEnd)
   await expect
     .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
@@ -244,12 +113,9 @@ test('mobile toolbar selects the highlighter; a touch highlight renders as a tra
 test('two-finger pan moves the viewport without committing a stroke', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
-  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+  await waitForCanvas(page)
 
-  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
-  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
-  await mobileToolbar.getByTitle('Pen (P)').click()
-  await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+  await selectMobilePen(page)
 
   const baseline = await canvasFingerprint(page)
   const box = await canvasBox(page)
@@ -289,12 +155,9 @@ test('two-finger pan moves the viewport without committing a stroke', async ({ p
 test('two-finger pinch-zoom zooms the viewport without committing a stroke', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
-  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+  await waitForCanvas(page)
 
-  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
-  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
-  await mobileToolbar.getByTitle('Pen (P)').click()
-  await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+  await selectMobilePen(page)
 
   const baseline = await canvasFingerprint(page)
   const box = await canvasBox(page)
@@ -335,12 +198,9 @@ test('two-finger pinch-zoom zooms the viewport without committing a stroke', asy
 test('a two-finger gesture started mid-stroke cancels the partial stroke (regression)', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
-  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+  await waitForCanvas(page)
 
-  const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
-  await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
-  await mobileToolbar.getByTitle('Pen (P)').click()
-  await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+  await selectMobilePen(page)
 
   const baseline = await canvasFingerprint(page)
   const box = await canvasBox(page)
@@ -395,7 +255,7 @@ test('a remote touch stroke preview appears on a peer and clears when the drawer
     const owner = await ownerCtx.newPage()
     await login(owner)
     const whiteboardId = await createWhiteboard(owner)
-    await expect(owner.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+    await waitForCanvas(owner)
     await waitForConnected(owner)
 
     // Peer tab joins the same board with its own session (same account, fresh
@@ -403,7 +263,7 @@ test('a remote touch stroke preview appears on a peer and clears when the drawer
     const peer = await peerCtx.newPage()
     await login(peer)
     await peer.goto(`/whiteboard/${whiteboardId}`)
-    await expect(peer.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+    await waitForCanvas(peer)
     await waitForConnected(peer)
 
     const ownerBaseline = await canvasFingerprint(owner)
@@ -412,10 +272,7 @@ test('a remote touch stroke preview appears on a peer and clears when the drawer
     // Owner picks the pen from the md:hidden toolbar and starts a stroke with
     // finger 1 — down + a couple of moves, but NO pointerup, so it stays an
     // in-progress active stroke.
-    const mobileToolbar = owner.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
-    await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
-    await mobileToolbar.getByTitle('Pen (P)').click()
-    await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+    await selectMobilePen(owner)
 
     const box = await canvasBox(owner)
     const sx = box.x + box.width * 0.35
@@ -464,12 +321,11 @@ test('a remote touch stroke preview appears on a peer and clears when the drawer
 test('mobile toolbar color and size selection flow through to a stroke', async ({ page }) => {
   await login(page)
   await createWhiteboard(page)
-  await expect(page.locator('.whiteboard-container canvas').first()).toBeAttached({ timeout: 20000 })
+  await waitForCanvas(page)
 
   const mobileToolbar = page.getByRole('toolbar', { name: 'Mobile whiteboard tools' })
   await expect(mobileToolbar).toBeVisible({ timeout: 20000 })
-  await mobileToolbar.getByTitle('Pen (P)').click()
-  await expect(mobileToolbar.getByTitle('Pen (P)')).toHaveClass(/bg-blue-100/)
+  await selectMobilePen(page)
 
   // Expand the toolbar via the collapsed color swatch (the strip's button whose
   // child swatch div has the rounded size classes).

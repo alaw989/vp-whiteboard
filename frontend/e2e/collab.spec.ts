@@ -1,40 +1,16 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
-import { E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD } from './global-setup'
+import {
+  login,
+  createWhiteboard,
+  canvasFingerprint,
+  pixelAt,
+  waitForConnected,
+  expectCanvasToChange,
+} from './helpers'
 
 // Local dev ports (must match playwright.config.ts webServer + frontend/.env).
 const LARAVEL_URL = process.env.E2E_LARAVEL_URL || 'http://localhost:8002'
 const FRONTEND_URL = process.env.E2E_FRONTEND_URL || 'http://localhost:3000'
-
-async function login(page: Page) {
-  await page.goto('/login')
-  await page.fill('#email', E2E_OWNER_EMAIL)
-  await page.fill('#password', E2E_OWNER_PASSWORD)
-  await page.click('button[type="submit"]')
-  await page.waitForURL(/\/(whiteboards?|$)/, { timeout: 15000 })
-}
-
-async function createWhiteboard(page: Page): Promise<string> {
-  await page.goto('/whiteboard/new')
-  // The /new route POSTs the board then redirects to /whiteboard/{id}; wait
-  // for the real board URL, NOT the /whiteboard/new creation page (whose last
-  // path segment is "new", not the UUID).
-  await page.waitForURL(
-    (url) => /^\/whiteboard\/[^/]+$/.test(url.pathname) && !url.pathname.endsWith('/new'),
-    { timeout: 15000 },
-  )
-  const pathname = new URL(page.url()).pathname
-  return pathname.substring(pathname.lastIndexOf('/') + 1)
-}
-
-/**
- * Wait until the real-time connection badge reads "connected". The relay only
- * sets it once the WS handshake authenticated — the owner via the
- * laravel_session cookie, the share viewer via the /s/{token} share token — so
- * this is the assertion that both auth paths were exercised end to end.
- */
-async function waitForConnected(page: Page) {
-  await expect(page.getByText('connected', { exact: true })).toBeVisible({ timeout: 20000 })
-}
 
 /**
  * Owner-only: create an edit-role share link via the API. The request must
@@ -67,46 +43,6 @@ async function createShareLink(context: BrowserContext, whiteboardId: string): P
   return body.data.url
 }
 
-/**
- * Coarse, deterministic hash of the main Konva layer's rendered pixels. The
- * canvas is reduced to a 24-wide grid of average luma (via getImageData, NOT
- * drawImage — headless Chromium serves a stale surface to drawImage, so a
- * freshly-drawn stroke would be invisible to it), so a stroke anywhere shifts
- * the hash. Read-only — proves a shape actually rendered, without touching app
- * internals.
- */
-function canvasFingerprint(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const container = document.querySelector('.whiteboard-container')
-    if (!container) return 'no-container'
-    const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
-    if (canvases.length === 0) return 'no-canvas'
-    const main = canvases.reduce((a, b) =>
-      a.width * a.height >= b.width * b.height ? a : b,
-    )
-    const ctx = main.getContext('2d')!
-    const data = ctx.getImageData(0, 0, main.width, main.height).data
-    const grid = 24
-    const gw = grid
-    const gh = Math.max(1, Math.round((grid * main.height) / main.width))
-    const sums = new Array<number>(gw * gh).fill(0)
-    for (let y = 0; y < main.height; y++) {
-      const gy = Math.min(gh - 1, Math.floor((y * gh) / main.height))
-      for (let x = 0; x < main.width; x++) {
-        const gx = Math.min(gw - 1, Math.floor((x * gw) / main.width))
-        sums[gy * gw + gx]! += data[(y * main.width + x) * 4]!
-      }
-    }
-    const per = Math.floor((main.width * main.height) / (gw * gh))
-    let h = 2166136261
-    for (let i = 0; i < sums.length; i++) {
-      h ^= Math.round(sums[i]! / per)
-      h = Math.imul(h, 16777619)
-    }
-    return (h >>> 0).toString(16)
-  })
-}
-
 async function selectPen(page: Page) {
   await page.getByRole('button', { name: 'Pen tool, press P', exact: true }).click()
   await expect(
@@ -128,44 +64,6 @@ async function drawStroke(page: Page) {
   await page.mouse.down()
   await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5, { steps: 8 })
   await page.mouse.up()
-}
-
-/**
- * Sample a single RGBA pixel from the largest Konva layer canvas at a CSS
- * (viewport) coordinate, mapping through the canvas's own devicePixelRatio.
- * The highlighter renders at opacity 0.5, so a black highlight over the
- * #f5f5f5 background blends to ~mid-gray while a pen stroke is opaque black —
- * pixel color distinguishes which tool actually rendered.
- */
-function pixelAt(page: Page, point: { x: number; y: number }): Promise<[number, number, number, number]> {
-  return page.evaluate(({ x, y }) => {
-    const container = document.querySelector('.whiteboard-container')
-    if (!container) return [0, 0, 0, 0]
-    const canvases = Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[]
-    if (canvases.length === 0) return [0, 0, 0, 0]
-    const main = canvases.reduce((a, b) =>
-      a.width * a.height >= b.width * b.height ? a : b,
-    )
-    const rect = main.getBoundingClientRect()
-    const px = Math.round((x - rect.left) * (main.width / rect.width))
-    const py = Math.round((y - rect.top) * (main.height / rect.height))
-    const d = main.getContext('2d')!.getImageData(px, py, 1, 1).data
-    return [d[0], d[1], d[2], d[3]]
-  }, point)
-}
-
-/**
- * Poll `page` until its canvas pixels differ from `baseline`, then re-check
- * after a settle window — proving a COMMITTED element arrived via the WS relay
- * (a transient remote active-stroke preview would vanish again on settle).
- */
-async function expectCanvasToChange(page: Page, baseline: string) {
-  await expect.poll(() => canvasFingerprint(page), {
-    timeout: 20000,
-    intervals: [250],
-  }).not.toBe(baseline)
-  await page.waitForTimeout(750)
-  expect(await canvasFingerprint(page)).not.toBe(baseline)
 }
 
 test('owner and anonymous share viewer stay in live sync (both directions, no refresh)', async ({ browser }) => {
