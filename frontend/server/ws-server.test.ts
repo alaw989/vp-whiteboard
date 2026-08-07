@@ -14,6 +14,12 @@ import {
   clearAuthCache,
   isEntryPoint,
   HEARTBEAT_TIMEOUT_MS,
+  EMPTY_ROOM_CLEANUP_DELAY_MS,
+  removeClientFromRoom,
+  scheduleEmptyRoomCleanup,
+  handleClientClose,
+  handleClientError,
+  registerLifecycleHandlers,
 } from './ws-server'
 
 const API_URL = 'http://localhost:8002'
@@ -258,6 +264,232 @@ describe('ws-server — runHeartbeat (server-side stale-connection pruning)', ()
     expect(healthy.terminated).toBe(false)
     expect(stale.terminated).toBe(true)
     expect(closed.terminated).toBe(false)
+  })
+})
+
+describe('ws-server — connection lifecycle (close/error/cleanup) — regression for leaks', () => {
+  // The close/error/cleanup logic used to be buried in the connection callback
+  // (untested) and the error path leaked: it removed the client from its room
+  // but never decremented totalConnections, never broadcast `user-left`, and
+  // never scheduled the empty-room cleanup. These tests lock the extracted
+  // helpers — and prove heartbeat termination lands in the close path too.
+  //
+  // Fake timers keep the 60s empty-room cleanup deterministic.
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  function fakeSocket(id: string, opts: { roomId?: string; userId?: string; userName?: string } = {}) {
+    const handlers: Record<string, (arg?: any) => void> = {}
+    const ws: any = {
+      id,
+      roomId: opts.roomId,
+      userId: opts.userId ?? `user-${id}`,
+      userName: opts.userName ?? `User ${id}`,
+      readyState: 1,
+      lastPong: Date.now(),
+      sent: [] as { json: Record<string, unknown> }[],
+      send(d: string) {
+        ws.sent.push({ json: JSON.parse(d) })
+      },
+      on(evt: string, cb: (arg?: any) => void) {
+        handlers[evt] = cb
+      },
+      emit(evt: string, arg?: any) {
+        handlers[evt]?.(arg)
+      },
+      terminate() {
+        ws.readyState = 3
+        handlers.close?.()
+      },
+    }
+    return ws
+  }
+
+  // Mimics the real broadcastToRoom: sends the payload to every OPEN peer still
+  // in the room, and records the call.
+  function makeBroadcastRecorder(rooms: Map<string, Set<any>>) {
+    const calls: { roomId: string; msg: Record<string, unknown> }[] = []
+    const fn = (roomId: string, msg: Record<string, unknown>) => {
+      calls.push({ roomId, msg })
+      const room = rooms.get(roomId)
+      if (room) {
+        for (const client of room) {
+          if (client.readyState === 1 && typeof client.send === 'function') {
+            client.send(JSON.stringify(msg))
+          }
+        }
+      }
+    }
+    return { calls, fn }
+  }
+
+  it('close removes the client from its room, decrements totalConnections, and broadcasts user-left to remaining peers only', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const c = fakeSocket('c', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b, c])]])
+    const counter = { value: 3 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('close')
+
+    expect(counter.value).toBe(2)
+    expect(rooms.get('r1')!.has(a)).toBe(false)
+    expect(rooms.get('r1')!.size).toBe(2)
+
+    // user-left is announced once, to the room that still has peers.
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0]!.roomId).toBe('r1')
+    expect(recorder.calls[0]!.msg.type).toBe('user-left')
+    expect(recorder.calls[0]!.msg.userId).toBe('user-a')
+    expect(recorder.calls[0]!.msg.timestamp).toEqual(expect.any(Number))
+
+    // Both remaining OPEN peers actually received the frame; the closer (a) did not.
+    expect(b.sent).toEqual([{ json: { type: 'user-left', userId: 'user-a', timestamp: expect.any(Number) } }])
+    expect(c.sent).toEqual([{ json: { type: 'user-left', userId: 'user-a', timestamp: expect.any(Number) } }])
+    expect(a.sent).toEqual([])
+
+    // Room is not empty → NO cleanup timer is scheduled; it survives past the delay.
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(rooms.has('r1')).toBe(true)
+  })
+
+  it('does NOT broadcast user-left when the room just became empty (nobody to receive), but schedules cleanup', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a])]])
+    const counter = { value: 1 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('close')
+
+    expect(counter.value).toBe(0)
+    expect(recorder.calls).toHaveLength(0)
+    expect(a.sent).toEqual([])
+
+    // The empty room is deleted once the delayed cleanup fires…
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(rooms.has('r1')).toBe(false)
+  })
+
+  it('delayed empty-room cleanup deletes the room only if it is STILL empty when it fires', () => {
+    // Empty room → deleted after the delay.
+    const roomsEmpty = new Map<string, Set<any>>([['r1', new Set()]])
+    scheduleEmptyRoomCleanup('r1', roomsEmpty)
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(roomsEmpty.has('r1')).toBe(false)
+
+    // A client rejoined within the window → the room survives the timer.
+    const rejoined = fakeSocket('x', { roomId: 'r2' })
+    const roomsRejoined = new Map<string, Set<any>>([['r2', new Set([rejoined])]])
+    scheduleEmptyRoomCleanup('r2', roomsRejoined)
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(roomsRejoined.has('r2')).toBe(true)
+    expect(roomsRejoined.get('r2')!.size).toBe(1)
+  })
+
+  it('error path performs the SAME cleanup as close (decrement, user-left, cleanup) — no leak', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b])]])
+    const counter = { value: 2 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('error', new Error('boom'))
+
+    expect(counter.value).toBe(1)
+    expect(rooms.get('r1')!.has(a)).toBe(false)
+    expect(rooms.get('r1')!.size).toBe(1)
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0]!.msg.type).toBe('user-left')
+    expect(recorder.calls[0]!.msg.userId).toBe('user-a')
+    expect(b.sent).toHaveLength(1)
+  })
+
+  it('error on a solo client empties the room and schedules its cleanup (no room leak)', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a])]])
+    const counter = { value: 1 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('error', new Error('boom'))
+
+    expect(counter.value).toBe(0)
+    expect(recorder.calls).toHaveLength(0)
+    expect(rooms.has('r1')).toBe(true)
+    vi.advanceTimersByTime(EMPTY_ROOM_CLEANUP_DELAY_MS)
+    expect(rooms.has('r1')).toBe(false)
+  })
+
+  it('heartbeat-terminated socket drives the close path (cleanup runs, no leak)', () => {
+    // runHeartbeat calls ws.terminate() on a stale client; a real socket then
+    // fires its 'close' event, which must run the SAME cleanup as a manual
+    // close. The fake socket's terminate() emits 'close' to simulate that.
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b])]])
+    const counter = { value: 2 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.lastPong = 0
+    const now = Date.now() + HEARTBEAT_TIMEOUT_MS + 1000
+    runHeartbeat([a], now)
+
+    expect(a.readyState).toBe(3)
+    expect(counter.value).toBe(1)
+    expect(rooms.get('r1')!.has(a)).toBe(false)
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0]!.msg.type).toBe('user-left')
+    expect(b.sent).toHaveLength(1)
+  })
+
+  it('a socket that never joined a room (auth-reject path) is a no-op for room state but still un-accounted', () => {
+    // The 4001-reject path increments the counter on connect but never adds the
+    // socket to a room; its eventual close must decrement without crashing,
+    // broadcasting, or creating a phantom room entry (getRoom used to CREATE it).
+    const a = fakeSocket('a', { roomId: 'ghost' })
+    const rooms = new Map<string, Set<any>>()
+    const counter = { value: 1 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    registerLifecycleHandlers(a, rooms, counter, recorder.fn)
+    a.emit('close')
+
+    expect(counter.value).toBe(0)
+    expect(rooms.size).toBe(0)
+    expect(recorder.calls).toHaveLength(0)
+  })
+
+  it('removeClientFromRoom guards against double-decrement (idempotent teardown)', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a])]])
+    const counter = { value: 1 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    // The same socket closes twice (belt-and-suspenders) — the counter must
+    // not go negative and the room must not be double-broadcast.
+    handleClientClose(a, rooms, counter, recorder.fn, 1000, 0)
+    handleClientClose(a, rooms, counter, recorder.fn, 2000, 0)
+
+    expect(counter.value).toBe(0)
+    expect(recorder.calls).toHaveLength(0)
+  })
+
+  it('handleClientClose accepts an injectable clock for deterministic timestamps', () => {
+    const a = fakeSocket('a', { roomId: 'r1' })
+    const b = fakeSocket('b', { roomId: 'r1' })
+    const rooms = new Map<string, Set<any>>([['r1', new Set([a, b])]])
+    const counter = { value: 2 }
+    const recorder = makeBroadcastRecorder(rooms)
+
+    handleClientClose(a, rooms, counter, recorder.fn, 1234567890)
+
+    expect(recorder.calls[0]!.msg.timestamp).toBe(1234567890)
+    expect(b.sent).toEqual([{ json: { type: 'user-left', userId: 'user-a', timestamp: 1234567890 } }])
   })
 })
 

@@ -6,6 +6,7 @@ import {
   decodeSyncFrame,
   applyRemoteSyncFrame,
   deduplicateYjsElements,
+  applyPresenceMessage,
   REMOTE_ORIGIN,
 } from './useCollaborativeCanvas'
 
@@ -20,6 +21,55 @@ describe('useCollaborativeCanvas — WebSocket reconnect policy', () => {
     // 4001 = "Authentication required": a logged-out viewer of a raw link or
     // an expired/revoked share token. Auto-retrying just hammers the relay.
     expect(shouldReconnectOnClose(4001)).toBe(false)
+  })
+})
+
+describe('useCollaborativeCanvas — relay presence messages (user-joined/user-left)', () => {
+  it('seeds an immediate presence entry on user-joined', () => {
+    const users = new Map<string, any>()
+    applyPresenceMessage(users, { type: 'user-joined', userId: 'peer-1', userName: 'Ada' }, 1000)
+
+    expect(users.get('peer-1')).toEqual({
+      id: 'peer-1',
+      name: 'Ada',
+      color: expect.any(String),
+      lastSeen: 1000,
+    })
+  })
+
+  it('user-joined is idempotent — a repeat join does not overwrite the existing entry', () => {
+    const users = new Map<string, any>()
+    applyPresenceMessage(users, { type: 'user-joined', userId: 'peer-1', userName: 'Ada' }, 1000)
+    const seeded = users.get('peer-1')
+
+    applyPresenceMessage(users, { type: 'user-joined', userId: 'peer-1', userName: 'Ada' }, 5000)
+    expect(users.get('peer-1')).toBe(seeded)
+  })
+
+  it('user-left removes the peer immediately instead of waiting out the 30s cursor expiry', () => {
+    const users = new Map<string, any>()
+    applyPresenceMessage(users, { type: 'user-joined', userId: 'peer-1', userName: 'Ada' }, 1000)
+    applyPresenceMessage(users, { type: 'user-left', userId: 'peer-1' }, 2000)
+
+    expect(users.has('peer-1')).toBe(false)
+  })
+
+  it('ignores frames without a userId and non-presence types', () => {
+    const users = new Map<string, any>()
+    applyPresenceMessage(users, { type: 'user-joined' }, 1000)
+    applyPresenceMessage(users, { type: 'whatever', userId: 'peer-1' }, 1000)
+
+    expect(users.size).toBe(0)
+  })
+
+  it('leaves other users untouched when one peer leaves', () => {
+    const users = new Map<string, any>()
+    applyPresenceMessage(users, { type: 'user-joined', userId: 'peer-1', userName: 'Ada' }, 1000)
+    applyPresenceMessage(users, { type: 'user-joined', userId: 'peer-2', userName: 'Grace' }, 1000)
+    applyPresenceMessage(users, { type: 'user-left', userId: 'peer-1' }, 2000)
+
+    expect(users.has('peer-1')).toBe(false)
+    expect(users.get('peer-2')).toBeDefined()
   })
 })
 

@@ -266,8 +266,9 @@ const wss = new WebSocketServer({ server, noServer: false, maxPayload: 256 * 102
 // Store connections per room
 const rooms = new Map()
 
-// Track total connections
-let totalConnections = 0
+// Track total connections. Held in an object so the lifecycle helpers (which
+// take explicit deps for testability) can mutate the same module-level counter.
+const totalConnectionsRef = { value: 0 }
 
 /**
  * Get or create room connections
@@ -283,7 +284,7 @@ function getRoom(roomId) {
  * Handle WebSocket connection
  */
 wss.on('connection', async (ws, req) => {
-  totalConnections++
+  totalConnectionsRef.value++
 
   // Extract room ID from URL path
   // Expected format: /whiteboard:{id} or /{id}
@@ -315,7 +316,7 @@ wss.on('connection', async (ws, req) => {
   const userName = url.searchParams.get('userName') || 'Anonymous'
 
   console.log(`[Yjs WS] ✅ Connection: room=${roomId}, user=${userName} (${userId})`)
-  console.log(`[Yjs WS] Total connections: ${totalConnections}`)
+  console.log(`[Yjs WS] Total connections: ${totalConnectionsRef.value}`)
 
   // Add to room
   const room = getRoom(roomId)
@@ -354,37 +355,11 @@ wss.on('connection', async (ws, req) => {
     }
   })
 
-  // Handle disconnect
-  ws.on('close', () => {
-    totalConnections--
-    const currentRoom = getRoom(ws.roomId || roomId)
-    currentRoom.delete(ws)
-    console.log(`[Yjs WS] ❌ Disconnection: room=${ws.roomId || roomId}, user=${userName} (${userId}), room now has ${currentRoom.size} clients`)
-
-    // Notify others that user left
-    broadcastToRoom(ws.roomId || roomId, {
-      type: 'user-left',
-      userId,
-      timestamp: Date.now(),
-    })
-
-    // Clean up empty rooms after delay
-    if (currentRoom.size === 0) {
-      setTimeout(() => {
-        const checkRoom = getRoom(ws.roomId || roomId)
-        if (checkRoom.size === 0) {
-          rooms.delete(ws.roomId || roomId)
-          console.log(`[Yjs WS] 🧹 Cleaning up empty room: ${ws.roomId || roomId}`)
-        }
-      }, 60000)
-    }
-  })
-
-  ws.on('error', (error) => {
-    console.error(`[Yjs WS] ⚠️ Error: room=${ws.roomId || roomId}, user=${userName}:`, error.message)
-    const currentRoom = getRoom(ws.roomId || roomId)
-    currentRoom.delete(ws)
-  })
+  // Handle disconnect (and error). Both events converge on the SAME teardown
+  // (removal from room, connection-count decrement, user-left broadcast to the
+  // remaining peers, delayed empty-room cleanup) so an error can never leak a
+  // connection count, a user-left notification, or a room entry.
+  registerLifecycleHandlers(ws, rooms, totalConnectionsRef, broadcastToRoom)
 })
 
 // Helper: send JSON to a single client
@@ -398,6 +373,99 @@ function broadcastToRoom(roomId, msg, exclude) {
   const payload = JSON.stringify(msg)
   room.forEach((client) => {
     if (client !== exclude && client.readyState === 1) client.send(payload)
+  })
+}
+
+// Delay before an empty room entry is deleted from the `rooms` map.
+export const EMPTY_ROOM_CLEANUP_DELAY_MS = 60_000
+
+/**
+ * Shared teardown for a departing socket (close OR error). Removes it from its
+ * room, un-accounts it from `totalConnections`, and announces `user-left` to
+ * the REMAINING peers ONLY — never broadcast when the room just became empty,
+ * since there is nobody left to receive it.
+ *
+ * Pure-ish: takes explicit deps (`rooms`, a `{value}` counter holder, and the
+ * broadcast fn) so it is unit-testable without a real WebSocketServer.
+ *
+ * @param {object} ws the socket (carries roomId/userId/userName)
+ * @param {Map<string, Set<object>>} rooms roomId -> client set
+ * @param {{value:number}} totalConnectionsRef shared connection counter holder
+ * @param {(roomId:string, msg:object, exclude?:object)=>void} broadcastToRoomFn
+ * @param {number} [now] injectable clock (tests)
+ * @returns {{roomId:string, roomSize:number, broadcastUserLeft:boolean}}
+ */
+export function removeClientFromRoom(ws, rooms, totalConnectionsRef, broadcastToRoomFn, now = Date.now()) {
+  const roomId = ws.roomId
+  if (totalConnectionsRef.value > 0) totalConnectionsRef.value--
+  const room = rooms.get(roomId)
+  if (room) room.delete(ws)
+  const roomSize = room ? room.size : 0
+
+  let broadcastUserLeft = false
+  if (roomSize > 0 && ws.userId) {
+    broadcastToRoomFn(roomId, {
+      type: 'user-left',
+      userId: ws.userId,
+      timestamp: now,
+    })
+    broadcastUserLeft = true
+  }
+  return { roomId, roomSize, broadcastUserLeft }
+}
+
+/**
+ * Schedule deletion of an empty room entry. The room is only deleted if it is
+ * STILL empty when the timer fires — a client may have rejoined within the
+ * window, in which case the entry must survive.
+ *
+ * @returns {NodeJS.Timeout} the timer (tests may await/advance it)
+ */
+export function scheduleEmptyRoomCleanup(roomId, rooms, delayMs = EMPTY_ROOM_CLEANUP_DELAY_MS) {
+  return setTimeout(() => {
+    const room = rooms.get(roomId)
+    if (room && room.size === 0) {
+      rooms.delete(roomId)
+      console.log(`[Yjs WS] 🧹 Cleaning up empty room: ${roomId}`)
+    }
+  }, delayMs)
+}
+
+/**
+ * Handle a socket close: teardown, log, and schedule empty-room cleanup when
+ * the room just emptied.
+ */
+export function handleClientClose(ws, rooms, totalConnectionsRef, broadcastToRoomFn, now = Date.now(), cleanupDelayMs = EMPTY_ROOM_CLEANUP_DELAY_MS) {
+  const { roomId, roomSize } = removeClientFromRoom(ws, rooms, totalConnectionsRef, broadcastToRoomFn, now)
+  console.log(`[Yjs WS] ❌ Disconnection: room=${roomId}, user=${ws.userName} (${ws.userId}), room now has ${roomSize} clients`)
+  if (roomSize === 0) {
+    scheduleEmptyRoomCleanup(roomId, rooms, cleanupDelayMs)
+  }
+}
+
+/**
+ * Handle a socket error. Deliberately converges with the close path — a socket
+ * that errors without a following `close` must still be un-accounted, announced
+ * as `user-left`, and (if the room emptied) scheduled for cleanup. The previous
+ * error handler leaked all three.
+ */
+export function handleClientError(error, ws, rooms, totalConnectionsRef, broadcastToRoomFn, now = Date.now(), cleanupDelayMs = EMPTY_ROOM_CLEANUP_DELAY_MS) {
+  console.error(`[Yjs WS] ⚠️ Error: room=${ws.roomId}, user=${ws.userName}:`, error?.message)
+  handleClientClose(ws, rooms, totalConnectionsRef, broadcastToRoomFn, now, cleanupDelayMs)
+}
+
+/**
+ * Register a socket's connection-lifetime handlers. Both `close` and `error`
+ * drive the same cleanup, and a heartbeat termination — `ws.terminate()` fires
+ * the `close` event — ends up in the close path too, so a pruned stale client
+ * never leaks either.
+ */
+export function registerLifecycleHandlers(ws, rooms, totalConnectionsRef, broadcastToRoomFn) {
+  ws.on('close', () => {
+    handleClientClose(ws, rooms, totalConnectionsRef, broadcastToRoomFn)
+  })
+  ws.on('error', (error) => {
+    handleClientError(error, ws, rooms, totalConnectionsRef, broadcastToRoomFn)
   })
 }
 
