@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { spawn } from 'child_process'
 import http from 'http'
 import { createServer as createTcpServer } from 'net'
-import { fileURLToPath } from 'url'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
+import os from 'os'
+import { fileURLToPath, pathToFileURL } from 'url'
 import path from 'path'
 import {
   resolveStatefulOrigin,
@@ -457,6 +459,46 @@ describe('ws-server — actually listens when launched as the entry point (regre
     } finally {
       child.kill('SIGTERM')
       await exited
+    }
+  }, 15000)
+
+  it('spawns the relay through a simulated pm2 fork loader and serves the banner', async () => {
+    // Real pm2 never runs our script directly: it spawns
+    // `node /usr/lib/node_modules/pm2/lib/ProcessContainerFork.js` and THAT
+    // container loads ws-server.js, so argv[1] is pm2's loader, never ours. This
+    // is the exact shape that left the relay silently unbound (nginx 502 on every
+    // WS upgrade). Emulate it with a temp copy named ProcessContainerFork.js that
+    // dynamically imports ws-server.js, and prove the relay binds with NO pm_id —
+    // locking the belt-and-suspenders argv[1] signal end-to-end, not just as a
+    // pure-function unit assertion.
+    const port = await freePort()
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'pm2-fork-'))
+    const loaderPath = path.join(tmpDir, 'ProcessContainerFork.js')
+    await writeFile(loaderPath, `import(${JSON.stringify(pathToFileURL(SERVER_PATH).href)});`)
+
+    const child = spawn(process.execPath, [loaderPath], {
+      env: {
+        ...process.env,
+        WS_PORT: String(port),
+        WS_HOST: '127.0.0.1',
+        // No connections in this test, so auth is never consulted; set an
+        // unreachable Laravel URL so nothing hangs if a stray connection fires.
+        LARAVEL_URL: 'http://127.0.0.1:9',
+        WS_ALLOW_ANON: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const exited = new Promise<void>((resolve) => {
+      if (child.exitCode !== null) return resolve()
+      child.once('exit', () => resolve())
+    })
+    try {
+      const body = await waitForBanner(port, 5000)
+      expect(body).toContain('VP Whiteboard Yjs WebSocket Server')
+    } finally {
+      child.kill('SIGTERM')
+      await exited
+      await rm(tmpDir, { recursive: true, force: true })
     }
   }, 15000)
 })
