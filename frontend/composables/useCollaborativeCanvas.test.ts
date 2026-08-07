@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import {
   shouldReconnectOnClose,
@@ -8,6 +8,7 @@ import {
   deduplicateYjsElements,
   applyPresenceMessage,
   REMOTE_ORIGIN,
+  useCollaborativeCanvas,
 } from './useCollaborativeCanvas'
 
 describe('useCollaborativeCanvas — WebSocket reconnect policy', () => {
@@ -312,5 +313,138 @@ describe('useCollaborativeCanvas — live sync (delta propagation both ways)', (
     // Dedup deletes must never be broadcast (positional deletes crossing peers
     // would wipe content); they are tagged with the remote origin.
     expect(broadcasted).toEqual([REMOTE_ORIGIN])
+  })
+})
+
+describe('useCollaborativeCanvas — reconnect resume (mocked WebSocket)', () => {
+  // Deterministic fake of the native WebSocket. The composable assigns
+  // onopen/onclose/onmessage handlers directly and gates broadcasts on
+  // `ws.readyState === WebSocket.OPEN`, so a class exposing instance
+  // `readyState` plus static OPEN/CONNECTING/CLOSED mirrors the real API
+  // closely enough to drive the whole reconnect cycle in tests.
+  class FakeWebSocket {
+    static instances: FakeWebSocket[] = []
+    static OPEN = 1
+    static CONNECTING = 0
+    static CLOSED = 3
+
+    url: string
+    readyState = FakeWebSocket.CONNECTING
+    binaryType = 'blob'
+    sent: (string | Uint8Array)[] = []
+    onopen: (() => void) | null = null
+    onclose: ((event: { code?: number }) => void) | null = null
+    onerror: ((event: unknown) => void) | null = null
+    onmessage: ((event: { data: string | Uint8Array }) => void) | null = null
+
+    constructor(url: string) {
+      this.url = url
+      FakeWebSocket.instances.push(this)
+    }
+
+    send(data: string | Uint8Array) {
+      this.sent.push(data)
+    }
+
+    close() {
+      this.readyState = FakeWebSocket.CLOSED
+    }
+
+    // --- test helpers (not part of the real WebSocket API) ---
+    _open() {
+      this.readyState = FakeWebSocket.OPEN
+      this.onopen?.()
+    }
+
+    _message(data: string | Uint8Array) {
+      this.onmessage?.({ data })
+    }
+
+    _close(code = 1000) {
+      this.readyState = FakeWebSocket.CLOSED
+      this.onclose?.({ code })
+    }
+  }
+
+  beforeEach(() => {
+    FakeWebSocket.instances = []
+    vi.useFakeTimers()
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    vi.stubGlobal('useRuntimeConfig', () => ({ public: { wsUrl: 'ws://test/ws' } }))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  // Emulate the relay: forward every frame one socket has queued onto another.
+  // Routing a `sync-request` into a peer triggers that peer's SYNC_FULL reply
+  // (queued on the peer's own socket), so callers re-pump the reverse direction.
+  function pump(from: FakeWebSocket, to: FakeWebSocket) {
+    const queued = from.sent.splice(0)
+    for (const data of queued) to._message(data)
+  }
+
+  function el(id: string) {
+    return { id, type: 'rectangle', data: { x: 0, y: 0, width: 10, height: 10, stroke: '#000', strokeWidth: 1 } } as any
+  }
+
+  function idsOf(c: ReturnType<typeof useCollaborativeCanvas>): string[] {
+    return c.yElements.toArray().map(e => e.id)
+  }
+
+  function expectConverged(c: ReturnType<typeof useCollaborativeCanvas>, expected: string[]) {
+    const got = idsOf(c)
+    expect([...got].sort()).toEqual([...expected].sort())
+    expect(got).toHaveLength(expected.length)
+    expect(new Set(got).size).toBe(got.length)
+  }
+
+  it('re-converges with a peer after its WS drops: offline edits survive via the reconnect SYNC_FULL announce, no duplicates, and deltas flow again', async () => {
+    const a = useCollaborativeCanvas('board-1', 'user-a', 'A')
+    const b = useCollaborativeCanvas('board-1', 'user-b', 'B')
+    const a0 = FakeWebSocket.instances[0]!
+    const b0 = FakeWebSocket.instances[1]!
+
+    // --- Phase 1: both clients connect and converge on a shared board. ---
+    a0._open()
+    b0._open()
+    a.addElement(el('A1'))
+    b.addElement(el('B1'))
+    pump(a0, b0) // A's sync-request + delta A1 -> B (B is empty, no full reply)
+    pump(b0, a0) // B's sync-request + delta B1 -> A; B's sync-request makes A announce SYNC_FULL
+    pump(a0, b0) // A's SYNC_FULL (in reply to B's request) -> B
+    expectConverged(a, ['A1', 'B1'])
+    expectConverged(b, ['A1', 'B1'])
+
+    // --- Phase 2: A's socket drops; A keeps editing while offline. ---
+    a0._close(1006)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(FakeWebSocket.instances).toHaveLength(3) // a0, b0, and the reconnect socket
+    const a1 = FakeWebSocket.instances[2]!
+
+    // A draws while disconnected (socket not yet OPEN): sendBinary drops it,
+    // but the SYNC_FULL announce on reconnect must carry A2 to the peers.
+    a.addElement(el('A2'))
+    expect(a1.sent).toHaveLength(0)
+
+    a1._open() // -> sends sync-request + SYNC_FULL([A1, B1, A2])
+    pump(a1, b0) // sync-request -> B replies SYNC_FULL; full-state -> B
+    pump(b0, a1) // B's SYNC_FULL reply (a strict subset of A's doc) -> A must not lose A2
+
+    expectConverged(a, ['A1', 'B1', 'A2'])
+    expectConverged(b, ['A1', 'B1', 'A2'])
+
+    // --- Phase 3: post-reconnect deltas flow in both directions again. ---
+    a.addElement(el('A3'))
+    pump(a1, b0)
+    b.addElement(el('B2'))
+    pump(b0, a1)
+
+    expect(idsOf(b)).toContain('A3')
+    expect(idsOf(a)).toContain('B2')
+    expectConverged(a, ['A1', 'B1', 'A2', 'A3', 'B2'])
+    expectConverged(b, ['A1', 'B1', 'A2', 'A3', 'B2'])
   })
 })

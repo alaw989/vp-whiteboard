@@ -4,7 +4,9 @@
 Add regression tests for the collaborative canvas sync protocol across WebSocket reconnects, and fix any bugs they surface: a client whose WS drops and reconnects mid-session must re-converge with its peers (SYNC_FULL full-state exchange + dedupe) without duplicating or losing elements; out-of-order or duplicate SYNC_FULL frames and stale-peer states must not corrupt the doc; the Yjs doc must not be reset or lose content on reconnect; and the reconnect path (scheduleReconnect -> initWebSocket -> sendSyncMessage + sendFullStateSync) must be exercised deterministically with a mocked WebSocket. Keep npm run typecheck + npm test green.
 
 ## State
-(empty — first iteration will start the log)
+- **Iteration 1 (done):** Added the first mocked-WebSocket reconnect-resume regression test to `frontend/composables/useCollaborativeCanvas.test.ts`. It drives TWO `useCollaborativeCanvas('board-1', ...)` instances through a `FakeWebSocket` (`vi.stubGlobal('WebSocket', ...)` + `vi.stubGlobal('useRuntimeConfig', ...)` + `vi.useFakeTimers()`): both clients connect and converge on [A1,B1]; A's socket closes (1006) → `scheduleReconnect` → `initWebSocket` creates a new socket; A draws A2 while offline (dropped by `sendBinary`, asserted `sent` stays empty); on reopen A sends `sync-request` + `SYNC_FULL([A1,B1,A2])`; the peer's `SYNC_FULL` reply is a strict SUBSET, so the test proves A2 is NOT lost; both docs converge on the union {A1,B1,A2} with no duplicate ids; then post-reconnect deltas (A3, B2) flow both ways again. Covers goal items 1, 2, 3, 4 (subset/duplicate SYNC_FULL cannot wipe newer content) and part of 5.
+- **Next:** Add the remaining reconnect-timer hygiene test (repeated close/reopen cycles → no leaked timers, no duplicate handlers across socket instances) and possibly a stale-peer + out-of-order SYNC_FULL helper-level test. Also consider asserting exactly one reconnect socket is created per close and that a close during backoff doesn't double-schedule.
+- **Gotchas:** The composable's return object does NOT expose `getElements()` (uses `c.yElements.toArray()`); `noUncheckedIndexedAccess` makes `FakeWebSocket.instances[i]` possibly-undefined so use `!`. `onMounted` fires outside a component instance in tests → harmless Vue warning (no-op). `useRuntimeConfig` is not in `test/setup.ts`, so it MUST be stubbed before calling the composable.
 
 ## Context (from prior code review — read before changing code)
 
@@ -45,3 +47,4 @@ Add regression tests for the collaborative canvas sync protocol across WebSocket
 - Do not touch the Goal section. Update the State section every iteration.
 
 ## Log
+- Iteration 1: added mocked-WebSocket reconnect/resume integration test (388 tests, typecheck green).
