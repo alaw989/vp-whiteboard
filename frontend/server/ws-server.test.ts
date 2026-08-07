@@ -80,6 +80,13 @@ describe('ws-server — isEntryPoint (bind decision: direct node run AND pm2 for
     expect(isEntryPoint('not a real path/…', '3')).toBe(true)
   })
 
+  it('returns true when argv[1] is pm2\'s fork loader even WITHOUT pm_id (older pm2 majors)', () => {
+    // Belt-and-suspenders: an older pm2 major may not set pm_id on the child,
+    // but it still runs our script via ProcessContainerFork.js — detecting that
+    // loader in argv[1] alone must be enough to bind the relay.
+    expect(isEntryPoint(PM2_FORK_LOADER, undefined)).toBe(true)
+  })
+
   it('returns false when merely imported as a module (vitest/test process)', () => {
     // vitest's own bin is argv[1] and pm_id is unset → no bind, so unit tests
     // never leave a stray port open or a heartbeat interval alive.

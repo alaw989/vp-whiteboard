@@ -412,8 +412,10 @@ function broadcastToRoom(roomId, msg, exclude) {
  *    (/usr/lib/node_modules/pm2/lib/ProcessContainerFork.js), never ours. The
  *    naive `import.meta.url === file://${process.argv[1]}` comparison then
  *    returns false and the relay never binds — nginx 502s every WS upgrade and
- *    live sharing breaks until a refresh. pm2 always sets `pm_id` on every
- *    managed child, so that is the reliable signal for the pm2 case.
+ *    live sharing breaks until a refresh. Detect the fork loader directly from
+ *    argv[1] as the primary pm2 signal (works even if pm2 doesn't set pm_id,
+ *    e.g. older majors); pm_id covers any other pm2 loader path as a
+ *    belt-and-suspenders fallback.
  *
  * @param {string|undefined} [argv1] override process.argv[1] (tests)
  * @param {string|undefined} [pmId]  override process.env.pm_id (tests)
@@ -421,12 +423,17 @@ function broadcastToRoom(roomId, msg, exclude) {
  */
 export function isEntryPoint(argv1 = process.argv[1], pmId = process.env.pm_id) {
   if (argv1) {
+    // 1. Direct node run — argv[1] resolves to our own file.
     try {
       if (import.meta.url === pathToFileURL(argv1).href) return true
     } catch {
-      // unparsable argv[1] — fall through to the pm2 check
+      // unparsable argv[1] — fall through to the pm2 checks
     }
+    // 2. pm2 fork mode — argv[1] is pm2's ProcessContainerFork.js loader.
+    if (argv1.includes('ProcessContainerFork')) return true
   }
+  // pm2 fallback signal: pm2 always sets pm_id on managed children, so this
+  // also catches loader paths we don't explicitly recognize above.
   return typeof pmId !== 'undefined' && pmId !== ''
 }
 
