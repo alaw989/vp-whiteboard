@@ -12,6 +12,7 @@ import {
   waitForCanvas,
   expectCanvasToReturn,
   openMobileToolbar,
+  expandMobileToolbar,
 } from './helpers'
 
 // Mobile device emulation: small viewport + touch + mobile UA, so the app
@@ -627,6 +628,65 @@ test('a remote touch stroke preview clears when the browser cancels the pointer 
   } finally {
     await ownerCtx.close()
     await peerCtx.close()
+  }
+})
+
+test('mobile toolbar expanded palette selects the rectangle; a touch rectangle lands where drawn', async ({ page }) => {
+  await login(page)
+  await createWhiteboard(page)
+  await waitForCanvas(page)
+
+  // Rectangle lives in the EXPANDED palette, not the collapsed primary strip —
+  // expanding the mobile toolbar and picking it exercises a different selection
+  // path than the primary-tool tests (pen/highlighter/eraser).
+  const mobileToolbar = await expandMobileToolbar(page)
+  await mobileToolbar.getByTitle('Rectangle', { exact: true }).click()
+
+  const baseline = await canvasFingerprint(page)
+  const box = await canvasBox(page)
+
+  // A 200x100 rectangle fully inside the stage canvas on a fresh board
+  // (identity viewport, so client coords map 1:1 to stage coords).
+  const x0 = box.x + 120
+  const x1 = box.x + 320
+  const y0 = box.y + 160
+  const y1 = box.y + 260
+  const midX = (x0 + x1) / 2
+  const midY = (y0 + y1) / 2
+
+  // Touch-drag from the top-left corner to the bottom-right corner. The shape
+  // tools commit via emitElementAdd on pointerup (NOT the pen/highlighter
+  // active-stroke broadcast), so this exercises the shape-tool commit path
+  // through the unified touch pointer pipeline.
+  await touchStroke(page, { x: x0, y: y0 }, { x: x1, y: y1 })
+  await expect
+    .poll(() => canvasFingerprint(page), { timeout: 10000, intervals: [250] })
+    .not.toBe(baseline)
+
+  // The committed shape is a rectangle OUTLINE at the dragged coords (black
+  // stroke, transparent fill): the top and bottom edges are ink rows spanning
+  // [x0,x1], the left/right edges are ink at mid-height, and the interior is
+  // the #f5f5f5 background (a filled rect or an offset shape would fail these).
+  const topSpan = await darkRowSpan(page, y0)
+  const bottomSpan = await darkRowSpan(page, y1)
+  expect(topSpan).not.toBeNull()
+  expect(bottomSpan).not.toBeNull()
+  expect(Math.abs(topSpan!.minX - x0)).toBeLessThan(8)
+  expect(Math.abs(topSpan!.maxX - x1)).toBeLessThan(8)
+  expect(Math.abs(bottomSpan!.minX - x0)).toBeLessThan(8)
+  expect(Math.abs(bottomSpan!.maxX - x1)).toBeLessThan(8)
+
+  const leftEdge = await pixelAt(page, { x: x0, y: midY })
+  const rightEdge = await pixelAt(page, { x: x1, y: midY })
+  for (const px of [leftEdge, rightEdge]) {
+    for (const ch of px.slice(0, 3)) {
+      expect(ch).toBeLessThan(80)
+    }
+  }
+
+  const interior = await pixelAt(page, { x: midX, y: midY })
+  for (const ch of interior.slice(0, 3)) {
+    expect(ch).toBeGreaterThan(230)
   }
 })
 

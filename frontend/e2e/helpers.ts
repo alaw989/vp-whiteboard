@@ -254,3 +254,19 @@ export async function openMobileToolbar(page: Page) {
   await expect(toolbar).toBeVisible({ timeout: 20000 })
   return toolbar
 }
+
+/**
+ * Expand the md:hidden mobile toolbar into its full palette by clicking the
+ * collapsed color swatch (the strip's button whose child swatch div has the
+ * rounded size classes), then wait for the "Tools" header. Shape tools like
+ * Rectangle live only in the expanded palette, not the collapsed primary strip.
+ */
+export async function expandMobileToolbar(page: Page) {
+  const toolbar = await openMobileToolbar(page)
+  const colorSwatch = toolbar
+    .locator('button')
+    .filter({ has: page.locator('.w-7.h-7.rounded-md') })
+  await colorSwatch.click()
+  await expect(toolbar.getByText('Tools', { exact: true })).toBeVisible({ timeout: 10000 })
+  return toolbar
+}
