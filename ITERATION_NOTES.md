@@ -5,6 +5,23 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 5 (DONE) — useScale composable covered + thresholds ratcheted up
+
+**Changed:**
+- New unit test `frontend/composables/useScale.test.ts` (15 tests) covering the full `useScale` surface: default display format / ppi / null state, `setScale` feet+inches math (ppi = (96·drawing)/realWorldInches), `getScale` round-trip, `displayFormat`, `pixelsToInches` (scaled vs default 96), `inchesToFeet`, `formatMeasurement` precision, `formatFeetAndInches`, `formatScaledMeasurement` unit switch, `observeScale` (fires on remote userId, ignores own updates, ignores non-scale keys, cleanup unobserve), per-document `scale:{documentId}` key isolation, and `init()` reload across two instances sharing a `Y.Map`. `useScale.ts` was a 0% root-composable drag — now 95.83% stmts/lines, 100% branches.
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 59→**60**, branches 77→**78**, functions 78→**79** (all at-or-below new measured 61.57/61.57/78.05/79.12).
+
+**Measured** (after adding useScale tests): All files 61.57% stmts/lines (was 59.85), 78.05% branches, 79.12% funcs. Suite 46 files / 457 tests (was 45/442).
+
+**Verification:**
+- `npm run coverage` exit 0 with new thresholds; `npm run typecheck` exit 0; `npm test` 457/457 pass.
+- Negative check: `--coverage.thresholds.lines=62` → `ERROR: Coverage for lines (61.57%) does not meet global threshold (62%)` → non-zero. Gate enforces.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it.
+2. Ratchet frontend further (lines/stmts 60 → 61) once more composables get tested — biggest drags remain root composables (useCursors/useFileUpload/useLayers/useMeasurements/usePDFRendering/useCommandEngine/useDocumentLayer ~0%, useSnapping 38%, useViewport 10%, useExtendTool 51%, useTrimTool 56%). `useScale` was the easiest pure-Yjs target; `useFileUpload` (validateFile/formatFileSize/getFileIcon are pure, upload path needs `useApi` mock) and `useCommandEngine` (Registry is likely pure) are the next best candidates.
+3. Ratchet backend 73 → 74 once more backend tests land.
+
 ### Iteration 4 (DONE) — Frontend red-herrings cleaned + thresholds ratcheted up
 
 **Changed:**
