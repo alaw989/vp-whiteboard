@@ -1,6 +1,11 @@
 export default defineNuxtRouteMiddleware(async (to) => {
   if (to.path === '/login' || to.path === '/register') return
 
+  // The share-link expiry/revoked page must render for anonymous viewers who
+  // followed a dead /s/{token} link (exact path match; query carries only the
+  // reason, never the token).
+  if (to.path === '/share-invalid') return
+
   // Individual whiteboard pages are public (Google Docs-style)
   if (to.path.match(/^\/whiteboard\/[^/]+$/) && !to.path.endsWith('/new')) return
 

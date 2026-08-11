@@ -9,29 +9,43 @@
 
 <script setup lang="ts">
 const route = useRoute()
-const shortId = String((route.params as any).id || '')
+const config = useRuntimeConfig()
+const laravelUrl = (config.public.laravelUrl as string) || 'http://localhost:8000'
+const token = String((route.params as any).id || '')
 
 useHead({ title: 'Redirecting...' })
 
-// Resolve share link client-side — the server route handles first-load redirects,
-// but client-side navigation to /s/:id goes through this page.
+// Resolve share link client-side. First load is handled by the server route
+// (server/routes/s/[id].get.ts), but client-side navigation to /s/:token goes
+// through this page — so it must call the live resolver, NOT the old dead
+// /api/sessions/{id} endpoint. Mirrors the server route: valid → board (carry
+// ?share= so the page stashes it for the WS handshake), expired (410) vs
+// revoked/unknown (404) → the friendly share-invalid page.
 async function resolveShareLink() {
-  if (!shortId) {
-    await navigateTo('/', { redirectCode: 302 })
+  const redirectInvalid = (reason: 'expired' | 'not_found') =>
+    navigateTo(`/share-invalid?reason=${reason}`, { redirectCode: 302 })
+
+  if (!token) {
+    await redirectInvalid('not_found')
     return
   }
 
   try {
-    const res = await $fetch<{ success: boolean; data?: { id: string } }>(
-      `/api/sessions/${shortId}`
+    const res = await $fetch<{ success: boolean; data?: { whiteboard_id: string } }>(
+      `${laravelUrl}/api/shares/${encodeURIComponent(token)}`
     )
-    if (res.success && res.data?.id) {
-      await navigateTo(`/whiteboard/${res.data.id}`, { redirectCode: 302 })
+    if (res.success && res.data?.whiteboard_id) {
+      await navigateTo(
+        `/whiteboard/${res.data.whiteboard_id}?share=${encodeURIComponent(token)}`,
+        { redirectCode: 302 },
+      )
     } else {
-      await navigateTo('/', { redirectCode: 302 })
+      await redirectInvalid('not_found')
     }
-  } catch {
-    await navigateTo('/', { redirectCode: 302 })
+  } catch (e) {
+    const err = e as { response?: { status?: number }; status?: number; statusCode?: number }
+    const status = err?.response?.status ?? err?.status ?? err?.statusCode
+    await redirectInvalid(status === 410 ? 'expired' : 'not_found')
   }
 }
 
