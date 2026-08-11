@@ -60,6 +60,7 @@
 </template>
 
 <script setup lang="ts">
+import { friendlyApiErrorMessage } from '~/utils/apiError'
 const route = useRoute()
 const { $api, $ensureCsrf: ensureCsrf } = useApi()
 const email = ref('')
@@ -84,7 +85,7 @@ async function handleLogin() {
     const redirect = (route.query.redirect as string) || '/'
     navigateTo(redirect, { replace: true })
   } catch (e: any) {
-    const msg = e?.data?.message || e?.message || 'Invalid credentials'
+    const msg = friendlyApiErrorMessage(e, 'Invalid credentials')
     error.value = msg.includes('pending approval') ? 'Your account is pending approval. Please check back later.' : msg
   } finally {
     loading.value = false

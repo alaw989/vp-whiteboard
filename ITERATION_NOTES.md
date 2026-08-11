@@ -73,5 +73,26 @@ Rate-limit public endpoints: add Laravel `throttle` middleware (named rate limit
 - The `shares` limiter keys on `$request->route('token')` — verified the relay path stays alive even under 60 req/min on one token from one IP.
 
 **Next:**
-- Frontend polish (optional): map 429 in `useApi.ts`/`login.vue`/`register.vue` to a friendlier "Too many attempts — try again in a minute" message.
+- ~~Frontend polish (optional): map 429 in `useApi.ts`/`login.vue`/`register.vue` to a friendlier "Too many attempts — try again in a minute" message.~~
 - Confirm the share-link e2e flow (creates a share + joins via `/s/{token}`) still passes — the limits are generous so it should, but run `npm run test:e2e` before shipping if desired.
+
+### Iteration 2 — friendlier 429 messaging in login/register (frontend polish)
+
+**Changed:**
+- `frontend/utils/apiError.ts` (new): `friendlyApiErrorMessage(e, fallback)` — maps any failure with `response.status === 429` to "Too many attempts — please wait a minute and try again."; otherwise returns server `data.message`, joins `data.errors` validation messages, falls back to `e.message`/fallback string. Mirrors the exact error shape thrown by the `$api` (`$fetch.raw`) wrapper.
+- `frontend/pages/login.vue`: `handleLogin` catch now routes through `friendlyApiErrorMessage(e, 'Invalid credentials')` (still keeps the pending-approval special-case check).
+- `frontend/pages/register.vue`: `handleRegister` catch now uses `friendlyApiErrorMessage(e, 'Registration failed')` (replaces the inline `data.message`/`data.errors` join, same behavior + 429 mapping).
+- `frontend/utils/apiError.test.ts` (new, 4 tests): 429 → friendly string; other statuses → server message; `data.errors` joined; message/fallback precedence.
+
+**Verified:**
+- `npm run typecheck` clean.
+- `npm test`: 683 passed (679 + 4 new), 54 files.
+- `php artisan test`: 52 passed / 240 assertions (unchanged — no backend touched this iteration).
+
+**Gotchas:**
+- Nuxt auto-imports `~/utils/*`, so `friendlyApiErrorMessage` is auto-available in pages; explicit `import { friendlyApiErrorMessage } from '~/utils/apiError'` is used anyway (matches `WhiteboardCanvas.vue`'s explicit geometryUtils import convention) and typechecks clean.
+- The 429 mapping only fires when `response.status === 429` — the `$api` error carries `.response.status`, `.data`, `.message`, which the helper reads.
+
+**Next:**
+- Confirm the share-link e2e flow (`npm run test:e2e`, needs clean local stack with `TEST=1`) — limits are generous so it should pass; run before shipping if desired.
+- Optionally apply the same `friendlyApiErrorMessage` treatment to `approvals.vue`/`WhiteboardShareModal.vue` (they surface `e?.data?.error`/`e?.data?.message` raw, but 429s there are unlikely in normal use).
