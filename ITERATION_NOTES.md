@@ -156,3 +156,26 @@ Rate-limit public endpoints: add Laravel `throttle` middleware (named rate limit
 
 **Next:**
 - Goal is complete: all six named limiters are registered, applied to every public route, feature-tested (429 + `Retry-After`), and the e2e share-link/login flow is verified green with throttling active. Optional future polish: none outstanding for this Goal.
+
+### Iteration 6 — 429 on the share resolver no longer masquerades as "revoked"
+
+**Changed:**
+- `frontend/utils/shareStatus.ts` (new): `shareResolverReason(e)` maps a `/api/shares/{token}` failure to a `ShareInvalidReason` — 410 → `expired`, 429 → `rate_limited`, anything else → `not_found` (reads `response.status`, `status`, or `statusCode`).
+- `frontend/server/routes/s/[id].get.ts`: replaced the inline 410/non-410 ternary with `shareResolverReason(e)` so a throttled resolver (429 from `throttle:shares`) redirects to `/share-invalid?reason=rate_limited` instead of lying that the link was revoked.
+- `frontend/pages/s/[id].vue`: same swap in the client-side resolver path (mirrors the server route).
+- `frontend/pages/share-invalid.vue`: added a `rate_limited` state — heading "Too many attempts — please wait a minute and try again", an explanation that the link is fine and to retry shortly, and a "Try again" CTA (vs "Go home"). `expired`/`not_found` copy and data-testids unchanged.
+- `frontend/utils/shareStatus.test.ts` (new, 5 tests): 410→expired, 429→rate_limited, 404→not_found, top-level `status`/`statusCode` read, unknown/empty→not_found.
+
+**Why (the interaction the Goal flagged):** the `throttle:shares` limiter is token-keyed at 60/min; a widely-shared link whose viewers all resolve in a burst (or any 429 blip) previously landed on the "revoked or no longer valid" page — an honest rate-limit message is strictly better UX and costs nothing. Existing e2e (`share-expiry.spec.ts`) asserts `reason=expired` and `reason=not_found`, both unchanged.
+
+**Verified:**
+- `npm run typecheck` clean.
+- `npm test`: **690 passed** (685 + 5 new) / 55 files.
+- `php artisan test`: 55 passed / 260 assertions (backend untouched this iteration).
+
+**Gotchas:**
+- `shareResolverReason` lives in `frontend/utils/` so Nuxt auto-imports it in both the nitro route and the client page; no explicit imports needed (matches the existing `apiError.ts` pattern). The `ShareInvalidReason` type is shared across the route + page.
+- The `share-invalid` page keeps `data-testid="share-invalid-page"`/`-heading`/`-explanation`/`-home` on all three states, so the existing e2e selectors keep working.
+
+**Next:**
+- The Goal is fully achieved. Optional future polish (outside this Goal): none remaining for share-links/rate-limiting; next backlog items are board dashboard (#2), save-state indicator (#3), etc.

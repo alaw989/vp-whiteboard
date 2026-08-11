@@ -7,17 +7,15 @@
         </div>
 
         <h1 class="text-2xl font-bold text-gray-900" data-testid="share-invalid-heading">
-          {{ reason === 'expired' ? 'This share link has expired' : 'This share link has been revoked or is no longer valid' }}
+          {{ heading }}
         </h1>
 
         <p class="text-sm text-gray-500 mt-3" data-testid="share-invalid-explanation">
-          {{ reason === 'expired'
-            ? 'The link you followed is no longer active. Ask the owner to create a new share link.'
-            : 'The link you followed may have been revoked or was never valid. Ask the owner for a fresh share link.' }}
+          {{ explanation }}
         </p>
 
         <NuxtLink to="/" class="btn-primary mt-6" data-testid="share-invalid-home">
-          Go home
+          {{ reason === 'rate_limited' ? 'Try again' : 'Go home' }}
         </NuxtLink>
       </div>
     </div>
@@ -28,9 +26,27 @@
 const route = useRoute()
 const reason = String(route.query.reason || '')
 
+const heading = computed(() => {
+  if (reason === 'expired') return 'This share link has expired'
+  if (reason === 'rate_limited') return 'Too many attempts — please wait a minute and try again'
+  return 'This share link has been revoked or is no longer valid'
+})
+
+const explanation = computed(() => {
+  if (reason === 'expired') {
+    return 'The link you followed is no longer active. Ask the owner to create a new share link.'
+  }
+  if (reason === 'rate_limited') {
+    return 'The server received too many requests from this link in a short time. Wait a moment and try the link again.'
+  }
+  return 'The link you followed may have been revoked or was never valid. Ask the owner for a fresh share link.'
+})
+
 useHead({
-  title: reason === 'expired'
+  title: computed(() => reason === 'expired'
     ? 'Share link expired - VP Associates'
-    : 'Share link invalid - VP Associates',
+    : reason === 'rate_limited'
+      ? 'Share link busy - VP Associates'
+      : 'Share link invalid - VP Associates'),
 })
 </script>
