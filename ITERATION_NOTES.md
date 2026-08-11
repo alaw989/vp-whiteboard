@@ -5,6 +5,24 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 4 (DONE) — Frontend red-herrings cleaned + thresholds ratcheted up
+
+**Changed:**
+- New unit test `frontend/server/utils/session-id.test.ts` (4 tests) covering `generateSessionId` / `generateSessionIdWithPrefix` / `isValidSessionId` — the pure `session-id.ts` util was previously 0%. Now 100%.
+- `frontend/vitest.config.mts` coverage `exclude`: added `server/routes/**` + `server/websocket/**` — Nitro glue (`defineEventHandler`/`defineWebSocketHandler`) is not unit-testable without a Nitro harness, same rationale as excluding components/`.vue`. The tested relay (`ws-server.js`) + `server/utils/**` stay in scope.
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 57→**59**, branches 76→**77**, functions 77→**78** (all at-or-below new measured 59.85/59.85/77.27/78.55).
+
+**Measured** (after cleanup): All files 59.85% stmts/lines (was 57.46), 77.27% branches, 78.55% funcs. Suite 45 files / 442 tests (was 438).
+
+**Verification:**
+- `npm run coverage` exit 0; `npm run typecheck` exit 0; `npm test` 442/442 pass.
+- Negative check: `--coverage.thresholds.lines=60` → `ERROR: Coverage for lines (59.85%) does not meet global threshold (60%)` → non-zero. Gate enforces.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it.
+2. Ratchet frontend further (lines/stmts 59 → 60) once more composables get tested — biggest drags remain root composables (useCursors/useFileUpload/useLayers/useMeasurements/usePDFRendering/useScale/useCommandEngine/useDocumentLayer ~0%, useSnapping 38%, useViewport 10%, useExtendTool 51%, useTrimTool 56%).
+3. Ratchet backend 73 → 74 once more backend tests land.
+
 ### Iteration 3 (DONE) — Backend coverage gate in CI (pcov + clover + threshold parse)
 
 **Changed:**

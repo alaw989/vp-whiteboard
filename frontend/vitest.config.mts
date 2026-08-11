@@ -21,6 +21,12 @@ export default defineConfig({
         'composables/**/__tests__/**',
         'utils/**/*.test.ts',
         'server/**/*.test.ts',
+        // Nitro server glue (defineEventHandler/defineWebSocketHandler
+        // handlers) is not unit-testable without a Nitro harness — same
+        // rationale as excluding components/`.vue`. Keep the tested relay
+        // (ws-server.js) + pure utils in scope.
+        'server/routes/**',
+        'server/websocket/**',
         'e2e/**',
       ],
       reporter: ['text', 'json-summary'],
