@@ -45,3 +45,33 @@ Rate-limit public endpoints: add Laravel `throttle` middleware (named rate limit
 - Loop gate: `cd frontend && npm run typecheck && npm test` AND `php artisan test` (48+, coverage ≥ 73). Run both before declaring an iteration done.
 - Manual sanity (local stack): POST /login 6× from one IP → 6th returns 429 with Retry-After; GET /api/shares/{token} from the relay path still works at N>1 requests; `/register` 4× → 4th 429.
 - e2e must still pass (login via helpers, share-link flow) — the limits are generous enough not to trip a normal e2e run, but if a spec loops auth, note it.
+
+## State
+
+### Iteration 1 — named rate limiters + middleware on all public routes + tests
+
+**Changed:**
+- `app/Providers/AppServiceProvider.php`: registered 6 named rate limiters in `boot()` via `RateLimiter::for`:
+  - `shares` → `Limit::perMinute(60)->by($request->route('token'))` — **token-keyed**, never IP-keyed (protects the WS relay which calls this from the droplet IP for every share connection).
+  - `login` / `forgot-password` / `reset-password` → `Limit::perMinute(5)->by($request->ip())`.
+  - `register` → `Limit::perMinute(3)->by($request->ip())` (also caps owner-approval mail flood).
+  - `public-read` → `Limit::perMinute(60)->by($request->ip())` for whiteboards show / files serve / sessions.
+- `routes/auth.php`: added `throttle:register`, `throttle:login`, `throttle:forgot-password`, `throttle:reset-password` to the 4 guest routes.
+- `routes/api.php`: added `throttle:shares` to `GET /shares/{token}`, `throttle:public-read` to `GET /whiteboards/{id}` and `GET /files/{id}/serve`, and to the `sessions` prefix group (both store + showByShareToken). Auto-save PATCH intentionally left unthrottled.
+- `tests/Feature/RateLimitTest.php` (new, 4 tests): login 429 after 5, register 429 after 3, share-resolver **token-keyed** (60× on token A → 429; token B from SAME IP still 200), public-read 429 after 60. Each test uses a distinct `REMOTE_ADDR` (`withServerVariables`) so buckets never collide across tests.
+
+**Verified:**
+- `php artisan test`: 52 passed (48 + 4 new), 240 assertions.
+- Backend coverage via CI-identical clover parse: **74.32%** statements ≥ 73 gate (was 73.66%).
+- Frontend `npm run typecheck` clean; `npm test` 679/679.
+- Empirically confirmed throttle state does NOT leak across test methods (fresh container per test + `CACHE_STORE=array`); also all throttle tests use distinct IPs as belt-and-braces.
+
+**Gotchas:**
+- **Laravel 12 429 body is `{"message": "Too Many Attempts."}` NOT "Too Many Requests"** — the Goal/Context notes claim the old Laravel 11 string. Tests assert the real one. `login.vue`/`register.vue` surface `e?.data?.message`, so a user will see "Too Many Attempts." — acceptable; optionally map 429 → friendlier text later.
+- `Retry-After` header is present on 429 (asserted in the login test).
+- No conflict between the HTTP `throttle:login` (IP-keyed) and the app-level `LoginRequest` lockout (email|IP-keyed) — different buckets, layered.
+- The `shares` limiter keys on `$request->route('token')` — verified the relay path stays alive even under 60 req/min on one token from one IP.
+
+**Next:**
+- Frontend polish (optional): map 429 in `useApi.ts`/`login.vue`/`register.vue` to a friendlier "Too many attempts — try again in a minute" message.
+- Confirm the share-link e2e flow (creates a share + joins via `/s/{token}`) still passes — the limits are generous so it should, but run `npm run test:e2e` before shipping if desired.
