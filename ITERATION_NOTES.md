@@ -5,6 +5,23 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 11 (DONE) — useCursors composable covered + thresholds ratcheted up
+
+**Changed:**
+- New unit test `frontend/composables/useCursors.test.ts` (11 tests) covering the full `useCursors` surface against a mock awareness object (Yjs `getStates`/`setLocalState`/`on`/`off`/`emit`): current-user identity + deterministic palette color (same id → same color, always in the 6-color palette), no-awareness no-crash (works with `undefined` provider), initial load of existing awareness states into `remoteCursors` (user/cursor/tool/lastSeen), filtering out the local client id + states without `cursor` data, recompute on `change` events, `updateLocalCursor` publishing the debounced local state (user + cursor + tool, or tool undefined), no-op when `setLocalState` is unavailable, and `cleanup` unsubscribing the listener + clearing local state (no-op when awareness missing). `useCursors.ts` was a 0% root-composable drag — now 100% stmts/lines/funcs, 95% branches.
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 72→**73**, branches 82→**83**, functions 83→**84** (all at-or-below new measured 76.19/76.19/83.45/85.4).
+
+**Measured** (after adding useCursors tests): All files 76.19% stmts/lines (was 75.16), 83.45% branches (was 83.24), 85.4% funcs (was 85.11). Suite 51 files / 597 tests (was 50/586).
+
+**Verification:**
+- `npm run coverage` exit 0 with new thresholds; `npm run typecheck` exit 0; `npm test` 597/597 pass.
+- Negative check: `--coverage.thresholds.lines=77` → `ERROR: Coverage for lines (76.19%) does not meet global threshold (77%)` → vitest exit 1. Gate enforces.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it.
+2. Ratchet frontend further (lines/stmts 73 → 74) once more composables get tested — biggest drags remain root composables (usePDFRendering 0% lines, useDocumentLayer ~0%, useViewport 9.75%, useExtendTool 51%, useTrimTool 56%, useFileUpload's `uploadFile`/`uploadFiles` body 31.89%). `useViewport` (already has a test file covering the pure fns; the 9.75% body is the pan/zoom/remote-sync logic — stage-mockable) and `usePDFRendering` are the next best candidates.
+3. Ratchet backend 73 → 74 once more backend tests land.
+
 ### Iteration 10 (DONE) — useSnapping composable covered + thresholds ratcheted up
 
 **Changed:**
