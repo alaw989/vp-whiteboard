@@ -203,18 +203,18 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 6. Mark the item done below (move to "Shipped") and continue to the next item when asked.
 
 **Backlog (in priority order):**
-1. **CI e2e job + fix the cold-boot login hydration flake** — run the 65-test playwright suite at PR time (boot the stack in the runner, retries for warm-up); root-cause the recurring smoke/mobile-touch flake so the suite is deterministic.
-2. **Coverage tooling + threshold gate** — install `@vitest/coverage-v8` (pinned vitest ^2.1.9) + a `npm run coverage` script; configure `vitest.config.mts` (include composables/utils/server, exclude tests) and gate the CI `test` job on line/statement/branch thresholds. Backend: enable pcov in the CI PHP setup (`shivammathur/setup-php` `coverage: pcov`) and gate `php artisan test --coverage-clover`/`--coverage-text` output (PHPUnit has no native min-coverage flag — small parse step). First pass MEASURES the current % then sets realistic thresholds that ratchet up — not an arbitrary number that instantly fails CI.
-3. **Rate-limit public endpoints** — Laravel `throttle` on `/api/shares/{token}`, auth, and registration (public + unauthenticated today).
-4. **Board dashboard** — search, sort (recent/alphabetical), thumbnails, archive on `index.vue` (delete exists, no archive).
-5. **Save-state indicator** — subtle Saving…/Saved/Offline–retrying badge to surface the WS/API outage mode behind the past data-loss incident.
-6. **Vector/SVG export** — emit shapes as a vector layer in the PDF (crisp at any zoom) alongside the raster PNG/PDF.
-7. **Grid/snap + dimension units** — visual grid toggle, snapping, mm/in + scale calibration.
-8. **Custom stamp upload** — image stamps beyond the fixed APPROVED/REVISED/NOTE/FOR REVIEW set.
-9. **Admin user management** — user list + disable/reset for `is_admin` owners (beyond approve/deny).
-10. **Offline editing (PWA)** — service worker + local-first edits synced on reconnect (reconnect/resume hardening already laid groundwork).
-11. **Accessibility audit** — keyboard focus in the toolbar, focus-trapping in the text-annotation modal, aria on the mobile toolbar.
-12. **Visual regression screenshot tests** — golden-image styling diffs the fingerprint-based tests can't catch.
+1. **Coverage tooling + threshold gate** — install `@vitest/coverage-v8` (pinned vitest ^2.1.9) + a `npm run coverage` script; configure `vitest.config.mts` (include composables/utils/server, exclude tests) and gate the CI `test` job on line/statement/branch thresholds. Backend: enable pcov in the CI PHP setup (`shivammathur/setup-php` `coverage: pcov`) and gate `php artisan test --coverage-clover`/`--coverage-text` output (PHPUnit has no native min-coverage flag — small parse step). First pass MEASURES the current % then sets realistic thresholds that ratchet up — not an arbitrary number that instantly fails CI.
+2. **Rate-limit public endpoints** — Laravel `throttle` on `/api/shares/{token}`, auth, and registration (public + unauthenticated today).
+3. **Board dashboard** — search, sort (recent/alphabetical), thumbnails, archive on `index.vue` (delete exists, no archive).
+4. **Save-state indicator** — subtle Saving…/Saved/Offline–retrying badge to surface the WS/API outage mode behind the past data-loss incident.
+5. **Vector/SVG export** — emit shapes as a vector layer in the PDF (crisp at any zoom) alongside the raster PNG/PDF.
+6. **Grid/snap + dimension units** — visual grid toggle, snapping, mm/in + scale calibration.
+7. **Custom stamp upload** — image stamps beyond the fixed APPROVED/REVISED/NOTE/FOR REVIEW set.
+8. **Admin user management** — user list + disable/reset for `is_admin` owners (beyond approve/deny).
+9. **Offline editing (PWA)** — service worker + local-first edits synced on reconnect (reconnect/resume hardening already laid groundwork).
+10. **Accessibility audit** — keyboard focus in the toolbar, focus-trapping in the text-annotation modal, aria on the mobile toolbar.
+11. **Visual regression screenshot tests** — golden-image styling diffs the fingerprint-based tests can't catch.
+12. **Promote `e2e` CI job to a required check** — once the e2e job (added in #68/#69) has stayed green across several PRs; may need to tame the 2 remaining warm-up flakes (approvals `waitForURL` 15s, collab WS-sync 20s poll under 2-worker CI load — both retry-pass).
 13. (Ideas for later) — PDF layer rendering perf, viewport-clipping correctness on zoom, admin approval email test on staging with real SMTP, onboarding/empty-state UX.
 
 **Shipped (all merged to develop + master, deployed to staging + prod):**
@@ -228,5 +228,6 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 - Export hardening (sanitized filenames, 18 unit + 3 e2e edge cases) — #57/#58.
 - Share-link expiry/revoked UX — resolver distinguishes expired (410) vs not-found/revoked (404); `/s/{token}` and client-side nav land on a friendly `/share-invalid` page (whitelisted for anonymous viewers) instead of a silent home redirect; 3 e2e + 2 backend tests — #60/#61.
 - Fresh full-tool audit — `full-tool-audit.spec.ts` (38 tests) drives all 18 previously-uncovered tools (line, arrow, circle, ellipse, polyline, arc, revision-cloud, stamp, dimension, measure-distance, text-annotation, offset, mirror, rotate, scale, trim, extend, fillet, measure-area) through mouse + touch; every one of the 24 tools now asserts it commits a persisting element. No product-code bugs found — #63/#64.
+- CI e2e job + hydration-flake fix — new `e2e` CI job (boots full stack, installs browsers, uploads test-results on failure) + hydration-safe self-healing `fillLoginForm` login helper (fixes the smoke/mobile-touch cold-boot flake) + generous navigation/webServer timeouts. Suite now 67 tests, deterministic locally (67/0 ×2); e2e job green on its first 2 CI runs (2 warm-up flakes in approvals/collab still retry-pass) — #68/#69.
 
 **Current health (Aug 11, 2026):** `npm run typecheck` clean, `npm test` 438/438 (44 files), `npm run test:e2e` 65 passed (2 cold-boot flaky, retry-pass), `php artisan test` 48 passed. All branch-protection checks (`test`, `backend-test`) green. Local dev stack ports: Laravel :8002, Nuxt :3000, WS relay :3001. Droplets: staging+prod on `165.245.141.179` (relay :3003 staging / :3001 prod). e2e must run with Nuxt `TEST=1` (disables devtools overlay) and a clean stack — a stale Nuxt on :3000 makes a fresh one fall back to :3001 and collide with the WS relay.

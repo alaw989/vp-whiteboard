@@ -34,9 +34,9 @@ jobs:
         working-directory: frontend
         run: npm run typecheck
 
-      - name: Test
+      - name: Test (with coverage gate)
         working-directory: frontend
-        run: npm test
+        run: npm run coverage
 
   backend-test:
     runs-on: ubuntu-latest
@@ -51,12 +51,34 @@ jobs:
         with:
           php-version: '8.4'
           tools: composer
+          coverage: pcov
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      - name: Run Laravel tests
-        run: php artisan test
+      - name: Run Laravel tests with coverage
+        run: php artisan test --coverage-clover=build/coverage.xml
+
+      - name: Enforce backend coverage threshold
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          txt = open('build/coverage.xml').read()
+          m = re.search(r'<metrics files="[^"]+"[^>]*>', txt)
+          assert m, "no project-level <metrics> element found in clover XML"
+          metrics = m.group(0)
+          def attr(name):
+              mm = re.search(name + r'="(\d+)"', metrics)
+              assert mm, f"missing attribute {name} in project-level <metrics>"
+              return int(mm.group(1))
+          statements = attr('statements')
+          covered = attr('coveredstatements')
+          pct = 100.0 * covered / statements
+          THRESHOLD = 73.0
+          print(f"Backend coverage: {covered}/{statements} statements = {pct:.2f}% (threshold {THRESHOLD:.0f}%)")
+          if pct < THRESHOLD:
+              sys.exit(f"FAIL: backend coverage {pct:.2f}% below threshold {THRESHOLD:.0f}%")
+          PY
 
   # Full Playwright e2e suite at PR time. The suite's playwright.config.ts
   # webServer array boots the WHOLE stack (php artisan serve :8002, nuxt dev
