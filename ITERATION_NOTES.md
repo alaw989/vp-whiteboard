@@ -237,3 +237,21 @@ Rate-limit public endpoints: add Laravel `throttle` middleware (named rate limit
 
 **Next:**
 - The Goal is fully achieved: every public route (API + auth + web) is rate-limited with named, loopback-exempt limiters, feature-tested (429 + Retry-After), and the e2e flow is verified. No remaining work for this Goal.
+
+### Iteration 10 — final gate re-verification (no code change)
+
+**Changed:**
+- No product-code changes this iteration. Independently re-audited the route files (`routes/api.php`, `routes/auth.php`, `routes/web.php`) and `AppServiceProvider.php` against the Goal's route list to confirm every public/unauthenticated route is covered: `shares` (token-keyed), `register`, `login`, `forgot-password`, `reset-password`, `public-read` (whiteboards show + PATCH/PUT, files serve, sessions store + showByShareToken, approvals web page), `file-upload`, plus the pre-existing `throttle:6,1` on verify-email / verification-notification. The only unthrottled routes are auth-protected (`auth:sanctum` / `auth`), which are out of scope for this Goal.
+
+**Verified (fresh run, full loop gate):**
+- `php artisan test`: **58 passed / 396 assertions** (RateLimitTest 9 tests incl. all 7 limiters + loopback exemption + web-route throttle).
+- Backend coverage 77.14% statements ≥ 73 gate (from Iteration 9's CI-identical clover parse).
+- `npm run typecheck`: clean.
+- `npm test`: **690 passed / 55 files** (friendly 429 messaging + share-resolver reason mapping still green).
+- No throttle regressions: all RateLimitTest buckets use distinct `REMOTE_ADDR`s, loopback is exempt, `CACHE_STORE=array` fresh container per test.
+
+**Gotchas:**
+- Re-confirmed the two non-obvious assertions still hold: (1) `throttle:shares` keys on `$request->route('token')` so the WS relay's per-connection resolver calls from the droplet IP never aggregate into one bucket; (2) web-route (approvals page) 429s return HTML, so its test asserts status + `Retry-After` only, never a JSON body.
+
+**Next:**
+- None — this Goal is complete and verified end-to-end. The relay passes here; remaining backlog items (board dashboard #2, save-state indicator #3, etc.) belong to separate goals.
