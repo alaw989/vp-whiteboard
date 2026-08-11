@@ -17,7 +17,7 @@
     "postinstall": "nuxt prepare",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
-    "coverage": "vitest run --coverage --coverage.thresholds.lines=63 --coverage.thresholds.statements=63 --coverage.thresholds.branches=79 --coverage.thresholds.functions=80",
+    "coverage": "vitest run --coverage --coverage.thresholds.lines=65 --coverage.thresholds.statements=65 --coverage.thresholds.branches=80 --coverage.thresholds.functions=81",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:all": "npm run typecheck && npm run test"

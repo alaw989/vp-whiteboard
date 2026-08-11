@@ -5,6 +5,23 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 8 (DONE) — useLayers composable covered + thresholds ratcheted up
+
+**Changed:**
+- New unit test `frontend/composables/useLayers.test.ts` (23 tests) covering the full `useLayers` surface against a real `Y.Doc`: `observeLayers` seeds the default layer when nothing is stored and loads stored layers with active fallback to first, `addLayer` (auto/custom name, palette color cycling, order, sets active, syncs to yMeta), `removeLayer` (default refused, missing id no-op, active reassigned to first remaining), `renameLayer`, `toggleLayerVisibility`, `toggleLayerLock`, `setLayerColor`, `setActiveLayer` (missing id no-op), `reorderLayers` (order by position, unknown ids dropped), `getActiveLayer`, `isLayerVisible`/`isLayerLocked`/`getLayerColor` (undefined/missing/existing), `sortedLayers`, `hiddenLayerIds`, and the observer (remote key change updates layers, ignores non-`layers` keys, cleanup stops callbacks, active reassigned when a remote change drops it). `useLayers.ts` was a 0% root-composable drag — now 100% stmts/lines/funcs, 94.66% branches.
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 63→**65**, branches 79→**80**, functions 80→**81** (all at-or-below new measured 66.58/66.58/80.48/81.74).
+
+**Measured** (after adding useLayers tests): All files 66.58% stmts/lines (was 64.14), 80.48% branches (was 79.53), 81.74% funcs (was 80.87). Suite 49 files / 516 tests (was 48/493).
+
+**Verification:**
+- `npm run coverage` exit 0 with new thresholds; `npm run typecheck` exit 0; `npm test` 516/516 pass.
+- Negative check: `--coverage.thresholds.lines=67` → `ERROR: Coverage for lines (66.58%) does not meet global threshold (67%)` → exit 1. Gate enforces.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it.
+2. Ratchet frontend further (lines/stmts 65 → 66) once more composables get tested — biggest drags remain root composables (useCursors/useMeasurements/useDocumentLayer ~0%, usePDFRendering 0% lines, useViewport 9.75%, useSnapping 38%, useExtendTool 51%, useTrimTool 56%, useFileUpload's `uploadFile`/`uploadFiles` body 31.89%). `useMeasurements` (Yjs array like `useScale`/`useLayers` were, mostly pure math + a Y.Array push) is the next best candidate; `useViewport`/`useSnapping` (already have test files at 9.75%/38%) are also easy wins.
+3. Ratchet backend 73 → 74 once more backend tests land.
+
 ### Iteration 7 (DONE) — useCommandEngine/Registry covered + thresholds ratcheted up
 
 **Changed:**
