@@ -6,12 +6,44 @@ import { E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD } from './global-setup'
 const LARAVEL_URL = process.env.E2E_LARAVEL_URL || 'http://localhost:8002'
 const FRONTEND_URL = process.env.E2E_FRONTEND_URL || 'http://localhost:3000'
 
-/** Fill the login form + submit, waiting for the button to enable (hydrated). */
-export async function loginSubmit(page: Page, email: string, password: string) {
+/**
+ * The hydration-safe login core: fill the form, assert the values actually
+ * stuck, then leave the submit button enabled.
+ *
+ * Root cause this fixes: on a COLD boot Nuxt SSR renders the login page and
+ * Playwright fills the inputs before Vue has attached its v-model listeners,
+ * so the input events are dropped and `email`/`password` refs stay empty → the
+ * submit button (`:disabled="loading || !email || !password"`, login.vue:46)
+ * stays disabled → `page.click` times out on "element is not enabled".
+ *
+ * Unlike a one-shot fill + `toBeEnabled` (which only *detects* the race by
+ * timing out after 10s), this SELF-HEALS: fill → assert the value stuck →
+ * re-fill on failure. Once hydration finishes a re-fill always sticks, so the
+ * loop converges instead of hard-failing. The final `toBeEnabled` is the last
+ * line of defense.
+ */
+async function fillLoginForm(page: Page, email: string, password: string) {
   await page.goto('/login')
-  await page.fill('#email', email)
-  await page.fill('#password', password)
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await page.locator('#email').fill(email)
+    await page.locator('#password').fill(password)
+    try {
+      await expect(page.locator('#email')).toHaveValue(email, { timeout: 2000 })
+      await expect(page.locator('#password')).toHaveValue(password, { timeout: 2000 })
+      break
+    } catch {
+      // hydration dropped the value (or replaced the input mid-fill); re-fill.
+    }
+  }
+  await expect(page.locator('#email')).toHaveValue(email, { timeout: 5000 })
+  await expect(page.locator('#password')).toHaveValue(password, { timeout: 5000 })
   await expect(page.locator('button[type="submit"]')).toBeEnabled({ timeout: 10000 })
+}
+
+/** Fill the login form + submit (used where a redirect is NOT expected, e.g. a
+ * pending/denied login that renders an inline error instead). */
+export async function loginSubmit(page: Page, email: string, password: string) {
+  await fillLoginForm(page, email, password)
   await page.click('button[type="submit"]')
 }
 
@@ -20,14 +52,7 @@ export async function login(page: Page, creds: { email: string; password: string
   email: E2E_OWNER_EMAIL,
   password: E2E_OWNER_PASSWORD,
 }) {
-  await page.goto('/login')
-  await page.fill('#email', creds.email)
-  await page.fill('#password', creds.password)
-  // Nuxt SSR hydration can replace the inputs after fill and drop the value;
-  // wait until the submit button actually enables (v-model updated) before
-  // clicking, so a hydration race fails fast instead of a 30s disabled-button
-  // timeout.
-  await expect(page.locator('button[type="submit"]')).toBeEnabled({ timeout: 10000 })
+  await fillLoginForm(page, creds.email, creds.password)
   await page.click('button[type="submit"]')
   await page.waitForURL(/\/(whiteboards?|$)/, { timeout: 15000 })
 }

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { login } from './helpers'
 import { E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD } from './global-setup'
 
 test.describe('Whiteboard smoke', () => {
@@ -8,10 +9,7 @@ test.describe('Whiteboard smoke', () => {
   // Registration is owner-approved (new users are `pending` and can't log in),
   // so the suite uses the pre-seeded, approved owner from global-setup.
   test('login, create whiteboard, reload, verify persistence', async ({ page }) => {
-    await page.goto('/login')
-    await page.fill('#email', email)
-    await page.fill('#password', password)
-    await page.click('button[type="submit"]')
+    await login(page, { email, password })
     await page.waitForURL(/\/(whiteboards?|$)/, { timeout: 15000 })
 
     await page.goto('/')

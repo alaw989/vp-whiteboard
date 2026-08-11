@@ -5,7 +5,23 @@ Add a CI e2e job to .github/workflows/ci.yml that runs the full playwright suite
 
 ## State
 
-(no iterations yet — first loop run starts here)
+### Iteration 1 (DONE) — login hydration flake: self-healing login core + smoke uses shared helper
+**Changed:**
+- `frontend/e2e/helpers.ts`: extracted a shared `fillLoginForm()` used by both `login()` and `loginSubmit()`. Fixes the cold-boot fill-before-hydration value drop via a SELF-HEALING retry loop (fill → `toHaveValue` assert → re-fill on failure, up to 5 attempts) instead of the old one-shot fill + `toBeEnabled` (which only *detected* the race by 10s timeout). Final `toBeEnabled(10s)` retained as last line of defense. NOTE: tried a `#__nuxt[data-v-app]` hydration sentinel first — empirically VERIFIED ABSENT on Nuxt 3.15 (`data-v-app` never appears; `__vue_app__` is set BEFORE hydration completes, so neither is a usable sentinel). Reverted to the version-agnostic retry loop.
+- `frontend/e2e/smoke.spec.ts`: the known inline-login culprit now calls the shared `login(page, {email, password})` instead of inlining fill/click with no enabled-wait. The only inline login left in the suite.
+- Audited: the only other inline `page.fill('#email'`s were the two in helpers.ts itself (now `fillLoginForm`); every other spec already used `login()`/`loginSubmit()`.
+
+**Verified (all green):**
+- `npm run typecheck` (0 errors), `npm test` (438/438, 44 files).
+- Full `npx playwright test`: **67 passed, 0 failed, 0 flaky** (1.5m) — suite grew to 67, not 65. Covers smoke (formerly flaky), approvals (loginSubmit), share-expiry, export, collab, mobile-touch, full-tool-audit.
+- Re-booted Nuxt cold between runs and immediately ran smoke+approvals+share-expiry+export (10 tests) — all passed, no hydration flake.
+
+**Next:** add the CI e2e job to `.github/workflows/ci.yml` (PHP 8.4 + composer install + provisioned Laravel .env with persistent SQLite DB at `database/database.sqlite` + migrate, SESSION_DRIVER=database, SANCTUM_STATEFUL_DOMAINS=localhost:3000, MAIL_MAILER=array; Node 22 + npm ci + `npx playwright install --with-deps chromium`; run `npx playwright test`; timeout-minutes ~20; upload test-results/ on failure; do NOT add to branch protection). The playwright webServer + global-setup auto-boot the stack, so the job just needs a real bootable Laravel. See Context for the full recipe.
+
+**Gotchas:**
+- The suite count is now **67** (not 65 as the Goal text says) — don't hardcode 65.
+- Local dev servers were left running (laravel :8002, nuxt :3000 TEST=1, ws :3001) from this iteration's verification — playwright `reuseExistingServer: true` reuses them; restart if a later iteration needs a genuinely cold boot.
+- `pkill -f "vite"` hung the shell (matched the invoking shell) — use targeted pids or `pkill -f "nuxt dev"` only, per AGENTS.md warning.
 
 ## Context (from prior code review — read before changing code)
 
