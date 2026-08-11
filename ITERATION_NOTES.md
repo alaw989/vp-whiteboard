@@ -218,3 +218,22 @@ Rate-limit public endpoints: add Laravel `throttle` middleware (named rate limit
 
 **Next:**
 - The Goal is fully achieved: all public routes rate-limited, feature-tested (429 + Retry-After), loopback-exempt for e2e, WS relay protected via token-keying. No remaining work for this Goal.
+
+### Iteration 9 — throttle the last remaining public route: GET /approvals/{id}/{action} (blade page)
+
+**Changed:**
+- `routes/web.php`: added `->middleware('throttle:public-read')` to `GET /approvals/{id}/{action}` — the last public/unauthenticated route left unthrottled (a GET blade page the approval email links to; it does a `User::findOrFail` DB lookup per request, so unbounded hits are a DB-hammering vector). Reuses the existing `public-read` limiter (60/min/IP, loopback-exempt).
+- `tests/Feature/RateLimitTest.php`: +1 test — `test_approval_confirmation_page_is_throttled_per_ip` (60 allowed, 61st → 429, distinct IP `203.0.113.17`, bogus id so lookups 404 while throttle hits still consume).
+
+**Verified:**
+- `php artisan test`: **58 passed** (57 + 1 new) / 396 assertions. New test stable across repeated runs (3× isolated runs, 62 assertions each).
+- Backend coverage via CI-identical clover parse: **77.14%** statements ≥ 73 gate (up from 76.94%).
+- Frontend `npm run typecheck` clean; `npm test` 690/690 (untouched this iteration).
+- Every public/unauthenticated route in `routes/api.php`, `routes/auth.php`, AND `routes/web.php` is now throttled.
+
+**Gotchas (important — tripped the loop gate):**
+- **Web-route 429 bodies are HTML, not JSON.** The blade page's 429 is the Laravel HTML error page (`text/html; charset=utf-8`). `assertJson(['message' => 'Too Many Attempts.'])` on it FAILS and rethrows the stored `ThrottleRequestsException` via `TestResponse::decodeResponseJson()` (`if ($this->exception) throw $this->exception;`) — so a JSON assertion on a web-route throttle test reports a raw `ThrottleRequestsException` "FAILED" instead of an assertion error, and makes the test fail even though `assertStatus(429)` passed. Fix: assert the status + `Retry-After` header only, never the JSON body, for web-route throttles (the `/api/*` throttle tests use `postJson`/`getJson` which genuinely return JSON and can assert the body).
+- This is why the first attempt looked like a non-deterministic/order-dependent flake (pass in one file, fail in another) — it was deterministic: `assertJson` on an HTML body always rethrows. Any future web-route throttle test must remember this.
+
+**Next:**
+- The Goal is fully achieved: every public route (API + auth + web) is rate-limited with named, loopback-exempt limiters, feature-tested (429 + Retry-After), and the e2e flow is verified. No remaining work for this Goal.

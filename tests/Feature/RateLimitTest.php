@@ -212,4 +212,25 @@ class RateLimitTest extends TestCase
         ])->assertStatus(429)
             ->assertJson(['message' => 'Too Many Attempts.']);
     }
+
+    public function test_approval_confirmation_page_is_throttled_per_ip(): void
+    {
+        // GET /approvals/{id}/{action} (web.php) is the owner-facing blade page
+        // the approval email links to — public (no auth, so the link resolves)
+        // and does a User::findOrFail DB lookup per request. The throttle
+        // middleware runs BEFORE the controller, so a bogus id still consumes a
+        // hit (404 on the lookups, 429 once the 60/min public-read budget is
+        // exhausted). NOTE: this is a web route, so the 429 body is the HTML
+        // error page, not JSON — assert status + Retry-After header only.
+        $client = $this->withIp('203.0.113.17');
+
+        for ($i = 0; $i < 60; $i++) {
+            $response = $client->get('/approvals/nonexistent-id/approve');
+            $this->assertNotEquals(429, $response->getStatusCode());
+        }
+
+        $response = $client->get('/approvals/nonexistent-id/approve');
+        $response->assertStatus(429);
+        $this->assertNotNull($response->headers->get('Retry-After'));
+    }
 }
