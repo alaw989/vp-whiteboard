@@ -1,47 +1,52 @@
 # Iteration Notes
 
 ## Goal
-Share-link expiry UX: when GET /api/shares/{token} fails (expired, revoked, or unknown token) the /s/{token} route must stop silently redirecting to / and instead show a clear friendly "link expired or revoked" page, while a valid token still goes straight to the board. Backend WhiteboardShare::findActiveByToken already filters expired. Cover it with e2e (expired token -> friendly message, valid token -> board) and backend resolver tests (expired vs not-found must be distinguishable so the page can say the right thing). Keep npm run typecheck + npm test green and the existing e2e suite passing.
+Fresh full-tool audit: drive EVERY whiteboard tool through the e2e harness (mouse + touch) asserting each creates/persists an element; fix anything that doesn't. Covered already: pen, highlighter, eraser, select, pan, rectangle (mouse/touch). ADD e2e coverage for: line, arrow, circle, ellipse, polyline, arc, revision-cloud, stamp, text-annotation, dimension, measure-distance, measure-area, offset, mirror, rotate, scale, trim, extend, fillet — in frontend/e2e/ (new full-tool-audit.spec.ts or per-group specs), reusing helpers.ts, exercising BOTH the desktop mouse path (getByRole toolbar button + page.mouse) and the touch path (mobile emulation + existing touchPointer/touchStroke/touchDrag helpers), asserting each tool commits a real element (canvasFingerprint change / element count / transformer selection / dialog flow). Fix any tool that fails to create/persist an element. Keep npm run typecheck + npm test green, and run the new spec via npx playwright test to verify (playwright auto-boots the stack via webServer).
 
 ## State
 
-- **Iteration 1 (backend resolver):** Added `WhiteboardShare::findByToken()` (no expiry filter, hash lookup) alongside `findActiveByToken()`. `ShareController@resolve()` now distinguishes cases: valid → 200; row exists but past expiry → **410 Gone** `{success:false,error:'expired'}`; unknown/revoked → **404** `{success:false,error:'not_found'}`. Removed the ambiguous `'Share not found or expired'` message.
-  - Tests: `test_expired_share_is_rejected` now asserts `assertGone()` + `error:'expired'`; added `test_unknown_or_revoked_token_is_not_found` (404 + `error:'not_found'`). Backend suite: 48 passed (was 47). WS relay unaffected (its `status === 200` check already rejects 410/404 → closes handshake 4001).
-  - Verified: `php artisan test` green.
-
-- **Iteration 2 (frontend friendly page + e2e):** The silent `/` redirect on share-link failure is gone.
-  - **Server route** `server/routes/s/[id].get.ts`: 410 → `/share-invalid?reason=expired`, 404/unknown/other → `/share-invalid?reason=not_found`. The catch block reads the resolver's HTTP status (`e.response.status`/`e.status`/`e.statusCode`) — 410 = expired, else not_found. No token/secret ever goes in the error URL.
-  - **New page** `pages/share-invalid.vue`: public, Tailwind `bg-gradient-to-br` (mirrors `login.vue`), heading varies by `reason` ("has expired" vs "has been revoked or is no longer valid"), explanation text, "Go home" NuxtLink. `data-testid` = `share-invalid-page`, `share-invalid-heading`, `share-invalid-explanation`, `share-invalid-home`.
-  - **Auth whitelist** `middleware/auth.global.ts`: added exact `to.path === '/share-invalid'` so anonymous viewers render the page instead of being bounced to `/login?redirect=...`.
-  - **Stale page** `pages/s/[id].vue`: rewritten to call the LIVE `/api/shares/{token}` resolver (was dead `/api/sessions/{id}`) and mirror the server route — valid → `/whiteboard/{id}?share={token}`, 410 → expired page, 404 → revoked page. Client-side nav to `/s/{token}` no longer 404s and no longer hits the dead endpoint.
-  - **e2e** `frontend/e2e/share-expiry.spec.ts` (3 tests): valid token → board (asserts the friendly page is NOT shown); expired token (create share `days:1` then backdate `expires_at` via tinker `expireShareLink` helper) → friendly page with "expired" heading + `?reason=expired` URL; unknown token → friendly page with "revoked" heading + `?reason=not_found` URL. New `createShareLink(context, id, days?)` + `expireShareLink(sharePath)` helpers added to `helpers.ts`.
-  - **Verified:** `npm run typecheck` clean, `npm test` 438/438, `php artisan test` 48 passed, e2e `share-expiry.spec.ts` 3/3 + full suite 28 passed (1 flaky = known login-button hydration warm-up, passed on retry + clean on warm re-run).
-- **Next (iteration 3):** none required for the Goal — all items shipped. Optional polish if asked: make the "Go home" link preserve a logged-in user's session (it already does), or add a WS-relay test asserting an expired token closes handshake with 4001 (relay already treats non-200 as unauthorized; covered by design but not by an explicit test). Goal is fully achieved.
-- **Gotchas:** resolver 404/410 distinction must stay readable in both the server route and the client-side `/s/[id]` page (both read HTTP status); the friendly page MUST stay whitelisted in auth.global.ts (exact path) or anonymous viewers get bounced to login; WS relay treats any non-200 as unauthorized — do not change that contract; the expired-token e2e backdates `expires_at` via tinker hash lookup (token_hash = sha256(raw), mirrors `seedPendingUser`).
+(no iterations yet — first loop run starts here)
 
 ## Context (from prior code review — read before changing code)
 
-### Current behavior (the bug)
-- `frontend/server/routes/s/[id].get.ts` (the `/s/{token}` first-load handler) calls `GET /api/shares/{token}`; on `!res.success` it returns `sendRedirect(event, '/', 302)` — a **silent redirect home** with no explanation. Same for the catch.
-- `app/Http/Controllers/Api/ShareController@resolve()` returns **404 `{success:false, error:'Share not found or expired'}` for ALL failure cases** — unknown token, revoked (row deleted → not found), and expired (`findActiveByToken` returns null when `expires_at` is past). The viewer can't distinguish "expired" from "revoked/not found", and the frontend never surfaces any of it.
-- `frontend/pages/s/[id].vue` is **STALE**: it calls `/api/sessions/${shortId}` which no longer exists (old share-link mechanism). It only runs on CLIENT-side navigation to `/s/:token` (the server route wins on first load). It currently redirects to `/` on failure and is inconsistent with the live `server/routes/s/[id].get.ts` flow.
+### What "every tool" means
+24 tools total. **Already covered in e2e:** pen, highlighter, eraser, select, pan, rectangle (mobile-touch.spec.ts touch; collab.spec.ts desktop mouse for pen/highlighter). **ZERO coverage for:** line, arrow, circle, ellipse, polyline, arc, revision-cloud, stamp, text-annotation, dimension, measure-distance, measure-area, offset, mirror, rotate, scale, trim, extend, fillet. Those 18 are the audit target.
 
-### Design notes for the fix
-- Backend: distinguish the cases so the page can say the right thing. Add `WhiteboardShare::findByToken()` (no expiry filter) alongside `findActiveByToken()`. `resolve()`: valid → 200; expired (row exists but past) → **410 Gone** with `error: 'expired'`; not found/revoked → **404** with `error: 'not_found'`. Keep the `success:false` shape.
-- WS relay (`frontend/server/ws-server.js` `isAuthed`, ~line 146): checks `status === 200 && data.data.whiteboard_id === roomId` — a non-200 resolver response already closes the handshake (4001). Returning 410 for expired does NOT break the relay.
-- Frontend `/s/{token}` server route: on failure, 302 → the friendly page (NOT `/`). Pass no token/secret in the URL; keep it a bare static route. Fix/remove the stale `pages/s/[id].vue` so client-side nav doesn't hit the dead `/api/sessions/` endpoint (options: make it call `/api/shares/{token}` and redirect to the friendly page, or delete it — the server route still handles first load; verify client-side nav doesn't 404 after deletion).
-- **Auth middleware gotcha:** `frontend/middleware/auth.global.ts` only whitelists `/login`, `/register`, and `/whiteboard/[id]` (not `/new`). An anonymous share viewer following a 302 to a new error page would hit the `/api/user` check → 401 → bounced to `/login?redirect=...`. The new error page MUST be whitelisted in `auth.global.ts` (e.g. exact path match), OR the friendly page must render server-side without Nuxt client middleware (not recommended — harder to style/test).
-- Friendly page: public, minimal — e.g. a heading like "This share link has expired or been revoked", a short explanation, and a "Go home" link. Follow existing page styling (`frontend/pages/index.vue`, `login.vue` use Tailwind on `bg-neutral-*`). Add a stable `data-testid` for the e2e.
-- **Backend test to update:** `tests/Feature/ShareApiTest.php` `test_expired_share_is_rejected` currently asserts `assertNotFound()` for an expired token. If we return 410 for expired, this must become `assertGone()` + assert the `error` payload. Add a sibling test that a random/revoked token still 404s. Existing `test_public_resolver_returns_board_for_valid_token` stays 200.
+### Tool registry + selectors (from WhiteboardToolbar.vue — single component, desktop sidebar + md:hidden mobile bottom sheet)
+- `primaryTools` (line ~698): select, pan, pen, highlighter, eraser — the 5 in the COLLAPSED mobile strip.
+- `navTools`: select (V), pan (H). `drawTools`: pen (P), highlighter (B), line (L), arrow (A), rectangle (R), circle (C), ellipse (E), polyline (PL), arc (ARC), revision-cloud (RC). `modifyTools`: offset (OFF), mirror (MI), rotate (RO), scale (SC), trim (TR), extend (EX), fillet (F), eraser (X). `annotateTools`: text-annotation (T), dimension (DIM). `measureTools`: measure-distance (M), measure-area (Shift+M). Stamp = separate dropdown button (title `Stamp (S)` desktop / `Stamp` mobile expanded).
+- **Desktop buttons:** `:title="Name (Shortcut)"`, `:aria-label="Name tool, press Shortcut"`, `:aria-pressed="currentTool === tool.id"`. Reliable selector: scope to `getByRole('toolbar', { name: 'Whiteboard tools' })` then `getByRole('button', { name: 'Circle tool, press C', exact: true })`. Active = `toHaveAttribute('aria-pressed', 'true')`.
+- **Mobile collapsed strip** (`role="toolbar" aria-label="Mobile whiteboard tools"`, `role="group" aria-label="Primary drawing tools"`): `:title="Name (Shortcut)"` ONLY — e.g. `getByTitle('Pen (P)')`; active = `toHaveClass(/bg-blue-100/)`.
+- **Mobile expanded palette** (open via `expandMobileToolbar()` in helpers.ts — clicks the color swatch, waits for "Tools" header): buttons `:title="tool.name"` — **bare name, no shortcut, NO aria-label**. `getByTitle('Circle', { exact: true })` scoped to the mobile toolbar. **exact: true is MANDATORY** — the desktop sidebar (hidden md:flex) stays in the DOM with `Circle (C)` titles, so a non-exact `getByTitle('Circle')` hits strict-mode. Undo/Redo are ambiguous too — always scope + exact.
+- Stamp: desktop `aria-label="Stamp tool, press S. Current: APPROVED"` (dynamic currentStampType); menu items `role="menuitem"`, `aria-label="Select APPROVED stamp, currently selected"` etc.
 
-### e2e plan
-- New `frontend/e2e/share-expiry.spec.ts` (reuse `frontend/e2e/helpers.ts` + the `createShareLink` recipe already in `collab.spec.ts`, which posts with Sanctum stateful headers).
-  - **Valid token → board:** login → createWhiteboard → createShareLink → anonymous context → goto `/s/{token}` → `waitForURL(/\/whiteboard\//)` → `waitForCanvas`.
-  - **Expired token → friendly message:** create a share with `days:1` via API, parse the token out of the returned URL, then expire it directly in the DB with a `php artisan tinker` recipe (mirror `seedPendingUser` in helpers.ts — set `expires_at = now()->subDay()` where `token_hash = hash('sha256', token)`), then anonymous goto `/s/{token}` → expect the friendly page text (no redirect to `/`).
-  - (Optional) **Revoked token → friendly message:** delete the share row via tinker, same assertion.
-- e2e must run with the full stack booted (`TEST=1`, cold) — see AGENTS.md current-health note; the first `playwright test` run has a warm-up cost that can make login-button hydration flaky (re-run to confirm, don't chase).
+### Interaction pattern per uncovered tool (all go through the unified pointer pipeline → input-agnostic; drive with page.mouse on desktop, synthetic `pointerType:'touch'` via helpers on mobile)
+**Create-from-scratch (mouse + touch drag):**
+- line: down-drag-up; zero-length discarded. arrow: same, 2 pts + head. circle: down=center, drag=radius (`radius>5`). ellipse: bbox drag. 
+- **polyline: CLICKS only** (pointerup is a no-op). ≥2 vertices; finish via **Enter**, **double-click** (2nd click <10px of last vertex), or **`C`** (closes, needs ≥3). Backspace pops, Esc cancels.
+- **arc: 3 clicks** (start, through, end); commits on 3rd click; collinear discarded. **dimension: 3 clicks** (start → end → offset); 3rd commits. **measure-distance: 2 clicks** (start → end); 2nd commits.
+- **revision-cloud: clicks per vertex**, ≥2; finish via click <10px of first/last vertex, Enter, or `C`; always closed.
+- **stamp: click/tap only** — commits on pointerdown; centered on click.
+- **text-annotation: down-drag-up** draws a leader line, OPENS A MODAL on pointerup (`<textarea>` placeholder "Enter your annotation...", commit via **Enter** or **Add** button; empty text closes without creating). Test must type text + press Enter, then assert an element persisted (canvasFingerprint or element count).
+**Modify tools (own selection state machine, do NOT need select-tool selection first):**
+- offset: click 1 on a line/polyline/rectangle → click 2 → emits a PARALLEL COPY (original kept).
+- mirror: select-step clicks (toggle elements; Enter or empty-click advances) → axis-first click pt → axis-second click pt → mirrored COPIES (originals kept).
+- rotate: select-step → basepoint click → move + click to set angle → adds rotated + DELETES originals (a transform — assert the selected element moved, not just "something changed").
+- scale: select-step → basepoint click → click to commit scale (factor = dist(base,cursor)/referenceDist) → replaces originals.
+- trim: click 1 = cutting edge, click 2 = element to trim (click-side removed; needs intersecting line/polyline geometry).
+- extend: click 1 = boundary, click 2 = element to extend (endpoint nearer click extends to boundary; needs line/polyline).
+- fillet: click 1 = first LINE, click 2 = second LINE → trims both + emits a `fillet-arc` element (radius default 10).
+**measure-area: click on an EXISTING shape** (rect/circle/ellipse/polyline/revision-cloud/arc/stroke) → creates a measurement overlay; empty-click shows a toast error. Test must draw a shape first, then measure it.
+
+### e2e harness facts
+- helpers.ts already exports: `login`, `createWhiteboard`, `canvasFingerprint`, `transformerFingerprint`, `pixelAt`, `darkRowSpan`, `touchPointer`, `touchStroke`, `touchDrag`, `canvasBox`, `waitForCanvas`, `waitForConnected`, `expectCanvasToChange`, `expectCanvasToReturn`, `openMobileToolbar`, `expandMobileToolbar`.
+- `canvasFingerprint` = deterministic hash of the main layer's rendered pixels → the primary "an element committed" assertion. `transformerFingerprint` = hash of the transformer layer → proves a select-tool selection rendered. `darkRowSpan(page, yCss)` + `pixelAt` prove geometry landed at expected coords.
+- Mobile emulation: `test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })`.
+- **playwright.config.ts `webServer` auto-boots the WHOLE stack:** `php artisan serve --port=8002` (cwd `..`), `npm run dev` with `TEST=1` on :3000, and `LARAVEL_URL=http://localhost:8002 WS_PORT=3001 node server/ws-server.js` on :3001. So `npx playwright test e2e/<new-spec>.spec.ts` boots everything (cold ~60-90s). `reuseExistingServer: true`.
+- global-setup seeds the e2e owner (`E2E_OWNER_EMAIL/PASSWORD`). `login(page)` + `createWhiteboard(page)` per test.
 
 ### Verification
 - Loop gate: `cd frontend && npm run typecheck && npm test` (438 tests, 44 files).
-- Backend: `php artisan test` from repo root (47 tests; phpunit.xml sets APP_KEY + SQLite, no .env needed).
-- e2e: `cd frontend && npx playwright test e2e/share-expiry.spec.ts` with the stack booted cold (`TEST=1`), then full `npx playwright test` (26 tests) before shipping.
+- **Run the new spec to prove the tools actually work:** `cd frontend && npx playwright test e2e/<spec>.spec.ts` (playwright boots the stack). FIRST cold run can flake on the login-button hydration race (pre-existing; re-run to confirm, don't chase).
+- Backend untouched by this goal (`php artisan test` need not change, but must stay green — run it if any backend file is touched, which it shouldn't be).
+- After ALL_DONE: re-run `npm run typecheck && npm test` + full `npx playwright test` before shipping.
