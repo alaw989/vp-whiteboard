@@ -113,4 +113,23 @@ Rate-limit public endpoints: add Laravel `throttle` middleware (named rate limit
 
 **Next:**
 - Confirm the share-link e2e flow (`npm run test:e2e`, clean local stack with `TEST=1`) — the only remaining unverified item for this Goal.
-- Optional: apply `friendlyApiErrorMessage` to `approvals.vue`/`WhiteboardShareModal.vue` (auth'd surfaces, 429 unlikely — low priority).
+
+### Iteration 4 — apply `friendlyApiErrorMessage` to the remaining error surfaces
+
+**Changed:**
+- `frontend/utils/apiError.ts`: `ApiErrorShape` now also accepts `data.error` (string) and `friendlyApiErrorMessage` reads it after `data.message` — the Approval/Share controllers return `{success:false, error:'Unauthorized'}` bodies, so this surfaces the real server message instead of the fallback.
+- `frontend/pages/approvals.vue`: approve/deny catches route through `friendlyApiErrorMessage(e, 'Failed to approve/deny {name}')` (were inline `e?.data?.message || e?.message`).
+- `frontend/components/whiteboard/WhiteboardShareModal.vue`: `createShare` catch now uses `friendlyApiErrorMessage(e, 'Failed to create link')` (was inline `e?.data?.error`).
+- `frontend/utils/apiError.test.ts`: +2 tests — `data.error` key read; 429 with only an `error` key (no `message`) still maps to the friendly rate-limit string.
+
+**Verified:**
+- `npm run typecheck` clean.
+- `npm test`: 685 passed (683 + 2 new), 54 files.
+- `php artisan test`: 54 passed / 254 assertions (backend untouched this iteration).
+
+**Gotchas:**
+- The helper checks `data.message` before `data.error`; controllers using `message` (validation errors) still win, `error`-key bodies (403/404) now surface properly.
+- 429 branch fires before any body key, so a throttled share-create shows the friendly "wait a minute" text rather than the raw Laravel copy.
+
+**Next:**
+- Confirm the share-link e2e flow (`npm run test:e2e`, clean local stack with `TEST=1`) — the only remaining unverified item for this Goal.

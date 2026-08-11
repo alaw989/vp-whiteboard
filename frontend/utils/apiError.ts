@@ -1,5 +1,5 @@
 interface ApiErrorShape {
-  data?: { message?: string; errors?: Record<string, string[]> }
+  data?: { message?: string; error?: string; errors?: Record<string, string[]> }
   message?: string
   response?: { status?: number }
 }
@@ -21,6 +21,7 @@ export function friendlyApiErrorMessage(e: unknown, fallback: string): string {
 
   const data = err.data
   if (data?.message) return data.message
+  if (data?.error) return data.error
   if (data?.errors && Object.keys(data.errors).length) {
     return Object.values(data.errors).flat().join(', ')
   }

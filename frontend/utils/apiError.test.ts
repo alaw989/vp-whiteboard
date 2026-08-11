@@ -20,6 +20,18 @@ describe('friendlyApiErrorMessage', () => {
     )
   })
 
+  it('reads the server error key used by controller error bodies', () => {
+    const e = { data: { success: false, error: 'Unauthorized' } }
+    expect(friendlyApiErrorMessage(e, 'Failed to create link')).toBe('Unauthorized')
+  })
+
+  it('maps a 429 with only an error key (no message) to the friendly text', () => {
+    const e = { response: { status: 429 }, data: { success: false, error: 'Too Many Attempts.' } }
+    expect(friendlyApiErrorMessage(e, 'Failed to create link')).toBe(
+      'Too many attempts — please wait a minute and try again.',
+    )
+  })
+
   it('joins validation errors from data.errors', () => {
     const e = { data: { errors: { email: ['required'], password: ['too short'] } } }
     expect(friendlyApiErrorMessage(e, 'Registration failed')).toBe(
