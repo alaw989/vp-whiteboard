@@ -190,4 +190,26 @@ class RateLimitTest extends TestCase
         $client->getJson('/api/whiteboards/nonexistent-id')
             ->assertStatus(429);
     }
+
+    public function test_whiteboard_patch_is_throttled_per_ip(): void
+    {
+        // PATCH /api/whiteboards/{id} is the canvas auto-save route — public-ish
+        // (owner auth OR edit-role share token, no auth middleware) and the last
+        // public route without throttle. 60/min/IP is far above the ~12/min a
+        // real auto-save loop emits. A bogus id is fine: the throttle middleware
+        // runs BEFORE the controller (404s still consume a hit, no DB writes).
+        $client = $this->withIp('203.0.113.16');
+
+        for ($i = 0; $i < 60; $i++) {
+            $response = $client->patchJson('/api/whiteboards/nonexistent-id', [
+                'canvas_state' => '{"elements":[]}',
+            ]);
+            $this->assertNotEquals(429, $response->getStatusCode());
+        }
+
+        $client->patchJson('/api/whiteboards/nonexistent-id', [
+            'canvas_state' => '{"elements":[]}',
+        ])->assertStatus(429)
+            ->assertJson(['message' => 'Too Many Attempts.']);
+    }
 }

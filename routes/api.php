@@ -26,8 +26,13 @@ Route::middleware(['auth:sanctum'])->prefix('approvals')->group(function () {
 // valid share token; other mutations require auth)
 Route::get('/whiteboards/{id}', [WhiteboardController::class, 'show'])
     ->middleware('throttle:public-read');
-Route::patch('/whiteboards/{id}', [WhiteboardController::class, 'update']);
-Route::put('/whiteboards/{id}', [WhiteboardController::class, 'update']);
+// Canvas auto-save (owner auth OR edit-role share token — the last public route
+// without throttle). 60/min/IP via public-read is far above the ~12/min a real
+// auto-save loop emits; loopback is exempt so e2e/dev are unaffected.
+Route::patch('/whiteboards/{id}', [WhiteboardController::class, 'update'])
+    ->middleware('throttle:public-read');
+Route::put('/whiteboards/{id}', [WhiteboardController::class, 'update'])
+    ->middleware('throttle:public-read');
 Route::middleware(['auth:sanctum'])->prefix('whiteboards')->group(function () {
     Route::get('/', [WhiteboardController::class, 'index']);
     Route::post('/', [WhiteboardController::class, 'store']);

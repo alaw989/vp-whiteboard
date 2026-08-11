@@ -199,3 +199,22 @@ Rate-limit public endpoints: add Laravel `throttle` middleware (named rate limit
 
 **Next:**
 - The Goal is fully achieved: all public/unauthenticated routes are rate-limited with named, loopback-exempt limiters, feature-tested (429 + Retry-After), and the e2e flow is verified. No remaining work for this Goal.
+
+### Iteration 8 — throttle the last public route: PATCH/PUT /whiteboards/{id} (canvas auto-save)
+
+**Changed:**
+- `routes/api.php`: added `->middleware('throttle:public-read')` to `PATCH /whiteboards/{id}` and `PUT /whiteboards/{id}` — the last public routes without throttle (owner auth OR edit-role share token, no `auth` middleware). Reuses the existing `public-read` limiter (60/min/IP, loopback-exempt): far above the ~12/min a real auto-save loop emits, so legit viewers and the e2e/dev loopback traffic are unaffected, while an anonymous edit-role share holder can no longer PATCH canvas_state at unbounded frequency.
+- `tests/Feature/RateLimitTest.php`: +1 test — `test_whiteboard_patch_is_throttled_per_ip` (60 allowed, 61st → 429 + `Too Many Attempts.`, distinct IP `203.0.113.16`). Uses a bogus `whiteboard_id` deliberately: the throttle middleware runs BEFORE the controller, so 404s still consume a hit.
+
+**Verified:**
+- `php artisan test`: **57 passed** (56 + 1 new) / 334 assertions. `RateLimitTest` alone: 9 passed / 231 assertions.
+- Backend coverage via CI-identical clover parse: **76.94%** statements ≥ 73 gate (up from 76.12% — new test covers the middleware path on the update route).
+- Frontend untouched this iteration (`npm run typecheck`/`npm test` unchanged from Iteration 7: 690/690 green).
+- Every public/unauthenticated route is now throttled — the full map: `shares` (token-keyed), `login`, `register`, `forgot-password`, `reset-password`, `public-read` (whiteboards show + files serve + sessions + whiteboards PATCH/PUT), `file-upload`.
+
+**Gotchas:**
+- Auto-save PATCH shares the `public-read` per-IP budget with GET show / file serves / sessions — a viewer who refreshes + re-saves in the same minute stays well under 60 combined; loopback exemption keeps e2e/dev unaffected.
+- Local clover output (PHP 8.5) writes `<project ... name="Clover Coverage">` without the `version` attribute the CI regex expects — the CI regex was written against PHP 8.4's PHPUnit. Summing class-level `<metrics>` gives the same number (76.94%) for the gate check.
+
+**Next:**
+- The Goal is fully achieved: all public routes rate-limited, feature-tested (429 + Retry-After), loopback-exempt for e2e, WS relay protected via token-keying. No remaining work for this Goal.
