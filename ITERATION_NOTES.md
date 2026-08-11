@@ -1,102 +1,35 @@
 # Iteration Notes
 
 ## Goal
-Harden PNG/PDF export with regression tests and fix any bugs they surface: unit tests for the export logic (frontend/composables/useExport.ts — filename generation, PNG via Konva stage toDataURL, PDF via jsPDF embedding) and e2e coverage that opens a whiteboard, draws content, triggers the export dialog, and intercepts the download to verify a real non-empty PNG and PDF are produced. Cover the edge cases: exporting an EMPTY canvas, a canvas with strokes/shapes, a canvas with PDF/image document layers (must not taint — the code already catches the tainted-canvas error), and a large canvas. Fix anything broken (empty-canvas export must not produce a corrupt/blank file, tainted canvas should show a clear error, PDF page should size to the canvas). Keep npm run typecheck + npm test green and the existing e2e suite passing.
+Share-link expiry UX: when GET /api/shares/{token} fails (expired, revoked, or unknown token) the /s/{token} route must stop silently redirecting to / and instead show a clear friendly "link expired or revoked" page, while a valid token still goes straight to the board. Backend WhiteboardShare::findActiveByToken already filters expired. Cover it with e2e (expired token -> friendly message, valid token -> board) and backend resolver tests (expired vs not-found must be distinguishable so the page can say the right thing). Keep npm run typecheck + npm test green and the existing e2e suite passing.
 
 ## State
-### Iteration 6 (2026-08-07) — goal fully achieved, verified green
-- Re-verified the complete state: `npm run typecheck` exit 0; `npm test` → 438 passed (44 files). Git tree clean (all 5 prior iterations committed on `dc08435`).
-- Audited the goal's edge cases against the committed tests — every one is covered:
-  - EMPTY canvas → `export.spec.ts` test #1 (valid PNG magic + `%PDF`, size > 100).
-  - Strokes/shapes → `export.spec.ts` test #3 (real mouse-drawn pen stroke, fingerprint-confirmed render).
-  - PDF/image document layers → `export.spec.ts` test #2 (real image upload via UI, no taint crash, no cross-origin toast) + `useExport.test.ts` tainted-canvas → clear toast for both PNG & PDF.
-  - Large canvas → `useExport.test.ts` PNG (4096×3072 full-size `toDataURL`) + PDF (page `format:[4096,3072]`, below jsPDF's 14400 limit).
-  - Filename generation + PDF page-sizing + `generateFilename` trailing-dash bug → fixed in Iteration 3, unit-tested.
-- No code change this iteration — nothing to improve remains within the stated goal.
-- Next: none within the goal; future work (e.g. exporting drawn vector shapes to a real SVG layer in the PDF, streaming large exports, or per-format DPI settings) is beyond the stated scope.
-- Gotcha: e2e spec is ESM (`import.meta.url`) and requires a cold `TEST=1` full-stack boot — do not re-run casually; the prior-iteration run (3/3 export tests, 25/25 full suite) plus this green unit/typecheck pass is sufficient evidence for the loop gate.
 
-### Iteration 5 (2026-08-07) — e2e for PDF/image document layers (upload → export, no taint crash)
-- Added `frontend/e2e/export.spec.ts` test #3: "canvas with an uploaded image document layer exports without a taint crash". Covers the goal's LAST remaining edge case (canvas with PDF/image document layers must not taint).
-- Flow: login → create board → wait for canvas → baseline fingerprint → click `title="Upload file"` → `setInputFiles` a real 64×64 PNG fixture (`frontend/e2e/fixtures/export-upload.png`, 179 bytes, generated) → click `upload-submit` → poll `canvasFingerprint` until the image layer commits (proves it rendered) → export PNG + PDF → assert magic bytes + size > 100 (a tainted canvas would throw and produce NO download) → assert no `cross-origin image` toast.
-- Why no taint: the serve endpoint returns ACAO for the e2e origin and the image loads with `crossOrigin='anonymous'`, so the Konva stage stays clean — this verifies the happy path end-to-end (the SecurityError → toast path stays covered by the unit tests in `useExport.test.ts`).
-- Added `data-testid="upload-file-input"` + `data-testid="upload-submit"` to `WhiteboardUpload.vue` (the upload flow had no testids — unlike the export dialog, which got them in Iteration 2).
-- Verified: `npm run typecheck` exit 0; `npm test` → 438 passed (44 files); `npx playwright test e2e/export.spec.ts` → 3/3 passed; full `npx playwright test` → 25 passed (1 flaky = the pre-existing cold-boot collab.spec login hydration race, unrelated). Fixture validated as a real PNG (`file` → PNG 64x64, magic `89504e470d0a1a0a`).
-- Next: no remaining goal edge cases — the goal is fully covered (unit + e2e for empty/strokes/document-layers/large canvas, filename sanitization, PDF page geometry). Any future work is beyond the stated goal.
-- Gotcha: the export spec is ESM (`"type": "module"`), so `__dirname` doesn't exist — use `fileURLToPath(new URL('./fixtures/...', import.meta.url))` for the fixture path (initial `node:path` + `__dirname` version would fail at runtime).
-
-### Iteration 4 (2026-08-07) — large-canvas export regression tests
-- Added 2 unit tests to `frontend/composables/useExport.test.ts` covering the goal's remaining unit-level edge case (large canvas):
-  - PNG: a 4096×3072 stage exports at full pixel size — `toDataURL` called with `{pixelRatio:1, x:0, y:0, width:4096, height:3072}`, `.png` download fires, no error, `isExporting` resets.
-  - PDF: same large stage → `toDataURL` at 2x, jsPDF page sized `format:[4096,3072]` landscape, `addImage` embeds at full dims, `.pdf` download fires, no error.
-- Verified against real jsPDF 4.1.0 (`node -e` probe): jsPDF only **warns** above 14400 userUnit (`A page in a PDF can not be wider or taller than 14400`) and still emits a valid PDF — no crash, so a large canvas is safe without code changes; the tests lock in the "page sized to canvas" behavior for a dimension well below that limit.
-- TDD: wrote the tests first (they pass against existing code — no bug surfaced, as with the empty-canvas case).
-- Verified: `npm run typecheck` exit 0; `npm test` → 438 passed (44 files). No e2e re-run needed (no export-code change).
-- Next: the only remaining goal edge case is e2e for PDF/image document layers (upload an image, export, confirm no taint crash / clear error toast) — that needs the full stack (`TEST=1` boot) + a fixture image upload via `useFileUpload`; worth doing as its own iteration since the loop gate can't run e2e.
-- Gotcha: the large-canvas PDF test asserts `instances[0]` is the mock captured by THIS `useExport()` call — keep the pattern of a fresh `useExport()` per large-canvas test (the shared `instances` array is cleared in `beforeEach`).
-
-### Iteration 3 (2026-08-07) — `generateFilename` trailing-dash bug fix
-- Fixed the gotcha flagged in Iteration 1: `generateFilename('My Design v2!', 'png')` now yields `my-design-v2-<timestamp>.png` instead of `my-design-v2--<timestamp>.png`. `useExport.ts` now collapses consecutive dashes, trims leading/trailing dashes, and falls back to `whiteboard` when the sanitized base is empty/all-symbols (previously an empty board name produced a filename starting with a bare `-`).
-- TDD: updated/extended `useExport.test.ts` `generateFilename` block first — sanitization test now asserts single-dash, new tests for dash-collapse/trim and the `whiteboard` fallback (empty, whitespace, all-symbols bases).
-- Verified: `npm run typecheck` exit 0; `npm test` → 436 passed (44 files). Default `whiteboard-<timestamp>.<ext>` and custom-filename paths unchanged, so the existing e2e download assertions are unaffected (no e2e re-run needed — full-stack boot required only if export code path changed).
-- Next: the remaining goal edge case is e2e for PDF/image document layers (upload an image, export, confirm no taint crash / clear error toast). That one needs the full stack (`TEST=1` boot) + a fixture image upload via `useFileUpload`; alternatively a large-canvas unit case.
-- Gotcha: board titles are passed straight into `generateFilename` from `ExportDialog.vue` (`filename || 'whiteboard'`), so real-world titles like `My Design v2!` were the trigger — the fallback also protects the all-symbols edge.
-
-### Iteration 2 (2026-08-07) — e2e coverage for real PNG/PDF downloads
-- Added `frontend/e2e/export.spec.ts` (2 tests, both passing against the full stack): Playwright intercepts the REAL browser download via `page.waitForEvent('download')`, then verifies the file on disk — PNG magic bytes `89 50 4E 47 0D 0A 1A 0A`, PDF `%PDF` header, and size > 100 bytes (non-corrupt/non-empty). Covers the empty-canvas case AND a canvas with a committed pen stroke (drawn via the desktop mouse path, rendered confirmed via `canvasFingerprint`).
-- Added `data-testid` selectors to `ExportDialog.vue` (`export-format-png`, `export-format-pdf`, `export-submit`) so the spec targets the dialog buttons unambiguously (the desktop + mobile toolbars both carry a `title="Export canvas"` button, so a bare `getByTitle` would trip strict-mode).
-- No export-code bugs surfaced: empty-canvas export produces a valid PNG/PDF (page geometry + Konva `toDataURL` both fine), the drawn-canvas download is non-empty, and the tainted-canvas path is already covered by the unit tests.
-- Verified: `npm run typecheck` exit 0; `npm test` → 435 passed; `npx playwright test` → 25 passed (3 flagged flaky on COLD first boot — login-button hydration race in smoke/approvals/mobile-touch, pre-existing, all green on re-run).
-- Next: the e2e goal for PDF/image document layers (upload an image, export, confirm no taint crash) is the remaining edge case; alternatively fold the `generateFilename` trailing-dash gotcha (noted in Iteration 1) into the implementation.
-- Gotcha: e2e stack must boot cold with `TEST=1`; the first `playwright test` run has a warm-up cost (Nuxt dev SSR) that can make login-button hydration assertions flaky — re-run to confirm, don't chase.
-
-### Iteration 1 (2026-08-07) — unit tests for export logic
-- Added `frontend/composables/useExport.test.ts` (15 tests, all passing):
-  - `getTimestamp` format (YYYY-MM-DDTHH-mm-ss).
-  - `generateFilename`: default png/pdf ext, sanitization (lowercase + non-alnum → dash, incl. trailing-dash edge), empty/whitespace base survives.
-  - `exportAsPNG`: happy path calls `toDataURL` at 1x with x/y/width/height and downloads auto-named `.png`; custom filename + pixelRatio option; null stage → 'Canvas not available' + no download/toast; tainted SecurityError → cross-origin toast message; generic error → 'Export failed'.
-  - `exportAsPDF`: happy path calls `toDataURL` at 2x, `addImage(dataUrl,'PNG',0,0,w,h)`, `output('blob')`, downloads `.pdf` via blob URL; page sized to canvas + landscape/portrait from aspect ratio; null stage; tainted + generic errors.
-- Refactor in `useExport.ts`: `getTimestamp`/`generateFilename` are now **named module exports** (were closed over inside `useExport()`) so the pure functions are unit-testable. No behavior change. (Mirrors `useShareLink.ts` `shareCopyUrl` pattern.)
-- Tests mock: `jspdf` default export (vi.hoisted class w/ shared addImage/output fns + instance tracker), `~/composables/useToast` `toastError`, `URL.createObjectURL/revokeObjectURL`, and `HTMLAnchorElement.prototype.click` to capture the download `<a>`.
-- Verified: `npm run typecheck` exit 0; `npm test` → 435 passed (44 files).
-- Next: e2e spec `frontend/e2e/export.spec.ts` — real PNG + PDF download interception (`page.waitForEvent('download')`), empty-canvas export, drawn-content export. Inspect `ExportDialog.vue` buttons for selectors (no testids yet — may need to add).
-- Gotcha: `generateFilename('My Design v2!','png')` yields `my-design-v2--...` (trailing dash from `!`) — test asserts the actual output; consider trimming trailing dashes in a later iteration if desired.
+(no iterations yet — first loop run starts here)
 
 ## Context (from prior code review — read before changing code)
 
-### Current export code
-- `frontend/composables/useExport.ts` (147 lines, NO existing tests):
-  - `getTimestamp()`, `generateFilename(baseName, format)`.
-  - `exportAsPNG(...)`: `stage.toDataURL({ pixelRatio, mimeType, quality })` → `triggerDownload(dataUrl, filename)`.
-  - `exportAsPDF(...)`: `stage.toDataURL({ pixelRatio: 2 })` → `new jsPDF({ orientation, unit, format })` → `pdf.addImage(dataUrl, 'PNG', 0, 0, width, height)` → `pdf.output('blob')` → download.
-  - Catch blocks: PNG error → toastError; PDF error → distinguishes the **tainted canvas** case: `'Export blocked by cross-origin image. Try removing uploaded images first.'`.
-- UI: `frontend/components/whiteboard/ExportDialog.vue`, wired in `frontend/pages/whiteboard/[id].vue` via `@open-export="openExportDialog"`, `const { isExporting, progress, exportAsPNG, exportAsPDF } = useExport()`.
+### Current behavior (the bug)
+- `frontend/server/routes/s/[id].get.ts` (the `/s/{token}` first-load handler) calls `GET /api/shares/{token}`; on `!res.success` it returns `sendRedirect(event, '/', 302)` — a **silent redirect home** with no explanation. Same for the catch.
+- `app/Http/Controllers/Api/ShareController@resolve()` returns **404 `{success:false, error:'Share not found or expired'}` for ALL failure cases** — unknown token, revoked (row deleted → not found), and expired (`findActiveByToken` returns null when `expires_at` is past). The viewer can't distinguish "expired" from "revoked/not found", and the frontend never surfaces any of it.
+- `frontend/pages/s/[id].vue` is **STALE**: it calls `/api/sessions/${shortId}` which no longer exists (old share-link mechanism). It only runs on CLIENT-side navigation to `/s/:token` (the server route wins on first load). It currently redirects to `/` on failure and is inconsistent with the live `server/routes/s/[id].get.ts` flow.
 
-### Edge cases to cover + expected behavior
-1. **Empty canvas** — exporting a blank board must produce a valid (non-corrupt) file: a PNG/PDF with the stage background. Verify it downloads and is non-trivial in size.
-2. **Canvas with strokes/shapes** — export reflects the drawn content (e2e can draw a stroke, export, and assert the download exists + is non-empty).
-3. **Canvas with PDF/image document layers** — the layer re-renders to a data-URL `src`; if any cross-origin image taints the Konva stage, `toDataURL` throws. The code handles it with a clear message — regression-test that path.
-4. **Large canvas** — export must not hang/crash (timeout/CPU; may be a unit-level concern with a mocked stage).
-5. **PDF page geometry** — page dimensions should match the canvas aspect ratio; `addImage` uses width/height from `stage.getSize()`.
-6. **Filename/timestamp** — unit-test `generateFilename` (e.g. `whiteboard-YYYY-MM-DD-HHmmss.png` style) and timestamp format.
+### Design notes for the fix
+- Backend: distinguish the cases so the page can say the right thing. Add `WhiteboardShare::findByToken()` (no expiry filter) alongside `findActiveByToken()`. `resolve()`: valid → 200; expired (row exists but past) → **410 Gone** with `error: 'expired'`; not found/revoked → **404** with `error: 'not_found'`. Keep the `success:false` shape.
+- WS relay (`frontend/server/ws-server.js` `isAuthed`, ~line 146): checks `status === 200 && data.data.whiteboard_id === roomId` — a non-200 resolver response already closes the handshake (4001). Returning 410 for expired does NOT break the relay.
+- Frontend `/s/{token}` server route: on failure, 302 → the friendly page (NOT `/`). Pass no token/secret in the URL; keep it a bare static route. Fix/remove the stale `pages/s/[id].vue` so client-side nav doesn't hit the dead `/api/sessions/` endpoint (options: make it call `/api/shares/{token}` and redirect to the friendly page, or delete it — the server route still handles first load; verify client-side nav doesn't 404 after deletion).
+- **Auth middleware gotcha:** `frontend/middleware/auth.global.ts` only whitelists `/login`, `/register`, and `/whiteboard/[id]` (not `/new`). An anonymous share viewer following a 302 to a new error page would hit the `/api/user` check → 401 → bounced to `/login?redirect=...`. The new error page MUST be whitelisted in `auth.global.ts` (e.g. exact path match), OR the friendly page must render server-side without Nuxt client middleware (not recommended — harder to style/test).
+- Friendly page: public, minimal — e.g. a heading like "This share link has expired or been revoked", a short explanation, and a "Go home" link. Follow existing page styling (`frontend/pages/index.vue`, `login.vue` use Tailwind on `bg-neutral-*`). Add a stable `data-testid` for the e2e.
+- **Backend test to update:** `tests/Feature/ShareApiTest.php` `test_expired_share_is_rejected` currently asserts `assertNotFound()` for an expired token. If we return 410 for expired, this must become `assertGone()` + assert the `error` payload. Add a sibling test that a random/revoked token still 404s. Existing `test_public_resolver_returns_board_for_valid_token` stays 200.
 
-### How to test
-- **Unit** (`frontend/composables/useExport.test.ts`, new): mock the Konva stage (`toDataURL` resolves a data URL) and jsPDF (`addImage`/`output` spy) — verify PNG returns/triggers a download with the right filename; PDF calls `addImage` with the data URL + page dims; empty/stage-throw cases surface the right toast error. Check how `triggerDownload` creates an `<a>` + clicks it — mock `URL.createObjectURL`/`revokeObjectURL`.
-- **E2E** (`frontend/e2e/export.spec.ts`, new): login, create board, draw a stroke, open Export, click PNG → use Playwright's `page.waitForEvent('download')` to intercept and assert `suggestedFilename` ends in `.png` and the download path size > 0 (read the file); same for PDF (`.pdf`). Also an empty-canvas export case. Use the existing helpers (`frontend/e2e/helpers.ts`: `login`, `createWhiteboard`, `waitForCanvas`, touch/mouse draw). ExportDialog buttons need accessible selectors — inspect `ExportDialog.vue` for its button labels/testids and use them.
-- Playwright download handling: `const [download] = await Promise.all([page.waitForEvent('download'), btn.click()])` then `download.path()` → check file size. `triggerDownload` uses `URL.createObjectURL` + `a.click()` + `a.remove()` — the download event should fire.
+### e2e plan
+- New `frontend/e2e/share-expiry.spec.ts` (reuse `frontend/e2e/helpers.ts` + the `createShareLink` recipe already in `collab.spec.ts`, which posts with Sanctum stateful headers).
+  - **Valid token → board:** login → createWhiteboard → createShareLink → anonymous context → goto `/s/{token}` → `waitForURL(/\/whiteboard\//)` → `waitForCanvas`.
+  - **Expired token → friendly message:** create a share with `days:1` via API, parse the token out of the returned URL, then expire it directly in the DB with a `php artisan tinker` recipe (mirror `seedPendingUser` in helpers.ts — set `expires_at = now()->subDay()` where `token_hash = hash('sha256', token)`), then anonymous goto `/s/{token}` → expect the friendly page text (no redirect to `/`).
+  - (Optional) **Revoked token → friendly message:** delete the share row via tinker, same assertion.
+- e2e must run with the full stack booted (`TEST=1`, cold) — see AGENTS.md current-health note; the first `playwright test` run has a warm-up cost that can make login-button hydration flaky (re-run to confirm, don't chase).
 
-### Verification (do end-to-end before DONE)
-1. `cd frontend && npm run typecheck && npm test` green (currently 420 tests).
-2. `npm run test:e2e` green: existing suite (23 tests) + new export spec.
-3. If export code changed, the e2e must prove real downloads (PNG + PDF) are produced for a drawn board.
-4. `php artisan test` only if Laravel touched (shouldn't be).
-
-### Gotchas
-- Konva `toDataURL` throws on a tainted canvas (SecurityError) — the existing catch maps it to a clear toast. Don't weaken that.
-- In headless Chromium, canvas `toDataURL` works; but Konva layers with cross-origin images taint it — the e2e should use only local drawing (no uploaded images) for the happy-path download tests.
-- `stage.toDataURL` is async in some Konva versions — await it.
-- jsPDF is imported as `import jsPDF from 'jspdf'` — mock the module in unit tests (`vi.mock('jspdf')`).
-- Do not touch the Goal section. Update the State section every iteration.
-- e2e stack: boot cleanly with `TEST=1` (stale Nuxt on :3000 collides with the WS relay — documented gotcha).
-
-## Log
+### Verification
+- Loop gate: `cd frontend && npm run typecheck && npm test` (438 tests, 44 files).
+- Backend: `php artisan test` from repo root (47 tests; phpunit.xml sets APP_KEY + SQLite, no .env needed).
+- e2e: `cd frontend && npx playwright test e2e/share-expiry.spec.ts` with the stack booted cold (`TEST=1`), then full `npx playwright test` (26 tests) before shipping.
