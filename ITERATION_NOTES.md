@@ -16,11 +16,26 @@ Add a CI e2e job to .github/workflows/ci.yml that runs the full playwright suite
 - Full `npx playwright test`: **67 passed, 0 failed, 0 flaky** (1.5m) — suite grew to 67, not 65. Covers smoke (formerly flaky), approvals (loginSubmit), share-expiry, export, collab, mobile-touch, full-tool-audit.
 - Re-booted Nuxt cold between runs and immediately ran smoke+approvals+share-expiry+export (10 tests) — all passed, no hydration flake.
 
-**Next:** add the CI e2e job to `.github/workflows/ci.yml` (PHP 8.4 + composer install + provisioned Laravel .env with persistent SQLite DB at `database/database.sqlite` + migrate, SESSION_DRIVER=database, SANCTUM_STATEFUL_DOMAINS=localhost:3000, MAIL_MAILER=array; Node 22 + npm ci + `npx playwright install --with-deps chromium`; run `npx playwright test`; timeout-minutes ~20; upload test-results/ on failure; do NOT add to branch protection). The playwright webServer + global-setup auto-boot the stack, so the job just needs a real bootable Laravel. See Context for the full recipe.
+### Iteration 2 (DONE) — CI e2e job added to ci.yml
+**Changed:**
+- `.github/workflows/ci.yml`: new `e2e` job (runs-on ubuntu-latest, timeout-minutes 25) added BELOW the existing `test` + `backend-test` jobs — those two required checks are untouched. Job: PHP 8.4 + composer install → provision Laravel (cp `.env.example` → `.env`, sed APP_URL=:8002 + MAIL_MAILER=array, `touch database/database.sqlite`, `php artisan key:generate`, `php artisan migrate --force`) → write `frontend/.env` (LARAVEL_URL/NUXT_PUBLIC_LARAVEL_URL=:8002, WS_PORT=3001, NUXT_PUBLIC_WS_URL, NUXT_PUBLIC_SITE_URL; the local one is gitignored, so CI needs it to tell Nuxt where Laravel lives) → Node 22 + npm ci → `npx playwright install --with-deps chromium` → `npx playwright test` → upload `frontend/test-results/` artifact on failure.
+- `frontend/playwright.config.ts`: added explicit `timeout:` to all three webServer entries (Laravel 180s, Nuxt dev 300s, WS relay 180s). Playwright's default webServer timeout is 60s — a cold Nuxt dev boot on a fresh CI runner routinely exceeds that and would kill the job in the boot phase before a single test ran.
+- **NOT added to branch protection** (per recipe): the existing required checks remain `test` + `backend-test`; the e2e job is informational until proven stable over a few green runs, then promote separately.
+
+**Verified (all green):**
+- `npm run typecheck` (0 errors), `npm test` (438/438, 44 files).
+- Full `npx playwright test`: **67 passed** (1.5m) against the running local stack (reused via `reuseExistingServer: true`).
+- Provisioning sequence exercised in-place with a temp SQLite DB + temp `.env` (backed up + restored the real `.env`): `key:generate` + `migrate --force` complete all 8 migrations cleanly. NOTE: a bare `php artisan migrate` with a missing DB file still succeeds but warns "does not exist" (would be a confusing failure later) — the job's `touch database/database.sqlite` prevents that.
+- YAML parses (`python3 yaml.safe_load`), job + step names as intended.
+
+**Next:** push the branch and let CI actually run the e2e job once (cannot be proven locally — GitHub Actions only runs on push). Watch for (a) cold-boot webServer timing, (b) any Nuxt dev quirk in the runner, (c) flaky spec counts. If green for a few PRs, promote `e2e` to a required check (separate task).
 
 **Gotchas:**
-- The suite count is now **67** (not 65 as the Goal text says) — don't hardcode 65.
-- Local dev servers were left running (laravel :8002, nuxt :3000 TEST=1, ws :3001) from this iteration's verification — playwright `reuseExistingServer: true` reuses them; restart if a later iteration needs a genuinely cold boot.
+- The suite count is **67** (not 65 as the Goal text says) — don't hardcode 65.
+- CI needs BOTH `.env` (repo root, for Laravel serve + global-setup tinker) AND `frontend/.env` (for Nuxt dev runtimeConfig). Missing the latter silently points Nuxt at `http://localhost:8000` (default) and every API call 404s — the job writes both.
+- `.env.example` has `APP_URL=http://localhost` and `MAIL_MAILER=log` — the sed overrides fix both. `SESSION_DRIVER=database` + `SANCTUM_STATEFUL_DOMAINS=localhost:3000` are already correct in `.env.example`.
+- The e2e job shares the workflow's `concurrency` group (`ci-${{ github.ref }}`, cancel-in-progress) — fine, but note a second push cancels the in-flight e2e run.
+- Local dev servers were left running (laravel :8002, nuxt :3000 TEST=1, ws :3001) from verification — playwright `reuseExistingServer: true` reuses them; restart if a later iteration needs a genuinely cold boot.
 - `pkill -f "vite"` hung the shell (matched the invoking shell) — use targeted pids or `pkill -f "nuxt dev"` only, per AGENTS.md warning.
 
 ## Context (from prior code review — read before changing code)

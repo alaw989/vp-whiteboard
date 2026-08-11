@@ -15,6 +15,9 @@ export default defineConfig({
       port: 8002,
       cwd: '..',
       reuseExistingServer: true,
+      // CI cold-boot is slow (fresh runner, no warm cache); give Laravel a
+      // generous startup window so the job doesn't die in the webServer phase.
+      timeout: 180000,
     },
     {
       command: 'npm run dev',
@@ -24,6 +27,9 @@ export default defineConfig({
       // floating widget can't sit on top of the mobile toolbar and swallow
       // clicks during e2e (it is absent in production).
       env: { TEST: '1' },
+      // Nuxt's dev cold-start compiles the whole app; on a fresh CI runner that
+      // routinely exceeds the 60s Playwright default.
+      timeout: 300000,
     },
     {
       // Yjs WS relay — the collab spec's live-sync assertions depend on it.
@@ -33,6 +39,7 @@ export default defineConfig({
       port: 3001,
       cwd: '.',
       reuseExistingServer: true,
+      timeout: 180000,
     },
   ],
 })
