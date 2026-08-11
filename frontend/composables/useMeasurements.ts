@@ -442,7 +442,7 @@ export function useMeasurements(options: UseMeasurementsOptions) {
     const index = yElements.toArray().findIndex((el: CanvasElement) => el.id === elementId)
     if (index !== -1) {
       yElements.delete(index, 1)
-      yElements.insert([updatedElement], index)
+      yElements.insert(index, [updatedElement])
     }
   }
 
@@ -460,7 +460,7 @@ export function useMeasurements(options: UseMeasurementsOptions) {
     const index = yElements.toArray().findIndex((el: CanvasElement) => el.id === elementId)
     if (index !== -1) {
       yElements.delete(index, 1)
-      yElements.insert([updatedElement], index)
+      yElements.insert(index, [updatedElement])
     }
   }
 

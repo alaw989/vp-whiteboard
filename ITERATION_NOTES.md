@@ -5,6 +5,25 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 9 (DONE) — useMeasurements composable covered + real insert-arg bug fixed + thresholds ratcheted up
+
+**Changed:**
+- New unit test `frontend/composables/useMeasurements.test.ts` (44 tests) covering the full `useMeasurements` surface against a real `Y.Array`: measurement lifecycle (start/update-preview/complete/cancel, inches + feet conversion, null start returns null), distance formatting (`formatDistanceMeasurement` feet `'` vs inches `"`, `getMeasurementLabel` cached-value + computed fallback + non-distance empty), `previewLine` computed (null when idle, points/dash/label, feet unit), all `calculateArea` dispatch branches (rectangle 2×1in, circle πr², ellipse πab, polyline shoelace 4 sq in, revision-cloud ≥3 pts, arc triangle 1 sq in, stroke bbox 2.5 sq in, null for open/<3-pt polyline/unsupported line), `formatAreaMeasurement` (sq-inches default + sq-feet), `measureArea` (missing target false, unsupported-type warn + false, rectangle creates `measurement-area`), `findAreaMeasurementsFor`, `getShapeCenter` (rect/circle/ellipse/origin fallback), `getAreaLabel`, `isMeasurementStale` (non-measurement false, null ppi false, >1% flag, within-tolerance pass), `getStaleMeasurements`, `updateMeasurementEndpoint` (missing/non-distance no-op, end + start updates with recalculated value, replace-at-index via delete+insert), `updateMeasurementValue` (missing no-op, value replace), `getAreaLabelPosition` (missing target origin, rect center offset -20). `useMeasurements.ts` was a 0% root-composable drag — now 100% stmts/lines/funcs, 99.08% branches.
+- **Product bug fixed (caught by the new tests):** `useMeasurements.ts:445` and `:463` called `yElements.insert([updatedElement], index)` — args reversed. `Y.Array.insert` is `insert(index, content)`, so every `updateMeasurementEndpoint`/`updateMeasurementValue` call threw `TypeError: content.forEach is not a function`. Both now `yElements.insert(index, [updatedElement])` (same correct pattern as `useCollaborativeCanvas.ts:646`). Endpoint/value editing of measurements was broken at runtime.
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 65→**71**, branches 80→**81**, functions 81→**82** (all at-or-below new measured 71.79/71.79/82.01/82.89).
+
+**Measured** (after adding useMeasurements tests): All files 71.79% stmts/lines (was 66.58), 82.01% branches (was 80.48), 82.89% funcs (was 81.74). Suite 50 files / 560 tests (was 49/516).
+
+**Verification:**
+- `npm run coverage` exit 0 with new thresholds; `npm run typecheck` exit 0; `npm test` 560/560 pass.
+- Negative check: `--coverage.thresholds.lines=72 --coverage.thresholds.statements=72 --coverage.thresholds.branches=82 --coverage.thresholds.functions=83` → `ERROR: Coverage for lines/statements (71.79%) does not meet global threshold (72%)`, functions 82.89<83 → exit 1. Gate enforces.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it.
+2. Ratchet frontend further (lines/stmts 71 → 72) once more composables get tested — biggest drags remain root composables (useCursors/useDocumentLayer ~0%, usePDFRendering 0% lines, useViewport 9.75%, useSnapping 38%, useExtendTool 51%, useTrimTool 56%, useFileUpload's `uploadFile`/`uploadFiles` body 31.89%). `useSnapping`/`useViewport` (already have test files, mostly pure math) and `usePDFRendering` are the next best candidates.
+3. Ratchet backend 73 → 74 once more backend tests land.
+
+
 ### Iteration 8 (DONE) — useLayers composable covered + thresholds ratcheted up
 
 **Changed:**
