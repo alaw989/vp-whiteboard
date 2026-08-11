@@ -5,6 +5,23 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 6 (DONE) — useFileUpload pure functions covered + thresholds ratcheted up
+
+**Changed:**
+- New unit test `frontend/composables/useFileUpload.test.ts` (11 tests) covering the pure module exports of `useFileUpload.ts`: `validateFile` (all 4 allowed types pass, disallowed type error lists pdf/jpeg/png/webp, empty mime rejected, >10MB rejected with `10.0MB` message, exactly-10MB accepted), `formatFileSize` (B/KB/MB boundaries + one-decimal rounding), `getFileIcon` (image→`mdi:image`, pdf→`mdi:file-pdf-box`, unknown/empty→`mdi:file`). `useFileUpload.ts` was a ~0% root-composable drag — now 31.89% stmts/lines, 100% branches.
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 60→**62** (at-or-below new measured 62.12). Branches kept at 78 (measured 78.26, only 0.26 headroom) and funcs kept at 79 (measured 79.03, 0.03 headroom — adding the 75%-funcs file actually *lowered* funcs from 79.12→79.03).
+
+**Measured** (after adding useFileUpload tests): All files 62.12% stmts/lines (was 61.57), 78.26% branches, 79.03% funcs. Suite 47 files / 468 tests (was 46/457).
+
+**Verification:**
+- `npm run coverage` exit 0 with new thresholds; `npm run typecheck` exit 0; `npm test` 468/468 pass.
+- Negative check: `--coverage.thresholds.lines=63` → `ERROR: Coverage for lines (62.12%) does not meet global threshold (63%)` → exit 1. Gate enforces.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it.
+2. Ratchet frontend further (lines/stmts 62 → 63) once more composables get tested — biggest drags remain root composables (useCursors/useLayers/useMeasurements/usePDFRendering/useCommandEngine/useDocumentLayer ~0%, useSnapping 38%, useViewport 10%, useExtendTool 51%, useTrimTool 56%). `useFileUpload`'s remaining drag is the composable body (`uploadFile`/`uploadFiles` — needs `useApi` mock + happy-dom FormData); `useCommandEngine` (Registry is likely pure, and `execute()`/`output()`/`prompt()` are testable with a stub options object) are the next best candidates.
+3. Ratchet backend 73 → 74 once more backend tests land.
+
 ### Iteration 5 (DONE) — useScale composable covered + thresholds ratcheted up
 
 **Changed:**
