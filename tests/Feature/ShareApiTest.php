@@ -68,7 +68,20 @@ class ShareApiTest extends TestCase
 
         $response = $this->getJson('/api/shares/'.$rawToken);
 
-        $response->assertNotFound();
+        $response->assertGone()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('error', 'expired');
+    }
+
+    public function test_unknown_or_revoked_token_is_not_found(): void
+    {
+        $rawToken = Str::random(40);
+
+        $response = $this->getJson('/api/shares/'.$rawToken);
+
+        $response->assertNotFound()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('error', 'not_found');
     }
 
     public function test_share_token_allows_anonymous_autosave(): void

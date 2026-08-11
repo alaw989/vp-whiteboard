@@ -86,10 +86,14 @@ class ShareController extends Controller
      */
     public function resolve(string $token): JsonResponse
     {
-        $share = WhiteboardShare::findActiveByToken($token);
+        $share = WhiteboardShare::findByToken($token);
 
         if (! $share) {
-            return response()->json(['success' => false, 'error' => 'Share not found or expired'], 404);
+            return response()->json(['success' => false, 'error' => 'not_found'], 404);
+        }
+
+        if ($share->expires_at && $share->expires_at->isPast()) {
+            return response()->json(['success' => false, 'error' => 'expired'], 410);
         }
 
         return response()->json([
