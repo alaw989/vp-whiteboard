@@ -5,6 +5,29 @@ Fresh full-tool audit: drive EVERY whiteboard tool through the e2e harness (mous
 
 ## State
 
+### Iteration 4 (Aug 10, 2026) — final batch: modify tools + measure-area (mouse + touch) → AUDIT COMPLETE
+
+**Changed:** Appended 16 tests to `frontend/e2e/full-tool-audit.spec.ts` (2 new describes: "desktop modify tools" + "mobile modify tools") driving the 7 modify tools AND measure-area on BOTH input paths. Every test draws a base shape first (line for offset/trim/extend/fillet; rectangle for mirror/rotate/scale/measure-area), then drives the tool's own click-step state machine:
+- offset: 2 clicks (near-line to set distance → move to populate preview → click to commit; the 2nd commit-click NEEDS a prior pointermove because the offset commits on the pointerdown that reads `previewResult`). Desktop `mouse.move` then `mouse.click`; mobile a tiny `touchStroke` to force the move, then a `touchTap`.
+- mirror/rotate/scale: click element (ON an EDGE — `findElementAtPosition` is 8px-from-segment, interior clicks miss) → `Enter` to advance past select → axis/basepoint clicks (mirror: 2 axis clicks; rotate/scale: basepoint + commit click). Rotate's commit angle point is DIAGONAL (~30°) — never 0/90/180/360 (an axis-aligned rect can look identical). Scale's basepoint is a rect corner; commit click 250px/160px away for ~1.4-1.5x.
+- trim: click cutting edge, then click target line on the side to remove. extend: click boundary, then click target near its free end. fillet: click line 1, then line 2 of an L-corner (default radius 20).
+- measure-area: click INSIDE the rect (Konva `getAllIntersections` hit region covers the transparent-fill interior) → `measurement-area` label element.
+- Assertions: `assertCommitted` (fingerprint change + 750ms settle) for all, PLUS a `pixelAt` corner-pixel check for fillet (the corner junction is trimmed away → red channel returns to background; the tiny radius-20 arc alone could be too subtle for the 24-wide fingerprint grid).
+- All 38 spec tests pass (1.5m). No product code needed fixing — every tool commits a real, persisting element.
+
+**AUDIT COMPLETE — all 18 target tools covered (mouse + touch):** line, arrow, circle, ellipse, polyline, arc, revision-cloud, stamp, dimension, measure-distance, text-annotation, offset, mirror, rotate, scale, trim, extend, fillet, measure-area. Combined with the pre-existing coverage (pen, highlighter, eraser, select, pan, rectangle in collab.spec.ts + mobile-touch.spec.ts), EVERY whiteboard tool now has e2e coverage asserting it creates/persists an element on both input paths.
+
+**Next iteration:** none — the goal is fully achieved. Before shipping: re-run `npm run typecheck` + `npm test` (gate, green: 438/438) and the full `npx playwright test` suite (all e2e specs), then ship per the CI/CD protocol (mark the backlog item done).
+
+**Gotchas (all prior gotchas still apply):**
+- Modify-tool selection clicks MUST land within 8px of a segment (edge/corner), NOT the interior — `findElementAtPosition` is segment-distance based; `measure-area` is the exception (it uses Konva hit detection, interior works).
+- offset commits on a pointerdown that reads `previewResult`, which is only populated by a PRIOR `onMouseMove` — the test must `mouse.move`/drag (mobile) between the two clicks or the 2nd click is a silent no-op.
+- mirror/rotate/scale `Enter` advances the select step to axis/basepoint (`selectedIds.length > 0` required — the click must land before Enter).
+- rotate commit angle is `atan2` of the click ray: pick a diagonal commit point; 0/90/180/360 about a rect center can look identical and pass nothing.
+- fillet's arc (radius 20) alone can be too subtle for the 24-wide fingerprint grid — assert the trimmed corner pixel via `pixelAt` too.
+- Mobile modify tests must re-`expandMobileToolbar` between the base draw tool and the modify tool (tool selection collapses the palette). `selectMobilePaletteTool` helper encapsulates this.
+- Loop gate green: `npm run typecheck` clean, `npm test` 438/438; `npx playwright test e2e/full-tool-audit.spec.ts` → 38 passed (16 new + 22 prior).
+
 ### Iteration 3 (Aug 10, 2026) — third batch: dimension, measure-distance, text-annotation (mouse + touch)
 
 **Changed:** Appended 6 tests to `frontend/e2e/full-tool-audit.spec.ts` driving the annotate/measure click-sequence + modal tools on BOTH input paths:
