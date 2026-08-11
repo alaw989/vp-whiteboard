@@ -108,6 +108,24 @@ class RateLimitTest extends TestCase
             ->assertJson(['message' => 'Too Many Attempts.']);
     }
 
+    public function test_loopback_requests_are_not_throttled(): void
+    {
+        // Local/e2e/CI traffic originates from 127.0.0.1 (all Playwright workers
+        // share the one loopback IP). Per-IP throttles must NOT apply to
+        // loopback or the e2e suite's parallel logins would 429 each other —
+        // this is the regression the loopback exemption guards against.
+        // 6 logins (over the 5/min limit) must all stay non-429.
+        $client = $this->withIp('127.0.0.1');
+
+        for ($i = 0; $i < 6; $i++) {
+            $response = $client->postJson('/login', [
+                'email' => "loopback$i@example.com",
+                'password' => 'wrong-password',
+            ]);
+            $this->assertNotEquals(429, $response->getStatusCode());
+        }
+    }
+
     public function test_share_resolver_is_keyed_on_token_not_ip(): void
     {
         // The WS relay calls /api/shares/{token} from the droplet's own IP for

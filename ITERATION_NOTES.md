@@ -133,3 +133,26 @@ Rate-limit public endpoints: add Laravel `throttle` middleware (named rate limit
 
 **Next:**
 - Confirm the share-link e2e flow (`npm run test:e2e`, clean local stack with `TEST=1`) — the only remaining unverified item for this Goal.
+
+### Iteration 5 — loopback exemption for per-IP limiters (fixes e2e regression)
+
+**Changed:**
+- `app/Providers/AppServiceProvider.php`: added a `loopback(Request $request, Limit $limit)` helper that returns `Limit::none()` when `$request->ip()` is `127.0.0.1` or `::1`, and wired it into the `login`, `register`, `forgot-password`, `reset-password`, and `public-read` named limiters (the per-IP ones). The `shares` limiter stays token-keyed and unchanged.
+- `tests/Feature/RateLimitTest.php`: +1 test — `test_loopback_requests_are_not_throttled` (6 logins from `127.0.0.1`, all must stay non-429).
+
+**Why (the regression this fixes):**
+- The `throttle:login` limit (5/min/IP) tripped the e2e suite: Playwright's ~8 parallel workers ALL log in from the single loopback IP 127.0.0.1, and the suite does ~70 logins (`full-tool-audit.spec.ts` alone logs in 38×). Every login-dependent test showed the friendly "Too many attempts — please wait a minute and try again." error and `waitForURL` timed out.
+- **Prod is safe to exempt loopback:** verified on the droplet that nginx forwards real client IPs to PHP-FPM (`fastcgi_param REMOTE_ADDR $remote_addr`), so a loopback request in production is server-local tooling (dev, `tinker`), never a remote brute-force vector.
+
+**Verified:**
+- `php artisan test`: **55 passed** (54 + 1 new) / 260 assertions. Statements coverage via CI-identical clover parse: **75.98%** (≥ 73 gate, up from 74.32% — the new helper adds covered statements).
+- `npm run typecheck` clean; `npm test` 685/685 (untouched this iteration).
+- **`npm run test:e2e` against the live local stack: 66 passed / 1 flaky retry-pass / 0 failed** (was 37 passed + ~30 failed BEFORE the fix — the entire failure set was the login throttle). The 1 flake (arrow-tool canvas fingerprint timing) is a pre-existing cold-boot flake, unrelated to throttling.
+
+**Gotchas:**
+- The loopback exemption only affects per-IP limiters; the token-keyed `shares` limiter is untouched (WS relay still protected per-token).
+- `php artisan test` already passes `REMOTE_ADDR` handling; the existing throttle tests use distinct non-loopback IPs (`203.0.113.x`, `198.51.100.x`) so they still assert real throttling — only loopback is exempt.
+- Local `.env` uses `CACHE_STORE=database`, so e2e throttle state persists across runs — but with loopback exempt, lingering buckets are inert.
+
+**Next:**
+- Goal is complete: all six named limiters are registered, applied to every public route, feature-tested (429 + `Retry-After`), and the e2e share-link/login flow is verified green with throttling active. Optional future polish: none outstanding for this Goal.

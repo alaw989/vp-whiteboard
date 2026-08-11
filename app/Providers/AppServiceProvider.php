@@ -38,23 +38,49 @@ class AppServiceProvider extends ServiceProvider
 
         // Brute-force defense-in-depth on auth endpoints (the app-level lockout
         // in LoginRequest remains the first gate; different keys, no conflict).
-        RateLimiter::for('login', fn (Request $request) => Limit::perMinute(5)
-            ->by($request->ip()));
+        // Loopback (127.0.0.1/::1) is exempt: prod nginx forwards real client
+        // IPs via REMOTE_ADDR ($remote_addr), so a loopback request is always
+        // local tooling (dev, e2e suite, php artisan tinker) — never a remote
+        // attacker. Without this, the e2e suite's parallel workers (all logging
+        // in from 127.0.0.1) trip the 5/min limit and break every login test.
+        RateLimiter::for('login', function (Request $request) {
+            return $this->loopback($request, Limit::perMinute(5)->by($request->ip()));
+        });
 
         // Also caps the per-registration owner-approval mail flood.
-        RateLimiter::for('register', fn (Request $request) => Limit::perMinute(3)
-            ->by($request->ip()));
+        RateLimiter::for('register', function (Request $request) {
+            return $this->loopback($request, Limit::perMinute(3)->by($request->ip()));
+        });
 
-        RateLimiter::for('forgot-password', fn (Request $request) => Limit::perMinute(5)
-            ->by($request->ip()));
+        RateLimiter::for('forgot-password', function (Request $request) {
+            return $this->loopback($request, Limit::perMinute(5)->by($request->ip()));
+        });
 
-        RateLimiter::for('reset-password', fn (Request $request) => Limit::perMinute(5)
-            ->by($request->ip()));
+        RateLimiter::for('reset-password', function (Request $request) {
+            return $this->loopback($request, Limit::perMinute(5)->by($request->ip()));
+        });
 
         // Light per-IP cover for the remaining public reads. Generous so a share
         // viewer refreshing the board (re-fetching whiteboard + file serves +
         // sessions) is never tripped. Auto-save PATCH is NOT limited here.
-        RateLimiter::for('public-read', fn (Request $request) => Limit::perMinute(60)
-            ->by($request->ip()));
+        RateLimiter::for('public-read', function (Request $request) {
+            return $this->loopback($request, Limit::perMinute(60)->by($request->ip()));
+        });
+    }
+
+    /**
+     * Return an unlimited limiter for loopback requests, else the given limit.
+     *
+     * Local/dev/e2e/CI traffic always originates from 127.0.0.1 or ::1 and would
+     * otherwise trip per-IP throttles (e.g. the e2e suite's parallel workers all
+     * log in from the same loopback IP). Production is unaffected: nginx
+     * forwards the real client IP via REMOTE_ADDR ($remote_addr), so a loopback
+     * request in prod is server-local tooling, never a remote brute-force vector.
+     */
+    protected function loopback(Request $request, Limit $limit): Limit
+    {
+        return in_array($request->ip(), ['127.0.0.1', '::1'], true)
+            ? Limit::none()
+            : $limit;
     }
 }
