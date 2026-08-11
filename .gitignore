@@ -70,3 +70,7 @@ IMPLEMENTATION_PLAN.md
 # Laravel storage symlink (env-specific; created per-env by php artisan storage:link)
 public/storage
 .phpunit.result.cache
+
+# Coverage reports (generated locally; CI gates on thresholds, not artifacts)
+build/coverage.xml
+frontend/coverage/

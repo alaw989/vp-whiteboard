@@ -5,7 +5,36 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
-(no iterations yet — first loop run starts here)
+### Iteration 1 (DONE) — Measure-first pass: tooling installed, baselines captured
+
+**Changed:**
+- Installed `@vitest/coverage-v8@^2.1.9` (matches vitest ^2.1.9 major) in `frontend/`.
+- Added `npm run coverage` script = `vitest run --coverage` (`frontend/package.json`).
+- `frontend/vitest.config.mts`: added `test.coverage` block — provider `v8`, `include: ['composables/**/*.ts', 'utils/**/*.ts', 'server/**/*.{js,ts}']`, `exclude` for `*.test.ts`, `composables/**/__tests__/**`, `e2e/**`; reporters `['text', 'json-summary']`, `reportOnFailure: true`. NO thresholds yet (deliberate — measure first). `npm test` still plain `vitest run` (thresholds will go in the CLI script later so the fast loop stays green).
+- `.gitignore`: ignored `build/coverage.xml` + `frontend/coverage/`.
+
+**Measured frontend baseline** (`npm run coverage` → All files):
+| Area | % Stmts | % Branch | % Funcs | % Lines |
+|---|---|---|---|---|
+| All files | 57.46 | 76.93 | 77.61 | 57.46 |
+| composables (root) | 35.89 | 76.61 | 61.49 | 35.89 |
+| composables/tools | 79.91 | 73.84 | 88.23 | 79.91 |
+| server (ws-server.js) | 82.59 | 85.45 | 94.44 | 82.59 |
+| utils (geometryUtils) | 88.50 | 82.45 | 96.87 | 88.50 |
+
+Root-level composables drag the aggregate: useCursors/useFileUpload/useLayers/useMeasurements/usePDFRendering/useScale/useCommandEngine/useDocumentLayer are 0%. Server `routes/`, `websocket/[...].ts`, `utils/session-id.ts` are also 0% (Nitro glue, untested).
+
+**Measured backend baseline** (`php artisan test --coverage-clover=build/coverage.xml` — pcov IS installed locally):
+- Project-level clover `<metrics>` element: **statements 344/467 = 73.66%**, elements 372/526 = 70.72%. PHPUnit text report agrees (Lines 73.66% 344/467).
+- **GOTCHA (critical):** the clover XML has BOTH per-class `<metrics>` elements AND a project-level `<metrics files=... loc=... classes=...>` aggregate. Summing per-class statements gives 2433 (WRONG → 42.42%). The gate MUST regex the project-level element (it has `files=`/`loc=`/`classes=` attrs). Validated parse snippet (python3): `re.search(r'<metrics files="[^"]+"[^>]*>', txt)` then read `statements`/`coveredstatements` → 73.66%.
+
+**Verification:** `npm run coverage` exit 0; `npm run typecheck` exit 0; `npm test` 438/438 pass; `php artisan test` 48 pass.
+
+**Next:**
+1. Add frontend thresholds via CLI flags in the `coverage` script (lines/stmts 57, branch 76, funcs 77 — at-or-below measured so CI doesn't instantly fail).
+2. CI `test` job: switch `npm test` → `npm run coverage` (or add a coverage step) as the gate.
+3. CI backend: `coverage: pcov` in setup-php + a clover-generate + parse step gating on project-level statements ≥ ~73.
+4. Ratchet thresholds up over subsequent iterations.
 
 ## Context (from prior code review — read before changing code)
 
