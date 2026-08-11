@@ -5,7 +5,19 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
-### Iteration 1 (DONE) — Measure-first pass: tooling installed, baselines captured
+### Iteration 2 (DONE) — Frontend threshold gate enforced (CLI flags + CI)
+
+**Changed:**
+- `frontend/package.json` `coverage` script now passes threshold flags: `--coverage.thresholds.lines=57 --coverage.thresholds.statements=57 --coverage.thresholds.branches=76 --coverage.thresholds.functions=77` (at-or-below measured: 57.46/57.46/76.93/77.61). Thresholds live in CLI flags, NOT vitest.config — so `npm test` stays the fast green loop while `npm run coverage` is the gate.
+- `.github/workflows/ci.yml` `test` job: `Test` step now runs `npm run coverage` (was `npm test`) — the `test` check (branch-protection required) now enforces the coverage thresholds on every PR/push to develop/master.
+
+**Verification:** `npm run coverage` exit 0; confirmed the flags ARE enforced — `--coverage.thresholds.lines=58` exits 1 (57.46 < 58). `npm run typecheck` exit 0; `npm test` 438/438 pass.
+
+**Next:**
+1. CI backend gate: `coverage: pcov` in the `backend-test` (and `test`? it's frontend-only) setup-php + a clover-generate + parse step gating on project-level statements ≥ ~73 (use the project-level `<metrics files=...>` regex — the per-class sum is wrong).
+2. Ratchet frontend thresholds up over subsequent iterations (start by raising lines/stmts 57 → 58 once red-herring 0% files like server/routes, server/websocket, server/utils are either tested or excluded from the include globs).
+
+## Iteration 1 (DONE) — Measure-first pass: tooling installed, baselines captured
 
 **Changed:**
 - Installed `@vitest/coverage-v8@^2.1.9` (matches vitest ^2.1.9 major) in `frontend/`.

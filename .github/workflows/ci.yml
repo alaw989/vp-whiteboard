@@ -34,9 +34,9 @@ jobs:
         working-directory: frontend
         run: npm run typecheck
 
-      - name: Test
+      - name: Test (with coverage gate)
         working-directory: frontend
-        run: npm test
+        run: npm run coverage
 
   backend-test:
     runs-on: ubuntu-latest
