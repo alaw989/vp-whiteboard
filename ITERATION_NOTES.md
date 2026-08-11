@@ -5,7 +5,11 @@ Share-link expiry UX: when GET /api/shares/{token} fails (expired, revoked, or u
 
 ## State
 
-(no iterations yet — first loop run starts here)
+- **Iteration 1 (backend resolver):** Added `WhiteboardShare::findByToken()` (no expiry filter, hash lookup) alongside `findActiveByToken()`. `ShareController@resolve()` now distinguishes cases: valid → 200; row exists but past expiry → **410 Gone** `{success:false,error:'expired'}`; unknown/revoked → **404** `{success:false,error:'not_found'}`. Removed the ambiguous `'Share not found or expired'` message.
+  - Tests: `test_expired_share_is_rejected` now asserts `assertGone()` + `error:'expired'`; added `test_unknown_or_revoked_token_is_not_found` (404 + `error:'not_found'`). Backend suite: 48 passed (was 47). WS relay unaffected (its `status === 200` check already rejects 410/404 → closes handshake 4001).
+  - Verified: `php artisan test` green.
+- **Next (iteration 2):** frontend — new friendly `/s` error page ("This share link has expired or been revoked" + "Go home"), whitelisted in `middleware/auth.global.ts` (exact path match) so anonymous viewers aren't bounced to `/login`; update `frontend/server/routes/s/[id].get.ts` to 302 to the friendly page (distinguish 410 vs 404 to tailor the message) instead of `/`; fix/remove stale `pages/s/[id].vue` (calls dead `/api/sessions/`). Then e2e `share-expiry.spec.ts`.
+- **Gotchas:** resolver 404/410 must stay distinguishable in the frontend route (it does the $fetch itself, so it can read the HTTP status); the friendly page MUST be public (whitelist in auth.global.ts) or anonymous share viewers get redirected to `/login?redirect=...`; WS relay treats any non-200 as unauthorized — do not change that contract.
 
 ## Context (from prior code review — read before changing code)
 
