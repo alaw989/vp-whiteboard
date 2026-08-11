@@ -57,3 +57,76 @@ jobs:
 
       - name: Run Laravel tests
         run: php artisan test
+
+  # Full Playwright e2e suite at PR time. The suite's playwright.config.ts
+  # webServer array boots the WHOLE stack (php artisan serve :8002, nuxt dev
+  # :3000 TEST=1, Yjs WS relay :3001) and global-setup.ts seeds users via
+  # `php artisan tinker`, so this job just needs a real, bootable Laravel:
+  # composer deps, a provisioned .env, a persistent (file) SQLite DB, and the
+  # migrations applied. The frontend env (frontend/.env) tells Nuxt where
+  # Laravel lives — the local one is gitignored, so the job writes it.
+  #
+  # NOT added to branch protection yet: it's a new job and must prove stable
+  # first (flakes would block every PR). Promote after a few green runs.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+
+      - name: Install backend dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Provision Laravel env + migrate
+        run: |
+          cp .env.example .env
+          sed -i "s|^APP_URL=.*|APP_URL=http://localhost:8002|" .env
+          sed -i "s|^MAIL_MAILER=.*|MAIL_MAILER=array|" .env
+          touch database/database.sqlite
+          php artisan key:generate
+          php artisan migrate --force
+
+      - name: Provision frontend env
+        run: |
+          cat > frontend/.env <<'EOF'
+          LARAVEL_URL=http://localhost:8002
+          NUXT_PUBLIC_LARAVEL_URL=http://localhost:8002
+          WS_PORT=3001
+          NUXT_PUBLIC_WS_URL=ws://localhost:3001
+          NUXT_PUBLIC_SITE_URL=http://localhost:3000
+          EOF
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e tests
+        working-directory: frontend
+        run: npx playwright test
+
+      - name: Upload Playwright test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: frontend/test-results/
+          retention-days: 7
