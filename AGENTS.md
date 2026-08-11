@@ -204,17 +204,18 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 
 **Backlog (in priority order):**
 1. **CI e2e job + fix the cold-boot login hydration flake** — run the 65-test playwright suite at PR time (boot the stack in the runner, retries for warm-up); root-cause the recurring smoke/mobile-touch flake so the suite is deterministic.
-2. **Rate-limit public endpoints** — Laravel `throttle` on `/api/shares/{token}`, auth, and registration (public + unauthenticated today).
-3. **Board dashboard** — search, sort (recent/alphabetical), thumbnails, archive on `index.vue` (delete exists, no archive).
-4. **Save-state indicator** — subtle Saving…/Saved/Offline–retrying badge to surface the WS/API outage mode behind the past data-loss incident.
-5. **Vector/SVG export** — emit shapes as a vector layer in the PDF (crisp at any zoom) alongside the raster PNG/PDF.
-6. **Grid/snap + dimension units** — visual grid toggle, snapping, mm/in + scale calibration.
-7. **Custom stamp upload** — image stamps beyond the fixed APPROVED/REVISED/NOTE/FOR REVIEW set.
-8. **Admin user management** — user list + disable/reset for `is_admin` owners (beyond approve/deny).
-9. **Offline editing (PWA)** — service worker + local-first edits synced on reconnect (reconnect/resume hardening already laid groundwork).
-10. **Accessibility audit** — keyboard focus in the toolbar, focus-trapping in the text-annotation modal, aria on the mobile toolbar.
-11. **Visual regression screenshot tests** — golden-image styling diffs the fingerprint-based tests can't catch.
-12. (Ideas for later) — PDF layer rendering perf, viewport-clipping correctness on zoom, admin approval email test on staging with real SMTP, onboarding/empty-state UX.
+2. **Coverage tooling + threshold gate** — install `@vitest/coverage-v8` (pinned vitest ^2.1.9) + a `npm run coverage` script; configure `vitest.config.mts` (include composables/utils/server, exclude tests) and gate the CI `test` job on line/statement/branch thresholds. Backend: enable pcov in the CI PHP setup (`shivammathur/setup-php` `coverage: pcov`) and gate `php artisan test --coverage-clover`/`--coverage-text` output (PHPUnit has no native min-coverage flag — small parse step). First pass MEASURES the current % then sets realistic thresholds that ratchet up — not an arbitrary number that instantly fails CI.
+3. **Rate-limit public endpoints** — Laravel `throttle` on `/api/shares/{token}`, auth, and registration (public + unauthenticated today).
+4. **Board dashboard** — search, sort (recent/alphabetical), thumbnails, archive on `index.vue` (delete exists, no archive).
+5. **Save-state indicator** — subtle Saving…/Saved/Offline–retrying badge to surface the WS/API outage mode behind the past data-loss incident.
+6. **Vector/SVG export** — emit shapes as a vector layer in the PDF (crisp at any zoom) alongside the raster PNG/PDF.
+7. **Grid/snap + dimension units** — visual grid toggle, snapping, mm/in + scale calibration.
+8. **Custom stamp upload** — image stamps beyond the fixed APPROVED/REVISED/NOTE/FOR REVIEW set.
+9. **Admin user management** — user list + disable/reset for `is_admin` owners (beyond approve/deny).
+10. **Offline editing (PWA)** — service worker + local-first edits synced on reconnect (reconnect/resume hardening already laid groundwork).
+11. **Accessibility audit** — keyboard focus in the toolbar, focus-trapping in the text-annotation modal, aria on the mobile toolbar.
+12. **Visual regression screenshot tests** — golden-image styling diffs the fingerprint-based tests can't catch.
+13. (Ideas for later) — PDF layer rendering perf, viewport-clipping correctness on zoom, admin approval email test on staging with real SMTP, onboarding/empty-state UX.
 
 **Shipped (all merged to develop + master, deployed to staging + prod):**
 - Live-sync collab fix (relay auth Origin forwarding + Yjs SYNC_FULL/SYNC_DELTA protocol) — PRs #42/#43.
