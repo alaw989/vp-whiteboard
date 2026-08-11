@@ -96,3 +96,21 @@ Rate-limit public endpoints: add Laravel `throttle` middleware (named rate limit
 **Next:**
 - Confirm the share-link e2e flow (`npm run test:e2e`, needs clean local stack with `TEST=1`) — limits are generous so it should pass; run before shipping if desired.
 - Optionally apply the same `friendlyApiErrorMessage` treatment to `approvals.vue`/`WhiteboardShareModal.vue` (they surface `e?.data?.error`/`e?.data?.message` raw, but 429s there are unlikely in normal use).
+
+### Iteration 3 — feature tests for the forgot/reset-password throttles (last untested limiters)
+
+**Changed:**
+- `tests/Feature/RateLimitTest.php`: added 2 tests closing the last coverage gap — `test_forgot_password_is_throttled_per_ip` and `test_reset_password_is_throttled_per_ip`. Both do 5 allowed attempts then assert the 6th returns `429` + `{"message": "Too Many Attempts."}`, mirroring the existing login/register pattern. New distinct IPs (`203.0.113.13`, `203.0.113.14`) keep buckets isolated from every other test.
+
+**Verified:**
+- `php artisan test`: 54 passed (52 + 2 new), 254 assertions. `RateLimitTest` alone: 6 passed / 151 assertions.
+- Frontend `npm run typecheck` clean; `npm test` 683/683 (untouched this iteration).
+- All six named limiters now have a 429 feature test: `login`, `register`, `forgot-password`, `reset-password`, `shares` (token-keyed), `public-read`.
+
+**Gotchas:**
+- The `throttle:` middleware runs before the controller, so the 6th request 429s regardless of email/token validity — no DB writes, no mail side effects (bogus tokens, `MAIL_MAILER=array`).
+- No conflict between HTTP throttle (per-IP) and `PasswordResetLinkController`'s soft "try again later" throttling (per-email) — different layers, both stay green.
+
+**Next:**
+- Confirm the share-link e2e flow (`npm run test:e2e`, clean local stack with `TEST=1`) — the only remaining unverified item for this Goal.
+- Optional: apply `friendlyApiErrorMessage` to `approvals.vue`/`WhiteboardShareModal.vue` (auth'd surfaces, 429 unlikely — low priority).

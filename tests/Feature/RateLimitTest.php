@@ -68,6 +68,46 @@ class RateLimitTest extends TestCase
             ->assertJson(['message' => 'Too Many Attempts.']);
     }
 
+    public function test_forgot_password_is_throttled_per_ip(): void
+    {
+        $client = $this->withIp('203.0.113.13');
+
+        for ($i = 0; $i < 5; $i++) {
+            $response = $client->postJson('/forgot-password', [
+                'email' => "throttle-fp$i@example.com",
+            ]);
+            $this->assertNotEquals(429, $response->getStatusCode());
+        }
+
+        $client->postJson('/forgot-password', [
+            'email' => 'throttle-fp6@example.com',
+        ])->assertStatus(429)
+            ->assertJson(['message' => 'Too Many Attempts.']);
+    }
+
+    public function test_reset_password_is_throttled_per_ip(): void
+    {
+        $client = $this->withIp('203.0.113.14');
+
+        for ($i = 0; $i < 5; $i++) {
+            $response = $client->postJson('/reset-password', [
+                'email' => "throttle-rp$i@example.com",
+                'token' => 'bogus-token',
+                'password' => 'new-password',
+                'password_confirmation' => 'new-password',
+            ]);
+            $this->assertNotEquals(429, $response->getStatusCode());
+        }
+
+        $client->postJson('/reset-password', [
+            'email' => 'throttle-rp6@example.com',
+            'token' => 'bogus-token',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ])->assertStatus(429)
+            ->assertJson(['message' => 'Too Many Attempts.']);
+    }
+
     public function test_share_resolver_is_keyed_on_token_not_ip(): void
     {
         // The WS relay calls /api/shares/{token} from the droplet's own IP for
