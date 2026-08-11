@@ -5,20 +5,36 @@ Fresh full-tool audit: drive EVERY whiteboard tool through the e2e harness (mous
 
 ## State
 
-### Iteration 1 (Aug 10, 2026) — first batch: line, arrow, circle, ellipse (mouse + touch)
+### Iteration 2 (Aug 10, 2026) — second batch: polyline, arc, revision-cloud, stamp (mouse + touch)
 
-**Changed:** Added `frontend/e2e/full-tool-audit.spec.ts` with 8 tests driving the four simplest create-from-scratch tools (line, arrow, circle, ellipse) on BOTH input paths: desktop mouse (toolbar aria-label button + `page.mouse` drag) and mobile touch (expanded palette `title` button + `helpers.touchStroke` drag). Each test selects the tool, captures `canvasFingerprint`, draws, and asserts the fingerprint changes AND stays changed after a settle window (a real committed element, not a transient preview). All 8 pass. No product code needed fixing — these four tools commit correctly.
+**Changed:** Appended 8 tests to `frontend/e2e/full-tool-audit.spec.ts` driving the four click-sequence / click-only tools on BOTH input paths:
+- Desktop mouse: polyline (3 clicks + `Enter` to finish), arc (3 non-collinear clicks), revision-cloud (4 vertex clicks + a click within 10px of the first vertex to close), stamp (toolbar button → pick REVISED from the dropdown menu → click to place).
+- Mobile touch: same tools via expanded-palette `title` buttons + a new `touchTap` helper (`touchPointer` down+up at one point) for the click-based flows; polyline still finishes with `page.keyboard.press('Enter')`.
+- Each test captures `canvasFingerprint` baseline, runs the click sequence, then `assertCommitted` polls for a fingerprint change AND re-checks after a 750ms settle window (a committed element, not a transient preview). All 16 spec tests pass (41s), no product code needed fixing.
 
-**Covered so far toward the 18-tool audit target:** line, arrow, circle, ellipse (mouse + touch). Still uncovered: polyline, arc, revision-cloud, stamp, text-annotation, dimension, measure-distance, measure-area, offset, mirror, rotate, scale, trim, extend, fillet.
+**Covered so far toward the 18-tool audit target (8/18):** line, arrow, circle, ellipse, polyline, arc, revision-cloud, stamp (mouse + touch). Still uncovered: text-annotation, dimension, measure-distance, measure-area, offset, mirror, rotate, scale, trim, extend, fillet.
 
-**Next iteration:** append the click-sequence draw tools (polyline — clicks + Enter; arc — 3 clicks; revision-cloud — clicks + close; stamp — click-only) to the spec, mouse path first, then touch. Then dimension/measure-distance (3/2-click flows), then the modify tools (offset/mirror/rotate/scale/trim/extend/fillet need a pre-drawn shape + their own select-step state machines), then measure-area (click an existing shape), then text-annotation (modal flow).
+**Next iteration:** append the click-sequence measure/annotate tools — dimension (3 clicks: start → end → offset), measure-distance (2 clicks), text-annotation (down-drag-up leader + modal `<textarea>` + Enter). Then the modify tools (offset/mirror/rotate/scale/trim/extend/fillet need a pre-drawn shape + their own select-step state machines), then measure-area (click an existing shape).
 
 **Gotchas:**
+- All gotchas from Iteration 1 still apply (fresh board per test, desktop/mobile selector scoping, exact:true on mobile `title` lookups).
+- Click-sequence tools commit on CLICKS — pointerup is a no-op for polyline/arc/revision-cloud, so use `page.mouse.click` (desktop) or `touchTap` (mobile), never a drag.
+- Polyline/revision-cloud finish via `Enter` OR a click <10px of the last/first vertex — the tests exercise Enter (polyline) and close-click (revision-cloud) to cover both commit paths.
+- Arc needs 3 NON-collinear clicks; keep the through point well off the start→end chord (collinear points are discarded with a `console.warn`).
+- Stamp is a dropdown tool, NOT a plain `getByRole('button', ...)` with a static aria-pressed: click the toolbar button (`aria-label` regex `/Stamp tool, press S/`), pick a type from `role="menu"` (aria-label `Select stamp type`) — BOTH the hidden desktop sidebar and the mobile sheet render the menu when open, so scope the menu query to the active toolbar locator to avoid strict-mode ambiguity. Commit happens on pointerdown.
+- Mobile stamp keeps the palette expanded (it uses `handleStampClick`, not `handleMobileToolSelect`); synthetic taps bypass hit-testing so the canvas is still reachable.
+- `touchTap` was added inline to the spec (down+up via the existing `touchPointer` export) — no helpers.ts change needed.
+- Loop gate green: `npm run typecheck` clean, `npm test` 438/438; `npx playwright test e2e/full-tool-audit.spec.ts` → 16 passed.
+
+### Iteration 1 (Aug 10, 2026) — first batch: line, arrow, circle, ellipse (mouse + touch)
+
+**Changed:** Created `frontend/e2e/full-tool-audit.spec.ts` with 8 tests driving the four simplest create-from-scratch tools (line, arrow, circle, ellipse) on BOTH input paths: desktop mouse (toolbar aria-label button + `page.mouse` drag) and mobile touch (expanded palette `title` button + `helpers.touchStroke` drag). Each test selects the tool, captures `canvasFingerprint`, draws, and asserts the fingerprint changes AND stays changed after a settle window (a real committed element, not a transient preview). All 8 pass. No product code needed fixing.
+
+**Gotchas (still apply):**
 - Each test logs in + creates a fresh whiteboard (isolation). Stack is booted by playwright `webServer` (php artisan serve :8002, nuxt :3000 TEST=1, ws relay :3001); cold start ~60-90s, then fast.
 - Desktop selectors: scope to `getByRole('toolbar', { name: 'Whiteboard tools' })` then `getByRole('button', { name: '${Name} tool, press ${Shortcut}', exact: true })`; assert `aria-pressed` true. Mobile: `expandMobileToolbar(page)` then `getByTitle('${Name}', { exact: true })` scoped to the mobile toolbar (exact is MANDATORY — the hidden desktop sidebar keeps `'Line (L)'`-style titles in the DOM).
 - Circle: down = center, drag = radius; keep radius > 5 (discard threshold). Ellipse/line/arrow: skip zero-length/too-small drags (threshold 5 / 1 px). Ortho is off by default, so no constrainPoint surprises.
 - Don't press keyboard shortcuts in e2e for these tools — clicking the button avoids shortcut-related focus/keyboard interactions (e.g. `C` closes polylines, which would interfere with later click-sequence tests).
-- Loop gate green: `npm run typecheck` clean, `npm test` 438/438.
 
 ## Context (from prior code review — read before changing code)
 
