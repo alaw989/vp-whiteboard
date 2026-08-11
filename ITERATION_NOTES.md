@@ -5,6 +5,24 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 3 (DONE) — Backend coverage gate in CI (pcov + clover + threshold parse)
+
+**Changed:**
+- `.github/workflows/ci.yml` `backend-test` job: added `coverage: pcov` to `shivammathur/setup-php@v2`.
+- Backend `Run Laravel tests` step now runs `php artisan test --coverage-clover=build/coverage.xml` (was plain `php artisan test`).
+- New `Enforce backend coverage threshold` step: inline python3 heredoc parses the **project-level** `<metrics files="..." ...>` element from the clover XML (regex `<metrics files="[^"]+"[^>]*>`) and reads `statements`/`coveredstatements` → `pct = covered/statements*100`, exits 1 if `< 73.0`. Threshold 73 is at-or-below the measured 73.66% (344/467), so CI does NOT instantly fail — ratchets up from here.
+
+**Verification:**
+- Locally `php artisan test --coverage-clover=build/coverage.xml` → 48 passed; parse snippet reports `Backend coverage: 344/467 statements = 73.66% (threshold 73%)` → exit 0.
+- Confirmed the gate ENFORCES: same snippet with threshold 74 → `FAIL: backend coverage 73.66% below threshold 74%` → exit 1.
+- YAML validated (`yaml.safe_load`): jobs `test`/`backend-test`/`e2e`; backend-test steps now `Checkout → Setup PHP → Install dependencies → Run Laravel tests with coverage → Enforce backend coverage threshold`.
+- `npm run typecheck` exit 0; `npm test` 438/438 pass; `php artisan test` 48 pass. `build/coverage.xml` is already gitignored.
+
+**Next:**
+1. Push to CI to confirm the pcov/clover run is green there (local is PHP 8.5, CI is 8.4 — coverage % could shift a hair; 0.66pp headroom should absorb it, but verify the `backend-test` check passes on the PR).
+2. Ratchet frontend thresholds up (lines/stmts 57 → 58) once red-herring 0% files (server/routes, server/websocket, server/utils) are either tested or excluded from the include globs.
+3. Ratchet backend threshold 73 → 74 once more backend tests land (each new covered statement raises the % ~0.2pp).
+
 ### Iteration 2 (DONE) — Frontend threshold gate enforced (CLI flags + CI)
 
 **Changed:**
