@@ -56,7 +56,7 @@ export function useCommandEngine(options: CommandEngineOptions) {
     // Try to find a command
     const cmd = get(trimmed)
     if (cmd) {
-      cmd.action({ execute, output, prompt, setActiveTool: options.setActiveTool, toggleGrid: options.toggleGrid, toggleGridSnap: options.toggleGridSnap, toggleOrtho: options.toggleOrtho, toggleSnap: options.toggleSnap, undo: options.undo, redo: options.redo, isWaitingForParam, pendingCommand, pendingPrompt })
+      cmd.action({ execute, output, prompt, setActiveTool: options.setActiveTool, toggleGrid: options.toggleGrid, toggleGridSnap: options.toggleGridSnap, toggleOrtho: options.toggleOrtho, toggleSnap: options.toggleSnap, togglePolarTracking: options.togglePolarTracking, undo: options.undo, redo: options.redo, isWaitingForParam, pendingCommand, pendingPrompt })
       return
     }
 

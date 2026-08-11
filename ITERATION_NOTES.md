@@ -5,6 +5,24 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 7 (DONE) — useCommandEngine/Registry covered + thresholds ratcheted up
+
+**Changed:**
+- New unit test `frontend/composables/useCommandEngine.test.ts` (25 tests) covering the full command system: `useCommandRegistry` (register by name + aliases case-insensitive, `getAll` dedupes by name, `getCompletions` prefix-matches name/aliases with dedupe, empty-result case) and `useCommandEngine` (`execute` by name/lowercase/alias, undo/redo/grid/gridsnap/ortho/osnap callbacks, POLAR with/without `togglePolarTracking`, empty-input no-op, unknown-command message, bare-number direct-distance while drawing with applied/not-applied branches, plain-distance fallback, fillet-radius set, pending-param flow via exposed `pendingCommand`/`isWaitingForParam` refs, `cancelPending`, history tracking, 100-line output cap, `getAll` full command set, completions, per-command tool callback, and a sweep that executes every registered command by name and by alias without throwing).
+- `frontend/composables/useCommandEngine.ts` product fix (caught by the new tests): the registered-command `cmd.action({...})` invocation was missing `togglePolarTracking: options.togglePolarTracking` (only the pending-param path passed it), so the POLAR command could never invoke the option. Added it to the standard command path.
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 62→**63**, branches 78→**79**, functions 79→**80** (all at-or-below new measured 64.14/64.14/79.53/80.87).
+
+**Measured** (after adding command tests): All files 64.14% stmts/lines (was 62.12), 79.53% branches (was 78.26), 80.87% funcs (was 79.03). Suite 48 files / 493 tests (was 47/468). `useCommandEngine.ts` 96.11/100/97.29/96.11, `useCommandRegistry.ts` 100% everywhere — both previously 0%.
+
+**Verification:**
+- `npm run coverage` exit 0 with new thresholds; `npm run typecheck` exit 0; `npm test` 493/493 pass.
+- Negative check: thresholds 64/64/80/81 → `ERROR: Coverage for functions (80.87%) does not meet global threshold (81%)` + branches 80 → exit 1. Gate enforces.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it.
+2. Ratchet frontend further (lines/stmts 63 → 64) once more composables get tested — biggest drags remain root composables (useCursors/useLayers/useMeasurements/usePDFRendering/useDocumentLayer ~0%, useSnapping 38%, useViewport 10%, useExtendTool 51%, useTrimTool 56%, useFileUpload's `uploadFile`/`uploadFiles` body 31.89%). `useCommandEngine`'s remaining uncovered bits are the parameter-driven paths (a registered command actually calling `prompt()`/`setActiveTool` through `isWaitingForParam`). `useLayers`/`useMeasurements` (Yjs maps like `useScale` was) or `useSnapping` (already 38%, mostly pure math) are the next best candidates.
+3. Ratchet backend 73 → 74 once more backend tests land.
+
 ### Iteration 6 (DONE) — useFileUpload pure functions covered + thresholds ratcheted up
 
 **Changed:**
