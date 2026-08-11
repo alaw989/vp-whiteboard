@@ -5,6 +5,26 @@ Fresh full-tool audit: drive EVERY whiteboard tool through the e2e harness (mous
 
 ## State
 
+### Iteration 3 (Aug 10, 2026) — third batch: dimension, measure-distance, text-annotation (mouse + touch)
+
+**Changed:** Appended 6 tests to `frontend/e2e/full-tool-audit.spec.ts` driving the annotate/measure click-sequence + modal tools on BOTH input paths:
+- Desktop mouse: dimension (3 clicks: start → end → offset; 3rd commits), measure-distance (2 clicks: start → end; 2nd commits), text-annotation (`mouseDrag` leader line → modal opens on pointerup → fill `Enter your annotation...` textarea → Enter commits).
+- Mobile touch: same tools via expanded-palette `title` buttons (Dimension / Measure Distance / Text Annotation) + `touchTap` (dimension/measure) and `touchStroke` (text-annotation leader) + the same modal flow.
+- Assertions: each test captures `canvasFingerprint` baseline, runs the sequence, asserts the modal appears for text-annotation (`getByRole('heading', { name: 'Add Annotation' })`), then `assertCommitted` (fingerprint change + 750ms settle re-check). All 22 spec tests pass (1.5m second run; first run had 2 pre-existing cold-start flakes in arc/circle, confirmed transient on re-run). No product code needed fixing.
+
+**Covered so far toward the 18-tool audit target (11/18):** line, arrow, circle, ellipse, polyline, arc, revision-cloud, stamp, dimension, measure-distance, text-annotation (mouse + touch). Still uncovered: measure-area (needs a pre-drawn shape), and the modify tools offset, mirror, rotate, scale, trim, extend, fillet (each needs a pre-drawn shape + its own select-step state machine).
+
+**Next iteration:** the modify tools. Each test draws a base shape first (line for offset/trim/extend/fillet; rectangle for mirror/rotate/scale), then drives the tool's select-step → click/Enter state machine and asserts the transform (offset/mirror emit PARALLEL COPIES — originals kept, so element count/fingerprint both change; rotate/scale REPLACE originals; fillet emits a `fillet-arc` + trims two lines). Then measure-area (click an existing rectangle → measurement overlay). Consider reading `useOffsetTool.ts`/`useMirrorTool.ts`/`useRotateTool.ts`/`useScaleTool.ts`/`useTrimTool.ts`/`useExtendTool.ts`/`useFilletTool.ts` for each tool's exact click-step order before writing.
+
+**Gotchas:**
+- All gotchas from Iterations 1-2 still apply (fresh board per test, desktop/mobile selector scoping, exact:true on mobile `title` lookups).
+- Measure/annotate tools are click-sequence or drag+modal, never plain drags: dimension/measure-distance commit on CLICKS (use `page.mouse.click` or `touchTap`, not a drag); text-annotation needs a real down→move→up drag to open its modal (`mouseDrag` / `touchStroke`).
+- Text-annotation modal: heading `Add Annotation`, textarea placeholder `Enter your annotation...` (global locator, not scoped to a toolbar). Type text then `page.keyboard.press('Enter')` — the textarea's `@keydown.enter.prevent` calls `confirmAnnotation`; empty text closes WITHOUT creating (don't test that here — an assertion that a committed element exists is the point).
+- Mobile tool selection collapses the palette (`handleMobileToolSelect` sets `toolbarExpanded=false` on nextTick) — fine, the tool stays active; just don't expect the palette to stay open after clicking these buttons (unlike stamp).
+- Dimension discards the 2nd point if start→end < 1px; measure-distance discards if < 1px — keep clicks well apart.
+- Desktop sidebar is `max-h-screen overflow-y-auto` — the annotate/measure buttons are below the fold at the default 1280x720 viewport, but Playwright's click auto-scrolls, so no scrollIntoView needed.
+- Loop gate green: `npm run typecheck` clean, `npm test` 438/438; `npx playwright test e2e/full-tool-audit.spec.ts` → 22 passed (re-run after first-run cold flakes: arc + circle-login hydration race, pre-existing).
+
 ### Iteration 2 (Aug 10, 2026) — second batch: polyline, arc, revision-cloud, stamp (mouse + touch)
 
 **Changed:** Appended 8 tests to `frontend/e2e/full-tool-audit.spec.ts` driving the four click-sequence / click-only tools on BOTH input paths:

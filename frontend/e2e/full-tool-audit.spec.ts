@@ -211,6 +211,57 @@ test.describe('full tool audit — desktop mouse', () => {
     await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.4)
     await assertCommitted(page, baseline)
   })
+
+  test('dimension tool 3-click sequence commits a dimension element', async ({ page }) => {
+    await login(page)
+    await createWhiteboard(page)
+    await waitForCanvas(page)
+
+    await selectDesktopTool(page, 'Dimension', 'DIM')
+    const baseline = await canvasFingerprint(page)
+    const box = await canvasBox(page)
+    // start → end → offset; the 3rd click commits the dimension.
+    await page.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.4)
+    await page.mouse.click(box.x + box.width * 0.55, box.y + box.height * 0.45)
+    await page.mouse.click(box.x + box.width * 0.4, box.y + box.height * 0.25)
+    await assertCommitted(page, baseline)
+  })
+
+  test('measure distance tool 2-click sequence commits a measurement element', async ({ page }) => {
+    await login(page)
+    await createWhiteboard(page)
+    await waitForCanvas(page)
+
+    await selectDesktopTool(page, 'Measure Distance', 'M')
+    const baseline = await canvasFingerprint(page)
+    const box = await canvasBox(page)
+    // start → end; the 2nd click commits the measurement.
+    await page.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.4)
+    await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.55)
+    await assertCommitted(page, baseline)
+  })
+
+  test('text annotation tool leader drag + modal commit creates an annotation element', async ({ page }) => {
+    await login(page)
+    await createWhiteboard(page)
+    await waitForCanvas(page)
+
+    await selectDesktopTool(page, 'Text Annotation', 'T')
+    const baseline = await canvasFingerprint(page)
+    const box = await canvasBox(page)
+    // Draw the leader line (down at the annotation origin, up at the target);
+    // the modal opens on pointerup.
+    await mouseDrag(
+      page,
+      { x: box.x + box.width * 0.25, y: box.y + box.height * 0.35 },
+      { x: box.x + box.width * 0.5, y: box.y + box.height * 0.5 },
+    )
+    await expect(page.getByRole('heading', { name: 'Add Annotation' })).toBeVisible()
+    await page.getByPlaceholder('Enter your annotation...').fill('Reviewed on site')
+    // Enter in the textarea commits the annotation.
+    await page.keyboard.press('Enter')
+    await assertCommitted(page, baseline)
+  })
 })
 
 test.describe('full tool audit — mobile touch', () => {
@@ -364,6 +415,58 @@ test.describe('full tool audit — mobile touch', () => {
     const baseline = await canvasFingerprint(page)
     const box = await canvasBox(page)
     await touchTap(page, { x: box.x + 150, y: box.y + 200 })
+    await assertCommitted(page, baseline)
+  })
+
+  test('dimension tool touch-taps commit a dimension element', async ({ page }) => {
+    await login(page)
+    await createWhiteboard(page)
+    await waitForCanvas(page)
+
+    const mobileToolbar = await expandMobileToolbar(page)
+    await mobileToolbar.getByTitle('Dimension', { exact: true }).click()
+
+    const baseline = await canvasFingerprint(page)
+    const box = await canvasBox(page)
+    await touchTap(page, { x: box.x + 70, y: box.y + 220 })
+    await touchTap(page, { x: box.x + 250, y: box.y + 240 })
+    await touchTap(page, { x: box.x + 160, y: box.y + 120 })
+    await assertCommitted(page, baseline)
+  })
+
+  test('measure distance tool touch-taps commit a measurement element', async ({ page }) => {
+    await login(page)
+    await createWhiteboard(page)
+    await waitForCanvas(page)
+
+    const mobileToolbar = await expandMobileToolbar(page)
+    await mobileToolbar.getByTitle('Measure Distance', { exact: true }).click()
+
+    const baseline = await canvasFingerprint(page)
+    const box = await canvasBox(page)
+    await touchTap(page, { x: box.x + 70, y: box.y + 220 })
+    await touchTap(page, { x: box.x + 250, y: box.y + 340 })
+    await assertCommitted(page, baseline)
+  })
+
+  test('text annotation tool touch-drag + modal commit creates an annotation element', async ({ page }) => {
+    await login(page)
+    await createWhiteboard(page)
+    await waitForCanvas(page)
+
+    const mobileToolbar = await expandMobileToolbar(page)
+    await mobileToolbar.getByTitle('Text Annotation', { exact: true }).click()
+
+    const baseline = await canvasFingerprint(page)
+    const box = await canvasBox(page)
+    await touchStroke(
+      page,
+      { x: box.x + 60, y: box.y + 200 },
+      { x: box.x + 200, y: box.y + 320 },
+    )
+    await expect(page.getByRole('heading', { name: 'Add Annotation' })).toBeVisible()
+    await page.getByPlaceholder('Enter your annotation...').fill('Reviewed on site')
+    await page.keyboard.press('Enter')
     await assertCommitted(page, baseline)
   })
 })
