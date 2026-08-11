@@ -5,7 +5,20 @@ Fresh full-tool audit: drive EVERY whiteboard tool through the e2e harness (mous
 
 ## State
 
-(no iterations yet — first loop run starts here)
+### Iteration 1 (Aug 10, 2026) — first batch: line, arrow, circle, ellipse (mouse + touch)
+
+**Changed:** Added `frontend/e2e/full-tool-audit.spec.ts` with 8 tests driving the four simplest create-from-scratch tools (line, arrow, circle, ellipse) on BOTH input paths: desktop mouse (toolbar aria-label button + `page.mouse` drag) and mobile touch (expanded palette `title` button + `helpers.touchStroke` drag). Each test selects the tool, captures `canvasFingerprint`, draws, and asserts the fingerprint changes AND stays changed after a settle window (a real committed element, not a transient preview). All 8 pass. No product code needed fixing — these four tools commit correctly.
+
+**Covered so far toward the 18-tool audit target:** line, arrow, circle, ellipse (mouse + touch). Still uncovered: polyline, arc, revision-cloud, stamp, text-annotation, dimension, measure-distance, measure-area, offset, mirror, rotate, scale, trim, extend, fillet.
+
+**Next iteration:** append the click-sequence draw tools (polyline — clicks + Enter; arc — 3 clicks; revision-cloud — clicks + close; stamp — click-only) to the spec, mouse path first, then touch. Then dimension/measure-distance (3/2-click flows), then the modify tools (offset/mirror/rotate/scale/trim/extend/fillet need a pre-drawn shape + their own select-step state machines), then measure-area (click an existing shape), then text-annotation (modal flow).
+
+**Gotchas:**
+- Each test logs in + creates a fresh whiteboard (isolation). Stack is booted by playwright `webServer` (php artisan serve :8002, nuxt :3000 TEST=1, ws relay :3001); cold start ~60-90s, then fast.
+- Desktop selectors: scope to `getByRole('toolbar', { name: 'Whiteboard tools' })` then `getByRole('button', { name: '${Name} tool, press ${Shortcut}', exact: true })`; assert `aria-pressed` true. Mobile: `expandMobileToolbar(page)` then `getByTitle('${Name}', { exact: true })` scoped to the mobile toolbar (exact is MANDATORY — the hidden desktop sidebar keeps `'Line (L)'`-style titles in the DOM).
+- Circle: down = center, drag = radius; keep radius > 5 (discard threshold). Ellipse/line/arrow: skip zero-length/too-small drags (threshold 5 / 1 px). Ortho is off by default, so no constrainPoint surprises.
+- Don't press keyboard shortcuts in e2e for these tools — clicking the button avoids shortcut-related focus/keyboard interactions (e.g. `C` closes polylines, which would interfere with later click-sequence tests).
+- Loop gate green: `npm run typecheck` clean, `npm test` 438/438.
 
 ## Context (from prior code review — read before changing code)
 
