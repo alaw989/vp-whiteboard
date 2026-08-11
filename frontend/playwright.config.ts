@@ -3,7 +3,11 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './e2e',
   globalSetup: './e2e/global-setup.ts',
-  timeout: 30000,
+  // Cold-boot headroom: the FIRST /login (or any route) SSR compile on a fresh
+  // Nuxt dev server routinely exceeds 30s, which was killing the whole test via
+  // the test-timeout cap (see helpers.fillLoginForm). 60s still fails fast on
+  // real bugs while absorbing a cold compile.
+  timeout: 60000,
   retries: 1,
   use: {
     baseURL: process.env.BASE_URL || 'http://localhost:3000',

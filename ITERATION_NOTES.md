@@ -16,6 +16,25 @@ Add a CI e2e job to .github/workflows/ci.yml that runs the full playwright suite
 - Full `npx playwright test`: **67 passed, 0 failed, 0 flaky** (1.5m) — suite grew to 67, not 65. Covers smoke (formerly flaky), approvals (loginSubmit), share-expiry, export, collab, mobile-touch, full-tool-audit.
 - Re-booted Nuxt cold between runs and immediately ran smoke+approvals+share-expiry+export (10 tests) — all passed, no hydration flake.
 
+### Iteration 3 (DONE) — CI-fresh-DB determinism proven + login NAVIGATION timeout hardened
+**Changed:**
+- **Proved the suite is deterministic against CI's exact DB state:** CI runs the 67-test suite against a FRESH migrated database (0 boards, 0 users; global-setup seeds the 4 test users). The local dev DB had 1085 boards, so "deterministic locally" wasn't yet proven against CI's empty DB. Simulated it: swapped in a fresh migrated SQLite (backed up + restored the dev DB), ran the full suite — **67 passed, 0 failed, 0 flaky** after the fix below (the first fresh-DB run surfaced 2 flakes, see root-cause).
+- **`frontend/e2e/helpers.ts` `fillLoginForm()`:** the cold-boot flake has a SECOND phase beyond the value-drop fixed in Iteration 1 — the initial `page.goto('/login')` itself used Playwright's default navigation budget, which the 30s test timeout capped. On the fresh-DB/cold-boot run, mobile-touch.spec.ts:307 died with `page.goto: Test timeout of 30000ms exceeded` at helpers.ts:26 — the first `/login` SSR compile on a re-warmed Nuxt exceeds 30s, killing the test before a single fill ran. Fix: `page.goto('/login', { timeout: 60000 })` (navigation gets its own generous budget; the self-healing fill loop handles the value-drop).
+- **`frontend/playwright.config.ts`:** test `timeout: 30000` → `60000` (a test whose first goto now allows 60s must not be re-capped by the test-level timeout). Commented. Still fails fast on real bugs.
+- The collab flake on the first fresh-DB run (viewer canvas poll 20s) was warm-up only — passed on retry and in all subsequent runs. No product-code bug.
+
+**Verified (all green):**
+- `npm run typecheck` (0 errors), `npm test` (438/438, 44 files).
+- Full `npx playwright test` twice consecutively against the restored dev DB: **67 passed, 0 flaky both runs** (~1.5m each).
+- Fresh-DB (CI-equivalent) run: **67 passed** after the timeout fix (first run was 65 passed + 2 flaky that retry-passed; the mobile-touch flake was the navigation timeout this iteration fixed).
+
+**Next:** the CI e2e job (Iteration 2) still has never actually run on GitHub Actions — push the branch (e.g. `feat/ci-e2e` PR to `develop`) and let the `e2e` job run once. Watch (a) cold-boot webServer timing in the runner, (b) the `retries: 1` + now-60s login nav absorbing any remaining warm-up flake. If green for a few PRs, promote `e2e` to a required check (separate task).
+
+**Gotchas:**
+- CI's empty DB ≠ the dev DB: never assume "the suite passes" means it passes on a fresh DB. This iteration proved it does (the only divergence was the nav timeout, now fixed).
+- `page.goto` uses the TEST timeout as its ceiling, not the config's navigation timeout — so a generous goto timeout REQUIRES raising the test timeout too, or the test still dies at the old cap.
+- Dev servers were left running (laravel :8002, nuxt :3000 TEST=1, ws :3001) — playwright `reuseExistingServer: true` reuses them.
+
 ### Iteration 2 (DONE) — CI e2e job added to ci.yml
 **Changed:**
 - `.github/workflows/ci.yml`: new `e2e` job (runs-on ubuntu-latest, timeout-minutes 25) added BELOW the existing `test` + `backend-test` jobs — those two required checks are untouched. Job: PHP 8.4 + composer install → provision Laravel (cp `.env.example` → `.env`, sed APP_URL=:8002 + MAIL_MAILER=array, `touch database/database.sqlite`, `php artisan key:generate`, `php artisan migrate --force`) → write `frontend/.env` (LARAVEL_URL/NUXT_PUBLIC_LARAVEL_URL=:8002, WS_PORT=3001, NUXT_PUBLIC_WS_URL, NUXT_PUBLIC_SITE_URL; the local one is gitignored, so CI needs it to tell Nuxt where Laravel lives) → Node 22 + npm ci → `npx playwright install --with-deps chromium` → `npx playwright test` → upload `frontend/test-results/` artifact on failure.

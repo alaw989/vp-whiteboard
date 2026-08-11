@@ -23,7 +23,14 @@ const FRONTEND_URL = process.env.E2E_FRONTEND_URL || 'http://localhost:3000'
  * line of defense.
  */
 async function fillLoginForm(page: Page, email: string, password: string) {
-  await page.goto('/login')
+  // A COLD boot can still bite here even after the fill-before-hydration fix:
+  // the FIRST /login SSR compile on a fresh Nuxt (or one that just re-warmed)
+  // routinely exceeds Playwright's 30s default navigation timeout, killing the
+  // whole test before a single fill runs (seen as `page.goto: Test timeout of
+  // 30000ms exceeded` on the cold-boot mobile-touch run). Give the initial
+  // navigation an explicit generous budget; the self-healing fill loop below
+  // handles the hydration value-drop, this handles the navigation itself.
+  await page.goto('/login', { timeout: 60000 })
   for (let attempt = 0; attempt < 5; attempt++) {
     await page.locator('#email').fill(email)
     await page.locator('#password').fill(password)
