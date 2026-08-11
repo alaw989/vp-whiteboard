@@ -1,6 +1,10 @@
 import { execFileSync } from 'node:child_process'
-import { expect, type Page } from '@playwright/test'
+import { expect, type BrowserContext, type Page } from '@playwright/test'
 import { E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD } from './global-setup'
+
+// Local dev ports (must match playwright.config.ts webServer + frontend/.env).
+const LARAVEL_URL = process.env.E2E_LARAVEL_URL || 'http://localhost:8002'
+const FRONTEND_URL = process.env.E2E_FRONTEND_URL || 'http://localhost:3000'
 
 /** Fill the login form + submit, waiting for the button to enable (hydrated). */
 export async function loginSubmit(page: Page, email: string, password: string) {
@@ -64,6 +68,59 @@ export async function createWhiteboard(page: Page): Promise<string> {
   )
   const pathname = new URL(page.url()).pathname
   return pathname.substring(pathname.lastIndexOf('/') + 1)
+}
+
+/**
+ * Owner-only: create a share link via the API. The request must present the
+ * login session cookie AND Sanctum's stateful-origin + XSRF headers (local
+ * SANCTUM_STATEFUL_DOMAINS is localhost:3000, so origin must be the frontend).
+ * Returns the raw /s/{token} path — the token is only ever returned here, at
+ * creation time. `days` (optional) sets an expiry; omit for a never-expiring
+ * link.
+ */
+export async function createShareLink(
+  context: BrowserContext,
+  whiteboardId: string,
+  days?: number,
+): Promise<string> {
+  await context.request.get(`${LARAVEL_URL}/sanctum/csrf-cookie`)
+  const cookies = await context.cookies()
+  const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ')
+  const xsrf = cookies.find(c => c.name === 'XSRF-TOKEN')?.value
+
+  const res = await context.request.post(`${LARAVEL_URL}/api/whiteboards/${whiteboardId}/shares`, {
+    data: days ? { role: 'edit', days } : { role: 'edit' },
+    headers: {
+      origin: new URL(FRONTEND_URL).origin,
+      referer: `${FRONTEND_URL}/`,
+      accept: 'application/json',
+      'x-requested-with': 'XMLHttpRequest',
+      ...(xsrf ? { 'X-XSRF-TOKEN': decodeURIComponent(xsrf) } : {}),
+      ...(cookieHeader ? { cookie: cookieHeader } : {}),
+    },
+  })
+  expect(res.status()).toBe(201)
+  const body = (await res.json()) as { data: { url: string } }
+  return new URL(body.data.url, FRONTEND_URL).pathname
+}
+
+/**
+ * Force a share link to expire by backdating its `expires_at` past now in the
+ * DB (idempotent). The share model hashes the token, so we look up by
+ * `token_hash`. Mirrors `seedPendingUser`'s tinker recipe.
+ */
+export function expireShareLink(sharePath: string) {
+  const token = sharePath.substring(sharePath.lastIndexOf('/') + 1)
+  const php = `
+App\\Models\\WhiteboardShare::where('token_hash', hash('sha256', '${token}'))
+  ->update(['expires_at' => now()->subDay()]);
+echo App\\Models\\WhiteboardShare::where('token_hash', hash('sha256', '${token}'))->value('expires_at');
+`.trim()
+  execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+    cwd: '..',
+    stdio: 'pipe',
+    encoding: 'utf8',
+  })
 }
 
 /**

@@ -50,17 +50,21 @@ class WhiteboardShare extends Model
      */
     public static function findActiveByToken(string $rawToken): ?self
     {
-        $share = static::where('token_hash', hash('sha256', $rawToken))->first();
+        $share = static::findByToken($rawToken);
 
-        if (! $share) {
-            return null;
-        }
-
-        if ($share->expires_at && $share->expires_at->isPast()) {
+        if ($share && $share->expires_at && $share->expires_at->isPast()) {
             return null;
         }
 
         return $share;
+    }
+
+    /**
+     * Find a share by raw token regardless of expiry (hash lookup).
+     */
+    public static function findByToken(string $rawToken): ?self
+    {
+        return static::where('token_hash', hash('sha256', $rawToken))->first();
     }
 
     /**
