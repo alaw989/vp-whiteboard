@@ -5,6 +5,23 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 12 (DONE) — useViewport composable covered + thresholds ratcheted up
+
+**Changed:**
+- Expanded `frontend/composables/useViewport.test.ts` from 7 → 43 tests: the existing `computePinchViewport` tests now also cover min-zoom clamping, `getViewportBounds` (default padding, zoom scaling, custom padding), and the full `useViewport()` composable body against a fake Konva stage (`makeStage()` mock with `x`/`y`/`draggable`/`getPointerPosition`/`on`/`off`/`container` + a real happy-dom `<div>` container with `offsetWidth`/`offsetHeight` 800×600): initial identity state + derived `zoomPercent`/`canZoomIn`/`canZoomOut`, custom min/max bounds, `handleWheel` (zoom in/out toward pointer, pointer-anchored x/y math, no-stage + null-pointer no-ops, min/max clamping, `onViewportChange`), `enablePan` (draggable + grab cursor after nextTick, no-stage no-op), `disablePan` (captures stage position, clears cursor, no-stage no-op), `startPan`/`stopPan` delegation, the `watch(isPanning)` dragmove/dragstart/dragend listener lifecycle (registers while panning, updates viewport on dragmove, cursor grabbing/grab, removed when panning stops), `zoomIn`/`zoomOut` (center-anchored math, min/max no-ops, missing-container fallback), `resetZoom`, `setViewport` (partial updates, zoom clamp), `setViewportDirect` (no sync/notify), `applyRemoteViewport` (flag cleared on nextTick so subsequent edits sync), and the debounced `triggerSync` paths (no-userId no-sync, userId-without-sync no-op, significant-change syncs, sub-threshold skip, re-sync after significant change, debounce collapsing rapid changes into one trailing call). `useViewport.ts` was the biggest remaining root-composable drag at 9.75% — now **100% stmts/lines/funcs, 95.89% branches**.
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 73→**78**, branches 83→**84**, functions 84→**85.5** (all at-or-below new measured 79.51/79.51/84.02/86.15).
+
+**Measured** (after adding useViewport tests): All files 79.51% stmts/lines (was 76.19), 84.02% branches (was 83.45), 86.15% funcs (was 85.4). Suite 51 files / 635 tests (was 51/597). The +3.32pp line jump came almost entirely from useViewport's ~440-line body.
+
+**Verification:**
+- `npm run coverage` exit 0 with new thresholds; `npm run typecheck` exit 0; `npm test` 635/635 pass.
+- Negative checks: `--coverage.thresholds.lines=83` → exit 1 (79.51 < 83); `--coverage.thresholds.lines=79.6` → exit 1. Decimal thresholds verified to work (`79.5`/`85.5` accepted). Gate enforces.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it. Also confirm the frontend `test` check passes at the new 78/84/85.5 thresholds.
+2. Ratchet frontend further (lines/stmts 78 → 79) once more composables get tested — remaining drags: `usePDFRendering` 0% lines, `useDocumentLayer` ~0%, `useExtendTool` 51%, `useTrimTool` 56%, `useFileUpload`'s `uploadFile`/`uploadFiles` body 31.89%. `useDocumentLayer` (Yjs-driven, likely mirrors `useLayers`/`useScale` patterns) and `usePDFRendering` are the next best candidates.
+3. Ratchet backend 73 → 74 once more backend tests land.
+
 ### Iteration 11 (DONE) — useCursors composable covered + thresholds ratcheted up
 
 **Changed:**
