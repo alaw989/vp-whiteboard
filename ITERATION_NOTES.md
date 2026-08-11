@@ -179,3 +179,23 @@ Rate-limit public endpoints: add Laravel `throttle` middleware (named rate limit
 
 **Next:**
 - The Goal is fully achieved. Optional future polish (outside this Goal): none remaining for share-links/rate-limiting; next backlog items are board dashboard (#2), save-state indicator (#3), etc.
+
+### Iteration 7 — throttle the last public route: `POST /api/files` (file upload)
+
+**Changed:**
+- `app/Providers/AppServiceProvider.php`: registered a 7th named limiter `file-upload` → `Limit::perMinute(10)->by($request->ip())` with the loopback exemption. Rationale: `POST /api/files` is public (owner auth OR edit-role share token, no `auth` middleware) and accepts up to 10MB per upload — without a limit an edit-role share holder could fill the disk. 10/min/IP is far above real usage (a few overlays at once) while capping a flood.
+- `routes/api.php`: added `->middleware('throttle:file-upload')` to `POST /files`.
+- `tests/Feature/RateLimitTest.php`: +1 test — `test_file_upload_is_throttled_per_ip` (10 allowed, 11th → 429, distinct IP `203.0.113.15`). Uses a bogus `whiteboard_id` deliberately: the throttle middleware runs BEFORE the controller, so 404s still consume a hit — no Storage/DB writes needed.
+
+**Verified:**
+- `php artisan test`: **56 passed** (55 + 1 new) / 272 assertions. `RateLimitTest` alone: 8 passed / 169 assertions.
+- Backend coverage via CI-identical clover parse: **76.12%** statements ≥ 73 gate (up from 75.98% — new limiter + test add covered statements).
+- Frontend `npm run typecheck` clean; `npm test` 690/690 (untouched this iteration).
+- All existing public routes are now throttled: `shares` (token-keyed), `login`, `register`, `forgot-password`, `reset-password`, `public-read` (whiteboards show / files serve / sessions), and now `file-upload`.
+
+**Gotchas:**
+- FileUploadApiTest stays green because its upload tests run from the default loopback IP (127.0.0.1), which the `file-upload` limiter exempts — same reason the e2e upload specs (also loopback) are unaffected.
+- The 10/min limit is per-IP, loopback-exempt; remote prod uploads from a share viewer/owner are well under it.
+
+**Next:**
+- The Goal is fully achieved: all public/unauthenticated routes are rate-limited with named, loopback-exempt limiters, feature-tested (429 + Retry-After), and the e2e flow is verified. No remaining work for this Goal.

@@ -66,6 +66,14 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('public-read', function (Request $request) {
             return $this->loopback($request, Limit::perMinute(60)->by($request->ip()));
         });
+
+        // POST /api/files is public (owner auth OR edit-role share token, no
+        // auth middleware) and accepts up to 10MB per upload — without a limit
+        // an edit-role share holder could fill the disk. 10/min/IP is far above
+        // real usage (uploading a few overlays at once) while capping a flood.
+        RateLimiter::for('file-upload', function (Request $request) {
+            return $this->loopback($request, Limit::perMinute(10)->by($request->ip()));
+        });
     }
 
     /**

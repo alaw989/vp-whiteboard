@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Whiteboard;
 use App\Models\WhiteboardShare;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -124,6 +125,29 @@ class RateLimitTest extends TestCase
             ]);
             $this->assertNotEquals(429, $response->getStatusCode());
         }
+    }
+
+    public function test_file_upload_is_throttled_per_ip(): void
+    {
+        // POST /api/files is public (owner auth OR edit-role share token, no
+        // auth middleware) and accepts up to 10MB per upload. 10/min/IP is the
+        // new limit; a bogus whiteboard_id is fine because the throttle
+        // middleware runs BEFORE the controller (404s still consume a hit).
+        $client = $this->withIp('203.0.113.15');
+
+        for ($i = 0; $i < 10; $i++) {
+            $response = $client->postJson('/api/files', [
+                'whiteboard_id' => 'nonexistent-id',
+                'file' => UploadedFile::fake()->image("throttle-file-$i.png"),
+            ]);
+            $this->assertNotEquals(429, $response->getStatusCode());
+        }
+
+        $client->postJson('/api/files', [
+            'whiteboard_id' => 'nonexistent-id',
+            'file' => UploadedFile::fake()->image('throttle-file-over.png'),
+        ])->assertStatus(429)
+            ->assertJson(['message' => 'Too Many Attempts.']);
     }
 
     public function test_share_resolver_is_keyed_on_token_not_ip(): void

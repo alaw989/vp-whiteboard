@@ -35,7 +35,8 @@ Route::middleware(['auth:sanctum'])->prefix('whiteboards')->group(function () {
 });
 
 // File upload (owner or edit-role share; index/delete require auth)
-Route::post('/files', [WhiteboardFileController::class, 'store']);
+Route::post('/files', [WhiteboardFileController::class, 'store'])
+    ->middleware('throttle:file-upload');
 Route::middleware(['auth:sanctum'])->prefix('files')->group(function () {
     Route::get('/', [WhiteboardFileController::class, 'index']);
     Route::delete('/{id}', [WhiteboardFileController::class, 'destroy']);
