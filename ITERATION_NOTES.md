@@ -5,6 +5,24 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 14 (DONE) — usePDFRendering composable covered + thresholds ratcheted up
+
+**Changed:**
+- New unit test `frontend/composables/usePDFRendering.test.ts` (24 tests) covering the full pdfjs wrapper via `vi.mock('pdfjs-dist', () => ({ getDocument: getDocumentMock }))`: `DEFAULT_SCALE` = 1.5; `cleanupPDFDocument` (calls cleanup, null-safe); `loadPDFDocument` (ArrayBuffer → getDocument called with `{data, useWorkerFetch, isEvalSupported:false}`, initial + final progress states, onProgress forwarded through the task's `onProgress` with percent rounding + total-0 → 0%, AbortError when signal pre-aborted — getDocument never called, abort during a progress event destroys the task + throws AbortError without leaking the progress state, abort mid-load destroys the loading task then removes the listener on success, load-failure error message, AbortError-during-load → 'Loading cancelled', non-Error rejection → 'Failed to load PDF', no-callback no-op); `renderPageToImage` (default scale 1.5 via `DEFAULT_SCALE`, custom scale, 50→100 progress, canvas width/height from viewport, `render({canvasContext, viewport})` + toDataURL('image/png'), pre-aborted AbortError, missing 2d context error, abort mid-render cancels the render task, abort listener removed on completion, 'cancelled' render error → AbortError, other render errors rethrown); `loadAndRenderPage` (combined 0-100 progress mapping — load halved to 0-50, render mapped to 50-100, getPage(num), cleanup called, returns `{dataUrl, totalPages}`, defaults to page 1, propagates load failures). `usePDFRendering.ts` was the last 0% root-composable drag — now **100% stmts/lines/funcs, 97.91% branches** (uncovered: the `renderPageToImage` catch's removeEventListener at line 136).
+- Mocking gotcha: `loadPDFDocument` is async and starts with `await import('pdfjs-dist')`, so the task's `onProgress`/abort-listener are NOT set synchronously — tests must `await vi.waitFor(() => expect(task.onProgress).toBeTypeOf('function'))` (or wait for the addEventListener spy) before driving the loading task. Also `document.createElement` is spied per-test to return a fake canvas (`getContext`/`toDataURL`) since happy-dom canvases are inert.
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 81→**82**, branches 84.2→**84.5**, functions 86.2→**86.5** (all at-or-below new measured 83.76/83.76/84.7/86.84).
+
+**Measured** (after adding usePDFRendering tests): All files 83.76% stmts/lines (was 81.8), 84.7% branches (was 84.3), 86.84% funcs (was 86.61). Suite 53 files / 679 tests (was 52/655). The +1.96pp line jump came almost entirely from usePDFRendering's ~210-line body.
+
+**Verification:**
+- `npm run coverage` exit 0 with new thresholds; `npm run typecheck` exit 0; `npm test` 679/679 pass.
+- Negative checks: `--coverage.thresholds.lines=84 --coverage.thresholds.statements=84 --coverage.thresholds.functions=86.9` → `ERROR: Coverage for lines/statements (83.76%) does not meet global threshold` + functions 86.84 < 86.9 → exit 1. Gate enforces.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it. Also confirm the frontend `test` check passes at the new 82/84.5/86.5 thresholds.
+2. Ratchet frontend further (lines/stmts 82 → 83) once more composables get tested — remaining drags: `useExtendTool` 51.16%, `useTrimTool` 55.97%, `useMirrorTool` 58.29%, `useMeasureAreaTool` 61.66%, `useOffsetTool` 62.93%, `useFileUpload`'s `uploadFile`/`uploadFiles` body 31.89%. `useExtendTool`/`useTrimTool`/`useMirrorTool`/`useOffsetTool` (modify-tool patterns already ~52-63%, and their sibling tool-test files exist) are the next best candidates.
+3. Ratchet backend 73 → 74 once more backend tests land.
+
 ### Iteration 13 (DONE) — useDocumentLayer composable covered + thresholds ratcheted up
 
 **Changed:**
