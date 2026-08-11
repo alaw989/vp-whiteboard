@@ -5,6 +5,23 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 10 (DONE) — useSnapping composable covered + thresholds ratcheted up
+
+**Changed:**
+- Rewrote `frontend/composables/useSnapping.test.ts` (6 → 32 tests) covering the full `useSnapping` surface: `getElementSnapPoints` per type (line endpoints+midpoint, rectangle 4 corners + 4 edge midpoints + center, circle center + 4 cardinals + radius-0 center-only, ellipse center-only, stroke first/last + empty, polyline endpoints + segment midpoints + closed-segment midpoint + empty, arc start/through/end, fillet-arc start/end angle-math + center, dimension start/end, revision-cloud vertices + empty, non-geometric type → `[]`), all three enhanced-snap passes (perpendicular foot on line/rectangle/stroke/polyline segments, tangent snap for a circle offset along a tangent line, nearest snap just inside a circle's boundary at a non-cardinal point), perpendicular fall-through edge cases (foot beyond segment end → null via nearest clamping, zero-length segment skipped → null), `isNearSnapPoint`, `findSnapPointThrottled` (debounce resolves to a snap point after the throttle window), and custom `threshold` (snaps only within 1px). `useSnapping.ts` was a 38.44% root-composable drag — now 89.93% stmts/lines, 100% funcs.
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 71→**72**, branches 81→**82**, functions 82→**83** (all at-or-below new measured 75.16/75.16/83.24/85.11).
+
+**Measured** (after adding useSnapping tests): All files 75.16% stmts/lines (was 71.79), 83.24% branches (was 82.01), 85.11% funcs (was 82.89). Suite 50 files / 586 tests (was 50/560).
+
+**Verification:**
+- `npm run coverage` exit 0 with new thresholds; `npm run typecheck` exit 0; `npm test` 586/586 pass.
+- Negative check: `--coverage.thresholds.lines=76` → `ERROR: Coverage for lines (75.16%) does not meet global threshold (76%)` → vitest exit 1. Gate enforces.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it.
+2. Ratchet frontend further (lines/stmts 72 → 73) once more composables get tested — biggest drags remain root composables (useCursors/useDocumentLayer ~0%, usePDFRendering 0% lines, useViewport 9.75%, useExtendTool 51%, useTrimTool 56%, useFileUpload's `uploadFile`/`uploadFiles` body 31.89%). `useViewport` (pure math: `getViewportBounds`, `computePinchViewport` already tested) and `usePDFRendering` are the next best candidates.
+3. Ratchet backend 73 → 74 once more backend tests land.
+
 ### Iteration 9 (DONE) — useMeasurements composable covered + real insert-arg bug fixed + thresholds ratcheted up
 
 **Changed:**
