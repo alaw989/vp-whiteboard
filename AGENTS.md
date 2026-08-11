@@ -203,9 +203,8 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 6. Mark the item done below (move to "Shipped") and continue to the next item when asked.
 
 **Backlog (in priority order):**
-1. **Share-link expiry UX** — `whiteboard_shares` have `expires_at`; the resolver 404s expired/revoked tokens, but the viewer UX is unhandled (see `GET /api/shares/{token}` → 404, `/s/{token}` redirects to `/`). Add a clear "link expired/revoked" page instead of a silent redirect; e2e it (expired token → friendly message, valid token → board). Backend `WhiteboardShare::findActiveByToken` already filters expired.
-2. **Fresh full-tool audit** — drive every tool (pen, highlighter, line, arrow, rectangle, circle, ellipse, polyline, arc, revision-cloud, stamp, text-annotation, dimension, measure distance/area, eraser, select, offset, mirror, rotate, scale, trim, extend, fillet, pan) through the e2e harness (mouse + touch) asserting each creates/persists an element; fix anything that doesn't. Reuses `frontend/e2e/helpers.ts`.
-3. (Ideas for later) — PDF layer rendering perf, viewport-clipping correctness on zoom, admin approval email test on staging with real SMTP, onboarding/empty-state UX.
+1. **Fresh full-tool audit** — drive every tool (pen, highlighter, line, arrow, rectangle, circle, ellipse, polyline, arc, revision-cloud, stamp, text-annotation, dimension, measure distance/area, eraser, select, offset, mirror, rotate, scale, trim, extend, fillet, pan) through the e2e harness (mouse + touch) asserting each creates/persists an element; fix anything that doesn't. Reuses `frontend/e2e/helpers.ts`.
+2. (Ideas for later) — PDF layer rendering perf, viewport-clipping correctness on zoom, admin approval email test on staging with real SMTP, onboarding/empty-state UX.
 
 **Shipped (all merged to develop + master, deployed to staging + prod):**
 - Live-sync collab fix (relay auth Origin forwarding + Yjs SYNC_FULL/SYNC_DELTA protocol) — PRs #42/#43.
@@ -216,5 +215,6 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 - Mobile/touch drawing hardening (pointercancel commit bug, toolbar, gestures, 17 touch e2e) — #53/#54.
 - Admin approval UI (/approvals, useApprovals, admin nav link) — #55/#56.
 - Export hardening (sanitized filenames, 18 unit + 3 e2e edge cases) — #57/#58.
+- Share-link expiry/revoked UX — resolver distinguishes expired (410) vs not-found/revoked (404); `/s/{token}` and client-side nav land on a friendly `/share-invalid` page (whitelisted for anonymous viewers) instead of a silent home redirect; 3 e2e + 2 backend tests — #60/#61.
 
-**Current health (Aug 7, 2026):** `npm run typecheck` clean, `npm test` 438/438 (43 files), `npm run test:e2e` 26/26, `php artisan test` 47 passed. All branch-protection checks (`test`, `backend-test`) green. Local dev stack ports: Laravel :8002, Nuxt :3000, WS relay :3001. Droplets: staging+prod on `165.245.141.179` (relay :3003 staging / :3001 prod). e2e must run with Nuxt `TEST=1` (disables devtools overlay) and a clean stack — a stale Nuxt on :3000 makes a fresh one fall back to :3001 and collide with the WS relay.
+**Current health (Aug 11, 2026):** `npm run typecheck` clean, `npm test` 438/438 (44 files), `npm run test:e2e` 28 passed, `php artisan test` 48 passed. All branch-protection checks (`test`, `backend-test`) green. Local dev stack ports: Laravel :8002, Nuxt :3000, WS relay :3001. Droplets: staging+prod on `165.245.141.179` (relay :3003 staging / :3001 prod). e2e must run with Nuxt `TEST=1` (disables devtools overlay) and a clean stack — a stale Nuxt on :3000 makes a fresh one fall back to :3001 and collide with the WS relay.
