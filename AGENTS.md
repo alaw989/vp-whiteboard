@@ -11,8 +11,9 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 
 1. **Local work** — branch off `develop` (e.g. `feat/...`, `fix/...`). Before pushing, run locally in `frontend/`:
    - `npm run typecheck` (must exit 0)
-   - `npm test` (must pass — currently 320 tests)
-   - And at the repo root: `php artisan test` (must pass — currently 31 tests, no `.env` needed since `phpunit.xml` sets `APP_KEY`)
+   - `npm test` (must pass — currently 679 tests)
+   - `npm run coverage` (must exit 0 — gates lines/stmts 82, branches 84.5, functions 86.5)
+   - And at the repo root: `php artisan test` (must pass — currently 48 tests, no `.env` needed since `phpunit.xml` sets `APP_KEY`)
 2. **Open a PR** targeting **`develop`**.
 3. **CI auto-runs** frontend typecheck + test and backend `php artisan test` (`.github/workflows/ci.yml`). Wait for the required `test` AND `backend-test` checks to pass — branch protection on `develop` and `master` blocks the merge until both are green.
 4. **Merge into `develop`** → triggers `.github/workflows/deploy-staging.yml` → pushes to the **staging droplet** (`staging-whiteboard.vp-associates.com`). `develop` always equals the staging server.
@@ -25,9 +26,9 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 ### Test/CI facts
 
 - Test runner: vitest (`vitest.config.mts` inside `frontend/`, `@vitejs/plugin-vue` wired, `frontend/test/setup.ts` registers Nuxt-style Vue auto-imports).
-- `npm test` = `vitest run` (320 tests, 39 files). `npm run typecheck` = `vue-tsc --noEmit`.
-- Backend: `php artisan test` (31 tests). `phpunit.xml` sets `APP_KEY` + SQLite in-memory, so it runs without a `.env`.
-- CI workflow: `.github/workflows/ci.yml` (jobs `test` + `backend-test`, on PR + push to develop/master). Both deploy workflows gate on their `test` job via `needs: test`, and that job now also runs the backend tests.
+- `npm test` = `vitest run` (679 tests, 53 files). `npm run typecheck` = `vue-tsc --noEmit`. `npm run coverage` = `vitest run --coverage` gated on thresholds (lines/stmts 82, branches 84.5, functions 86.5); thresholds live in the script's CLI flags so `npm test` stays the fast green loop.
+- Backend: `php artisan test` (48 tests). `phpunit.xml` sets `APP_KEY` + SQLite in-memory, so it runs without a `.env`. Coverage gate (73% statements) is enforced in CI via pcov + a clover-XML parse step — PHPUnit has no native min-coverage flag.
+- CI workflow: `.github/workflows/ci.yml` (jobs `test` = typecheck + `npm run coverage`, `backend-test` = `php artisan test --coverage-clover` + threshold parse, `e2e` = full playwright suite — informational, not required). Both deploy workflows gate on their `test` job via `needs: test`, and that job now also runs the backend tests.
 
 ## Fixes applied July 13, 2026 — Persistence & Upload
 
@@ -203,19 +204,18 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 6. Mark the item done below (move to "Shipped") and continue to the next item when asked.
 
 **Backlog (in priority order):**
-1. **Coverage tooling + threshold gate** — install `@vitest/coverage-v8` (pinned vitest ^2.1.9) + a `npm run coverage` script; configure `vitest.config.mts` (include composables/utils/server, exclude tests) and gate the CI `test` job on line/statement/branch thresholds. Backend: enable pcov in the CI PHP setup (`shivammathur/setup-php` `coverage: pcov`) and gate `php artisan test --coverage-clover`/`--coverage-text` output (PHPUnit has no native min-coverage flag — small parse step). First pass MEASURES the current % then sets realistic thresholds that ratchet up — not an arbitrary number that instantly fails CI.
-2. **Rate-limit public endpoints** — Laravel `throttle` on `/api/shares/{token}`, auth, and registration (public + unauthenticated today).
-3. **Board dashboard** — search, sort (recent/alphabetical), thumbnails, archive on `index.vue` (delete exists, no archive).
-4. **Save-state indicator** — subtle Saving…/Saved/Offline–retrying badge to surface the WS/API outage mode behind the past data-loss incident.
-5. **Vector/SVG export** — emit shapes as a vector layer in the PDF (crisp at any zoom) alongside the raster PNG/PDF.
-6. **Grid/snap + dimension units** — visual grid toggle, snapping, mm/in + scale calibration.
-7. **Custom stamp upload** — image stamps beyond the fixed APPROVED/REVISED/NOTE/FOR REVIEW set.
-8. **Admin user management** — user list + disable/reset for `is_admin` owners (beyond approve/deny).
-9. **Offline editing (PWA)** — service worker + local-first edits synced on reconnect (reconnect/resume hardening already laid groundwork).
-10. **Accessibility audit** — keyboard focus in the toolbar, focus-trapping in the text-annotation modal, aria on the mobile toolbar.
-11. **Visual regression screenshot tests** — golden-image styling diffs the fingerprint-based tests can't catch.
-12. **Promote `e2e` CI job to a required check** — once the e2e job (added in #68/#69) has stayed green across several PRs; may need to tame the 2 remaining warm-up flakes (approvals `waitForURL` 15s, collab WS-sync 20s poll under 2-worker CI load — both retry-pass).
-13. (Ideas for later) — PDF layer rendering perf, viewport-clipping correctness on zoom, admin approval email test on staging with real SMTP, onboarding/empty-state UX.
+1. **Rate-limit public endpoints** — Laravel `throttle` on `/api/shares/{token}`, auth, and registration (public + unauthenticated today).
+2. **Board dashboard** — search, sort (recent/alphabetical), thumbnails, archive on `index.vue` (delete exists, no archive).
+3. **Save-state indicator** — subtle Saving…/Saved/Offline–retrying badge to surface the WS/API outage mode behind the past data-loss incident.
+4. **Vector/SVG export** — emit shapes as a vector layer in the PDF (crisp at any zoom) alongside the raster PNG/PDF.
+5. **Grid/snap + dimension units** — visual grid toggle, snapping, mm/in + scale calibration.
+6. **Custom stamp upload** — image stamps beyond the fixed APPROVED/REVISED/NOTE/FOR REVIEW set.
+7. **Admin user management** — user list + disable/reset for `is_admin` owners (beyond approve/deny).
+8. **Offline editing (PWA)** — service worker + local-first edits synced on reconnect (reconnect/resume hardening already laid groundwork).
+9. **Accessibility audit** — keyboard focus in the toolbar, focus-trapping in the text-annotation modal, aria on the mobile toolbar.
+10. **Visual regression screenshot tests** — golden-image styling diffs the fingerprint-based tests can't catch.
+11. **Promote `e2e` CI job to a required check** — once the e2e job (added in #68/#69) has stayed green across several PRs; may need to tame the 2 remaining warm-up flakes (approvals `waitForURL` 15s, collab WS-sync 20s poll under 2-worker CI load — both retry-pass).
+12. (Ideas for later) — PDF layer rendering perf, viewport-clipping correctness on zoom, admin approval email test on staging with real SMTP, onboarding/empty-state UX.
 
 **Shipped (all merged to develop + master, deployed to staging + prod):**
 - Live-sync collab fix (relay auth Origin forwarding + Yjs SYNC_FULL/SYNC_DELTA protocol) — PRs #42/#43.
@@ -229,5 +229,6 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 - Share-link expiry/revoked UX — resolver distinguishes expired (410) vs not-found/revoked (404); `/s/{token}` and client-side nav land on a friendly `/share-invalid` page (whitelisted for anonymous viewers) instead of a silent home redirect; 3 e2e + 2 backend tests — #60/#61.
 - Fresh full-tool audit — `full-tool-audit.spec.ts` (38 tests) drives all 18 previously-uncovered tools (line, arrow, circle, ellipse, polyline, arc, revision-cloud, stamp, dimension, measure-distance, text-annotation, offset, mirror, rotate, scale, trim, extend, fillet, measure-area) through mouse + touch; every one of the 24 tools now asserts it commits a persisting element. No product-code bugs found — #63/#64.
 - CI e2e job + hydration-flake fix — new `e2e` CI job (boots full stack, installs browsers, uploads test-results on failure) + hydration-safe self-healing `fillLoginForm` login helper (fixes the smoke/mobile-touch cold-boot flake) + generous navigation/webServer timeouts. Suite now 67 tests, deterministic locally (67/0 ×2); e2e job green on its first 2 CI runs (2 warm-up flakes in approvals/collab still retry-pass) — #68/#69.
+- Coverage tooling + threshold gate — `@vitest/coverage-v8`, `npm run coverage` (CLI-flag thresholds lines/stmts 82, branches 84.5, functions 86.5), `vitest.config.mts` v8 provider (composables/utils/server in scope, tests+e2e excluded); ~10 composables gained unit tests (useViewport, useDocumentLayer, usePDFRendering, useCursors, useSnapping, useCommandEngine, useLayers, useMeasurements, useFileUpload, useScale) → suite 320 → 679; CI `test` job now runs the coverage gate, `backend-test` enables pcov + clover parse gate at 73% statements. First pass measured (frontend 83.76/84.7/86.84, backend 73.66) then set at-or-below thresholds — #71, sync #72, release #73.
 
-**Current health (Aug 11, 2026):** `npm run typecheck` clean, `npm test` 438/438 (44 files), `npm run test:e2e` 65 passed (2 cold-boot flaky, retry-pass), `php artisan test` 48 passed. All branch-protection checks (`test`, `backend-test`) green. Local dev stack ports: Laravel :8002, Nuxt :3000, WS relay :3001. Droplets: staging+prod on `165.245.141.179` (relay :3003 staging / :3001 prod). e2e must run with Nuxt `TEST=1` (disables devtools overlay) and a clean stack — a stale Nuxt on :3000 makes a fresh one fall back to :3001 and collide with the WS relay.
+**Current health (Aug 11, 2026):** `npm run typecheck` clean, `npm test` 679/679 (53 files), `npm run coverage` green at thresholds (82/82/84.5/86.5 — measured 83.76/84.7/86.84), `npm run test:e2e` 65 passed (2 cold-boot flaky, retry-pass), `php artisan test` 48 passed (73.66% statements ≥ CI gate 73). All branch-protection checks (`test`, `backend-test`) green. Local dev stack ports: Laravel :8002, Nuxt :3000, WS relay :3001. Droplets: staging+prod on `165.245.141.179` (relay :3003 staging / :3001 prod). e2e must run with Nuxt `TEST=1` (disables devtools overlay) and a clean stack — a stale Nuxt on :3000 makes a fresh one fall back to :3001 and collide with the WS relay.
