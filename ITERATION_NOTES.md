@@ -5,6 +5,24 @@ Add coverage tooling + a threshold gate that ratchets up: install @vitest/covera
 
 ## State
 
+### Iteration 13 (DONE) — useDocumentLayer composable covered + thresholds ratcheted up
+
+**Changed:**
+- New unit test `frontend/composables/useDocumentLayer.test.ts` (20 tests) covering the full `useDocumentLayer` surface: empty initial state without a Yjs map, `activeLayer` computed undefined when nothing active, `visibleLayers` filtering, `addImageLayer` success (fake-Image stub resolves with dimensions, appends + activates, calls `onAddLayer`) and failure (records error, rejects, no callback), `addPDFLayer` success (mocked `loadPDFDocument`/`renderPageToImage`/`cleanupPDFDocument`, builds pdf layer with viewport dims + pageNumber/totalPages, loading toggles, cleanup called, `onAddLayer` fires), `addPDFLayer` failure (Error message vs generic fallback for non-Error rejections, loading cleared in finally), `updateLayer` (existing + missing-id no-op, `onUpdateLayer` sync), `removeLayer` (active reassigned to first remaining / null when empty, `onRemoveLayer` sync), `setActiveLayer`, `clearLayers`, Yjs-map initial seed, remote-change observation, active-preserved/fallback-to-first on remote change, and both `onUnmounted` paths (observer cleanup stops future callbacks; no-op when no observer started — via a `vi.mock('vue')` importOriginal wrapper that captures the `onUnmounted` callback so the cleanup branch is actually exercised). `useDocumentLayer.ts` was a 0% root-composable drag — now **100% stmts/lines/funcs, 94.28% branches** (uncovered: active-fallback when remote array is empty at line 52, `addPDFLayer` Error-instance message branch at 188).
+- `frontend/package.json` `coverage` script thresholds ratcheted up: lines/stmts 78→**81**, branches 84→**84.2**, functions 85.5→**86.2** (all at-or-below new measured 81.8/81.8/84.3/86.61).
+
+**Measured** (after adding useDocumentLayer tests): All files 81.8% stmts/lines (was 79.51), 84.3% branches (was 84.02), 86.61% funcs (was 86.15). Suite 52 files / 655 tests (was 51/635). The +2.29pp line jump came from useDocumentLayer's ~260-line body.
+
+**Verification:**
+- `npm run coverage` exit 0 with new thresholds; `npm run typecheck` exit 0; `npm test` 655/655 pass.
+- Negative checks: `--coverage.thresholds.lines=82` → exit 1 (81.8 < 82); `--coverage.thresholds.branches=84.4` → exit 1 (84.3 < 84.4); `--coverage.thresholds.functions=86.7` → exit 1 (86.61 < 86.7). Gate enforces on all four dimensions.
+- Gotcha: `new Y.Map()` standalone throws "Invalid access: Add Yjs type to a document before reading data" on `values()` — use `new Y.Doc().getMap('documentLayers')`. Also `activeLayer.value` returns a different object identity than the resolved layer (reactive array proxy) — compare with `toEqual`, not `toBe`.
+
+**Next:**
+1. Push to CI: confirm `backend-test` (pcov+clover, threshold 73) is green on PHP 8.4 — local measured 73.66% on 8.5; 0.66pp headroom should absorb it. Also confirm the frontend `test` check passes at the new 81/84.2/86.2 thresholds.
+2. Ratchet frontend further (lines/stmts 81 → 82) once more composables get tested — remaining drags: `usePDFRendering` 0% lines, `useExtendTool` 51%, `useTrimTool` 56%, `useFileUpload`'s `uploadFile`/`uploadFiles` body 31.89%. `usePDFRendering` (the pdfjs wrapper — mock `pdfjs-dist`'s dynamic import) and `useTrimTool`/`useExtendTool` (already ~51-56%, tool-test patterns exist) are the next best candidates.
+3. Ratchet backend 73 → 74 once more backend tests land.
+
 ### Iteration 12 (DONE) — useViewport composable covered + thresholds ratcheted up
 
 **Changed:**
