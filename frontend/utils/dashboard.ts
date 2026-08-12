@@ -16,6 +16,28 @@ export interface Bounds {
 
 export type DashboardSort = 'recent' | 'alpha'
 
+/**
+ * Latest-wins guard for the dashboard's debounced async refresh. Each call to
+ * `next()` issues a monotonically-increasing request id; when the fetch
+ * resolves, call `isLatest(id)` and discard the response unless it belongs to
+ * the most recent request. Without this, a slow earlier search/sort response
+ * can land AFTER a newer one and clobber the grid with stale results (e.g.
+ * typing "founda" then "foundation" — the "founda" response could arrive
+ * last).
+ */
+export function createLatestWins(): { next(): number; isLatest(id: number): boolean } {
+  let current = 0
+  return {
+    next() {
+      current += 1
+      return current
+    },
+    isLatest(id) {
+      return id === current
+    },
+  }
+}
+
 export interface IndexQueryOptions {
   search?: string
   sort?: DashboardSort

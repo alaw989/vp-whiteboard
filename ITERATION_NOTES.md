@@ -160,3 +160,18 @@ Board dashboard (backlog #1): add search, sort (recent/alphabetical), thumbnails
 - Backend coverage rose 78.48 → 78.56% statements (the 2 new tests cover the new branch).
 
 **Next (still open):** nothing product-facing remains for backlog #1 — the dashboard feature is complete (backend search/sort/archive/archive-hidden + frontend search/sort/archive/archived-view/thumbnails + 77 backend / 736 frontend / 4 dashboard e2e tests, plus the LIKE-wildcard hardening). Only the optional manual smoke checklist from the Goal's Verification section is unimplemented; everything else ships pending the loop gate.
+
+### Iteration 8 (this session) — Stale-response guard for debounced dashboard refresh
+
+**Changed:**
+- `frontend/utils/dashboard.ts`: new pure helper `createLatestWins()` — a monotonically-increasing request-id guard (`next()` issues an id, `isLatest(id)` tells whether it's still the most recent). No state leaks outside the returned closure.
+- `frontend/pages/index.vue`: `refresh()` now grabs a request id before the fetch and discards the response in the try/catch if it's stale (`!latestWins.isLatest(requestId) return`); the `finally` only clears `pending` when the response is still the latest. Fixes a real race in the new search/sort feature: debounced typing fires overlapping `/api/whiteboards` requests (e.g. "founda" then "foundation"), and a slow earlier response could resolve LAST and clobber the grid with results for an older query while the box shows the newer one.
+- `frontend/utils/dashboard.test.ts`: +3 tests (`createLatestWins`): monotonic ids, isLatest only for the most recent id, and superseding across several requests.
+
+**Verification (green):** `npm run typecheck` clean; `npm test` 739/739 (56 files; +3); `npm run coverage` exit 0 (dashboard.ts 99.1/82.69/100, overall lines 84.42 ≥82, branches 84.79 ≥84.5, functions 87.13 ≥86.5); `php artisan test` 77 passed (448 assertions). No `server/` (Nitro) routes touched.
+
+**Gotchas:**
+- The `finally` guard matters as much as the try/catch one: without it, a superseded response that returned early would still clear `pending` and hide the spinner while the current request is in flight.
+- Existing e2e (dashboard.spec.ts, 4 tests) unaffected — it fills the whole query at once, so the overlap race never fires; this guard is defensive hardening for realistic typing.
+
+**Next (still open):** nothing product-facing remains for backlog #1 — the dashboard feature is complete (backend search/sort/archive/archive-hidden + frontend search/sort/archive/archived-view/thumbnails + 77 backend / 739 frontend / 4 dashboard e2e tests, plus LIKE-wildcard hardening and the stale-response guard). Only the optional manual smoke checklist from the Goal's Verification section is unimplemented; everything else ships pending the loop gate.

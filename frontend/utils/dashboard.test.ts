@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { CanvasElement } from '~/types'
 import {
   buildIndexQuery,
+  createLatestWins,
   drawThumbnail,
   getCanvasBounds,
   getElementBounds,
@@ -52,6 +53,34 @@ describe('buildIndexQuery', () => {
   it('combines includeArchived with search + sort', () => {
     expect(buildIndexQuery({ search: 'beam', sort: 'alpha', includeArchived: true }))
       .toBe('/api/whiteboards?search=beam&sort=alpha&include_archived=1')
+  })
+})
+
+describe('createLatestWins', () => {
+  it('issues monotonically increasing request ids', () => {
+    const guard = createLatestWins()
+    expect(guard.next()).toBe(1)
+    expect(guard.next()).toBe(2)
+    expect(guard.next()).toBe(3)
+  })
+
+  it('isLatest only for the most recent id', () => {
+    const guard = createLatestWins()
+    const first = guard.next()
+    expect(guard.isLatest(first)).toBe(true)
+    const second = guard.next()
+    expect(guard.isLatest(first)).toBe(false)
+    expect(guard.isLatest(second)).toBe(true)
+  })
+
+  it('keeps superseding after several requests', () => {
+    const guard = createLatestWins()
+    const a = guard.next()
+    const b = guard.next()
+    const c = guard.next()
+    expect(guard.isLatest(a)).toBe(false)
+    expect(guard.isLatest(b)).toBe(false)
+    expect(guard.isLatest(c)).toBe(true)
   })
 })
 

@@ -267,7 +267,7 @@
 <script setup lang="ts">
 import type { Whiteboard, ApiResponse } from '~/types'
 import type { DashboardSort } from '~/utils/dashboard'
-import { buildIndexQuery } from '~/utils/dashboard'
+import { buildIndexQuery, createLatestWins } from '~/utils/dashboard'
 import { toastSuccess, toastError } from '~/composables/useToast'
 import { useApprovals } from '~/composables/useApprovals'
 
@@ -290,6 +290,11 @@ const sortOptions: { value: DashboardSort; label: string }[] = [
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
+// Latest-wins guard: debounced search/sort changes can fire overlapping
+// requests; only the most recent response may update the grid (a slow earlier
+// response must not clobber a newer one).
+const latestWins = createLatestWins()
+
 const archivedToggleTestid = computed(() => (showArchived.value ? 'archived-toggle-on' : 'archived-toggle-off'))
 
 const emptyTitle = computed(() => (search.value.trim() ? 'No Matching Whiteboards' : 'No Whiteboards Yet'))
@@ -305,6 +310,7 @@ const emptyMessage = computed(() => {
 })
 
 async function refresh() {
+  const requestId = latestWins.next()
   pending.value = true
   error.value = null
   try {
@@ -313,14 +319,20 @@ async function refresh() {
       sort: sort.value,
       includeArchived: showArchived.value,
     }))
+    if (!latestWins.isLatest(requestId)) return
     whiteboards.value = res.success ? (res.data || []) : []
   } catch (e) {
+    if (!latestWins.isLatest(requestId)) return
     // Auth errors are handled by the global middleware — don't flash an error
     if ((e as any)?.response?.status !== 401) {
       error.value = e instanceof Error ? e.message : 'Failed to load'
     }
   } finally {
-    pending.value = false
+    // Only the latest request may clear `pending` — a superseded request must
+    // not hide the spinner while the current one is still in flight.
+    if (latestWins.isLatest(requestId)) {
+      pending.value = false
+    }
   }
 }
 
