@@ -72,3 +72,22 @@ Board dashboard (backlog #1): add search, sort (recent/alphabetical), thumbnails
 - `?search=` uses raw LIKE with no escaping of `%`/`_` in the needle — acceptable for this feature (dashboard search, auth-protected route); flag if a wildcard-injection concern arises.
 
 **Next (still open):** frontend `index.vue` — search input (debounced server-side `?search=` refetch to stay consistent with sort) + Recent/Alphabetical sort control + Archive menu item calling `POST /archive` + an unarchive path (likely an "Archived" toggle or restore from a filtered view); then client-side canvas thumbnails from `canvas_state.elements` in a pure helper (`utils/dashboard.ts`) + unit tests; optional `dashboard.spec.ts` e2e.
+
+### Iteration 3 (this session) — Frontend pure-logic layer for the dashboard (`utils/dashboard.ts`)
+
+**Changed:**
+- New `frontend/utils/dashboard.ts` — pure, unit-testable helpers for the index page (no `.vue` mounting needed):
+  - `buildIndexQuery({ search, sort })` — builds the `/api/whiteboards` query string (defaults to the plain URL; `sort: 'recent'` is the API default so it's omitted; search is trimmed + URL-encoded). Pairs with the backend `?search=`/`?sort=` from iteration 2.
+  - `getElementBounds(el)` — per-element bounding box from `canvas_state.elements`, handling every tool type: rect/circle/ellipse (rotation-aware via sampled boundary), line/arrow/stroke/polyline/arc/revision-cloud/fillet-arc/dimension (via `getElementGeometry`), image/stamp (x/y/w/h), text (origin + font-metric width), text-annotation (origin + leader end), measurement-distance (start/end). Returns `null` for measurement-area, malformed data, or empty geometry — never throws.
+  - `getCanvasBounds(elements)` — union bounds across the board, or `null` when nothing is drawable. Drives the "show thumbnail vs fallback icon" decision.
+  - `drawThumbnail(canvas, elements, opts)` — cheap canvas preview: computes fit-transform, centers + scales the content, strokes simplified outlines (circles via arc, closed shapes via closePath, image/stamp via strokeRect, text as dot+baseline, segments-only fallback). Returns `false` and draws nothing when there's nothing drawable / no 2d context / zero-size canvas / any exception — never throws.
+- New `frontend/utils/dashboard.test.ts` — 43 tests: query building (defaults, encoding, trimming), per-type bounds, malformed/empty guards, canvas-bounds union, and drawThumbnail against a fake 2d context (fake canvas so happy-dom's non-2d `HTMLCanvasElement` isn't a factor). Covers the fit-transform math, closePath/arc/segments drawing paths, and the exception-swallow path.
+
+**Verification (green):** `npm run typecheck` clean; `npm test` 733/733 (56 files; +43); `npm run coverage` passes gates (lines 84.39 ≥82, branches 84.75 ≥84.5, functions 87.06 ≥86.5 — `dashboard.ts` itself 99.04/82/100); `php artisan test` 73 passed (436 assertions).
+
+**Gotchas:**
+- happy-dom's `HTMLCanvasElement` has no usable 2d context, so `drawThumbnail` tests inject a fake canvas + plain-object ctx (vi.fn methods); the util only touches ctx methods/properties so the fake works.
+- Coverage gate tightened: branch threshold is exactly 84.5 and the new file's branches initially dragged it to 84.45 → added tests for the uncovered branches (text-annotation missing-coords null, measurement-distance missing-data null, draw of measurement-distance + mixed [area, rect] to exercise the measurement-area skip, and text draw). Watch branch % when adding more logic.
+- `ellipse` bounds are computed from `getElementGeometry`'s 48 sampled boundary points, so rotated ellipses get a correct (rotation-aware) box for free — no per-type rotation math needed.
+
+**Next (still open):** wire `index.vue`: search input (debounced ~250ms server-side `?search=` refetch), Recent/Alphabetical sort control (server-side `?sort=`), Archive menu item calling `POST /api/whiteboards/{id}/archive` (+ unarchive path — likely an Archived toggle restoring from a filtered view), and a per-card `<canvas>` using `getCanvasBounds` + `drawThumbnail` (fallback to the `mdi:clipboard-text` icon when bounds are null). Optional `dashboard.spec.ts` e2e. Then run the manual smoke from the Goal's Verification section.
