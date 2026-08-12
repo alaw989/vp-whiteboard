@@ -22,7 +22,7 @@ useHead({ title: 'Redirecting...' })
 // ?share= so the page stashes it for the WS handshake), expired (410) vs
 // revoked/unknown (404) → the friendly share-invalid page.
 async function resolveShareLink() {
-  const redirectInvalid = (reason: 'expired' | 'not_found') =>
+  const redirectInvalid = (reason: ShareInvalidReason) =>
     navigateTo(`/share-invalid?reason=${reason}`, { redirectCode: 302 })
 
   if (!token) {
@@ -43,9 +43,7 @@ async function resolveShareLink() {
       await redirectInvalid('not_found')
     }
   } catch (e) {
-    const err = e as { response?: { status?: number }; status?: number; statusCode?: number }
-    const status = err?.response?.status ?? err?.status ?? err?.statusCode
-    await redirectInvalid(status === 410 ? 'expired' : 'not_found')
+    await redirectInvalid(shareResolverReason(e))
   }
 }
 

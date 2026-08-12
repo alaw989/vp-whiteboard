@@ -1,3 +1,5 @@
+import { shareResolverReason, type ShareInvalidReason } from '~/utils/shareStatus'
+
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const laravelUrl = (config.public.laravelUrl as string) || 'http://localhost:8000'
@@ -7,10 +9,12 @@ export default defineEventHandler(async (event) => {
     return sendRedirect(event, '/share-invalid?reason=not_found', 302)
   }
 
-  // The resolver distinguishes expired (410) from unknown/revoked (404). Send
-  // the viewer to a friendly page that can say the right thing — NOT a silent
-  // redirect home. No token/secret ever appears in the error URL.
-  const redirectInvalid = (reason: 'expired' | 'not_found') =>
+  // The resolver distinguishes expired (410) from unknown/revoked (404), and a
+  // 429 means the `throttle:shares` limiter tripped — the link is fine, the
+  // viewer should retry, NOT be told it was revoked. Send the viewer to a
+  // friendly page that can say the right thing — NOT a silent redirect home.
+  // No token/secret ever appears in the error URL.
+  const redirectInvalid = (reason: ShareInvalidReason) =>
     sendRedirect(event, `/share-invalid?reason=${reason}`, 302)
 
   try {
@@ -39,9 +43,6 @@ export default defineEventHandler(async (event) => {
     // kept for API/autosave auth.
     return sendRedirect(event, `/whiteboard/${res.data.whiteboard_id}?share=${encodeURIComponent(token)}`, 302)
   } catch (e) {
-    // Non-2xx from the resolver: 410 = expired, anything else = not found/revoked.
-    const err = e as { response?: { status?: number }; status?: number; statusCode?: number }
-    const status = err?.response?.status ?? err?.status ?? err?.statusCode
-    return redirectInvalid(status === 410 ? 'expired' : 'not_found')
+    return redirectInvalid(shareResolverReason(e))
   }
 })

@@ -135,6 +135,7 @@
 <script setup lang="ts">
 import { toastSuccess, toastError } from '~/composables/useToast'
 import { shareCopyUrl } from '~/composables/useShareLink'
+import { friendlyApiErrorMessage } from '~/utils/apiError'
 
 const props = defineProps<{
   show: boolean
@@ -204,7 +205,7 @@ async function createShare() {
       toastSuccess('Share link created')
     }
   } catch (e: any) {
-    createError.value = e?.data?.error || 'Failed to create link'
+    createError.value = friendlyApiErrorMessage(e, 'Failed to create link')
   } finally {
     creating.value = false
   }

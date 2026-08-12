@@ -97,6 +97,7 @@
 </template>
 
 <script setup lang="ts">
+import { friendlyApiErrorMessage } from '~/utils/apiError'
 const route = useRoute()
 const { $api, $ensureCsrf: ensureCsrf } = useApi()
 const name = ref('')
@@ -126,12 +127,7 @@ async function handleRegister() {
     // No auto-login — the request goes to the owner for approval.
     registered.value = true
   } catch (e: any) {
-    const data = e?.data
-    error.value =
-      data?.message ||
-      (data?.errors && Object.values(data.errors).flat().join(', ')) ||
-      e?.message ||
-      'Registration failed'
+    error.value = friendlyApiErrorMessage(e, 'Registration failed')
   } finally {
     loading.value = false
   }

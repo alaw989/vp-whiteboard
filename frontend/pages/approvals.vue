@@ -109,6 +109,7 @@
 <script setup lang="ts">
 import { toastError, toastSuccess } from '~/composables/useToast'
 import { useApprovals } from '~/composables/useApprovals'
+import { friendlyApiErrorMessage } from '~/utils/apiError'
 import type { PendingUser } from '~/composables/useApprovals'
 
 const { $api } = useApi()
@@ -129,7 +130,7 @@ async function handleApprove(user: PendingUser) {
     await approve(user.id)
     toastSuccess(`${user.name} approved`)
   } catch (e: any) {
-    toastError(e?.data?.message || e?.message || `Failed to approve ${user.name}`)
+    toastError(friendlyApiErrorMessage(e, `Failed to approve ${user.name}`))
   } finally {
     busyId.value = null
   }
@@ -141,7 +142,7 @@ async function handleDeny(user: PendingUser) {
     await deny(user.id)
     toastSuccess(`${user.name} denied`)
   } catch (e: any) {
-    toastError(e?.data?.message || e?.message || `Failed to deny ${user.name}`)
+    toastError(friendlyApiErrorMessage(e, `Failed to deny ${user.name}`))
   } finally {
     busyId.value = null
   }
