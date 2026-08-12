@@ -341,3 +341,142 @@ describe('ellipseToCubics', () => {
     expect(ellipseToCubics(0, 0, 0, 10)).toEqual([])
   })
 })
+
+describe('branch coverage: ellipse fill variants', () => {
+  it('fills an unrotated ellipse via the native FD primitive', () => {
+    const pdf = makePdf()
+    draw(pdf, element('ellipse', { x: 10, y: 20, radiusX: 30, radiusY: 15, rotation: 0, stroke: '#000', strokeWidth: 2, fill: '#ccc' }))
+    expect(pdf.ellipse).toHaveBeenCalledWith(10, 20, 30, 15, 'FD')
+    expect(pdf.setFillColor).toHaveBeenCalledWith('#ccc')
+    expect(pdf.fillStroke).not.toHaveBeenCalled()
+  })
+
+  it('fills a rotated ellipse via the bezier path (fillStroke)', () => {
+    const pdf = makePdf()
+    draw(pdf, element('ellipse', { x: 0, y: 0, radiusX: 30, radiusY: 15, rotation: 0.5, stroke: '#000', strokeWidth: 2, fill: '#ccc' }))
+    expect(pdf.ellipse).not.toHaveBeenCalled()
+    expect(pdf.fillStroke).toHaveBeenCalledTimes(1)
+    expect(pdf.curveTo).toHaveBeenCalledTimes(4)
+    expect(pdf.close).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('branch coverage: fillet-arc shortest-sweep wrap', () => {
+  it('wraps a sweep > π to the shortest negative arc', () => {
+    const pdf = makePdf()
+    draw(pdf, element('fillet-arc', { center: [0, 0], radius: 50, startAngle: 0, endAngle: Math.PI * 1.5, color: '#000', size: 3 }))
+    expect(pdf.curveTo.mock.calls.length).toBeGreaterThan(0)
+    expect(pdf.stroke).toHaveBeenCalledTimes(1)
+  })
+
+  it('wraps a sweep < -π to the shortest positive arc', () => {
+    const pdf = makePdf()
+    draw(pdf, element('fillet-arc', { center: [0, 0], radius: 50, startAngle: 0, endAngle: -Math.PI * 1.5, color: '#000', size: 3 }))
+    expect(pdf.curveTo.mock.calls.length).toBeGreaterThan(0)
+    expect(pdf.stroke).toHaveBeenCalledTimes(1)
+  })
+
+  it('is a no-op stroke when the sweep is zero (no cubics emitted)', () => {
+    const pdf = makePdf()
+    draw(pdf, element('fillet-arc', { center: [0, 0], radius: 50, startAngle: Math.PI / 4, endAngle: Math.PI / 4, color: '#000', size: 3 }))
+    expect(pdf.curveTo).not.toHaveBeenCalled()
+    expect(pdf.moveTo).not.toHaveBeenCalled()
+    expect(pdf.stroke).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('branch coverage: arrow variants', () => {
+  it('strokes a multi-segment shaft (more than 2 points)', () => {
+    const pdf = makePdf()
+    draw(pdf, element('arrow', { points: [[0, 0], [50, 10], [100, 0]], pointerLength: 10, pointerWidth: 10, stroke: '#000', strokeWidth: 2, fill: '#000' }))
+    expect(pdf.lineTo).toHaveBeenCalledWith(50, 10)
+    expect(pdf.lineTo).toHaveBeenCalledWith(100, 0)
+    expect(pdf.triangle).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips arrows with fewer than 2 points entirely', () => {
+    const pdf = makePdf()
+    draw(pdf, element('arrow', { points: [[0, 0]], pointerLength: 10, pointerWidth: 10, stroke: '#000', strokeWidth: 2, fill: '#000' }))
+    expect(pdf.line).not.toHaveBeenCalled()
+    expect(pdf.triangle).not.toHaveBeenCalled()
+    expect(pdf.stroke).not.toHaveBeenCalled()
+  })
+
+  it('falls back to default head dimensions when pointer length/width are zero', () => {
+    const pdf = makePdf()
+    draw(pdf, element('arrow', { points: [[0, 0], [100, 0]], pointerLength: 0, pointerWidth: 0, stroke: '#000', strokeWidth: 2, fill: '#000' }))
+    expect(pdf.triangle).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('branch coverage: revision-cloud', () => {
+  it('draws a closed cloud as a lobed polyline path', () => {
+    const pdf = makePdf()
+    draw(pdf, element('revision-cloud', { points: [[0, 0], [60, 0], [30, 40]], arcLength: 24, color: '#333', size: 3, closed: true }))
+    expect(pdf.moveTo).toHaveBeenCalledTimes(1)
+    expect(pdf.lineTo.mock.calls.length).toBeGreaterThan(10)
+    expect(pdf.stroke).toHaveBeenCalledTimes(1)
+  })
+
+  it('draws an open cloud without closing the path', () => {
+    const pdf = makePdf()
+    draw(pdf, element('revision-cloud', { points: [[0, 0], [40, 10], [80, 0]], arcLength: 20, color: '#333', size: 3, closed: false }))
+    expect(pdf.close).not.toHaveBeenCalled()
+    expect(pdf.stroke).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('branch coverage: dimension edge cases', () => {
+  it('handles a zero-length measured line (start == end)', () => {
+    const pdf = makePdf()
+    draw(pdf, element('dimension', { start: [10, 10], end: [10, 10], offset: 30, pixelsPerInch: 96, unit: 'inches', precision: 2, style: 'linear', color: '#000', size: 2 }))
+    expect(pdf.line.mock.calls.length).toBeGreaterThanOrEqual(1)
+    expect(pdf.text).toHaveBeenCalled()
+  })
+
+  it('overshoots extension lines on the negative-offset side', () => {
+    const pdf = makePdf()
+    draw(pdf, element('dimension', { start: [0, 0], end: [100, 0], offset: -30, pixelsPerInch: 96, unit: 'inches', precision: 2, style: 'linear', color: '#000', size: 2 }))
+    expect(pdf.line.mock.calls.length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('labels in feet when the unit is feet', () => {
+    const pdf = makePdf()
+    draw(pdf, element('dimension', { start: [0, 0], end: [96, 0], offset: 30, pixelsPerInch: 96, unit: 'feet', precision: 2, style: 'linear', color: '#000', size: 2 }))
+    expect(pdf.text).toHaveBeenCalledWith('0.08 ft', expect.any(Number), expect.any(Number), expect.objectContaining({ align: 'center' }))
+  })
+
+  it('uses the cached value when provided', () => {
+    const pdf = makePdf()
+    draw(pdf, element('dimension', { start: [0, 0], end: [96, 0], offset: 30, pixelsPerInch: 96, unit: 'inches', precision: 2, style: 'linear', color: '#000', size: 2, value: 5 }))
+    expect(pdf.text).toHaveBeenCalledWith('5 in', expect.any(Number), expect.any(Number), expect.objectContaining({ align: 'center' }))
+  })
+
+  it('wraps the label angle past 90° into the readable half-plane', () => {
+    const pdf = makePdf()
+    draw(pdf, element('dimension', { start: [0, 0], end: [-10, 100], offset: 30, pixelsPerInch: 96, unit: 'inches', precision: 2, style: 'linear', color: '#000', size: 2 }))
+    expect(pdf.text).toHaveBeenCalled()
+  })
+
+  it('wraps the label angle below -90° into the readable half-plane', () => {
+    const pdf = makePdf()
+    draw(pdf, element('dimension', { start: [0, 0], end: [-10, -100], offset: 30, pixelsPerInch: 96, unit: 'inches', precision: 2, style: 'linear', color: '#000', size: 2 }))
+    expect(pdf.text).toHaveBeenCalled()
+  })
+})
+
+describe('branch coverage: measurement-distance feet + degenerate polyline', () => {
+  it('labels a measurement in feet with a single-quote suffix', () => {
+    const pdf = makePdf()
+    draw(pdf, element('measurement-distance', { start: [0, 0], end: [96, 0], pixelsPerInch: 96, unit: 'feet', precision: 2 }))
+    expect(pdf.text).toHaveBeenCalledWith("0.08'", 48, -15, expect.objectContaining({ align: 'center' }))
+  })
+
+  it('still strokes a polyline with a single point (no path emitted)', () => {
+    const pdf = makePdf()
+    draw(pdf, element('polyline', { points: [[5, 5]], color: '#00f', size: 3, closed: true }))
+    expect(pdf.moveTo).not.toHaveBeenCalled()
+    expect(pdf.close).not.toHaveBeenCalled()
+    expect(pdf.stroke).toHaveBeenCalledTimes(1)
+  })
+})

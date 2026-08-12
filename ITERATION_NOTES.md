@@ -34,6 +34,21 @@ Vector/SVG export (backlog #1): add a vector layer to PDF export so shapes stay 
 
 ## State
 
+### Iteration 2 (Aug 12, 2026)
+
+**Changed:**
+- **`frontend/utils/vectorExport.test.ts`** +17 tests (46 → 63 in that file): added branch-coverage tests for the previously-uncovered paths — rotated+filled ellipse (bezier `fillStroke` path), unrotated+filled ellipse (native `FD`), fillet-arc shortest-sweep wrap (both directions + zero-sweep no-op), arrow multi-segment shaft / degenerate single-point skip / zero pointer-length defaults, revision-cloud closed + open, dimension zero-length line / negative offset / feet unit / cached value / label angle wrap (>90° and <-90°), measurement-distance feet label, and single-point polyline (path guard still strokes).
+
+**Verification:** vectorExport.ts coverage jumped from 91.7 stmts / 79.38 branches / 93.1 funcs → **100 / 99.11 / 100** (only `outline.length < 2` on line 170 remains, unreachable with real perfect-freehand on ≥2 points). `npm run typecheck` clean; `npm test` 805/805 (was 787; +18); `npm run coverage` green: All files 85.46 lines / 85.86 branches / 87.97 funcs ≥ gates 82/82/84.5/86.5. Backend untouched.
+
+**Next:** Run the full e2e suite on a clean stack (`npm run test:e2e`, Nuxt `TEST=1`) to confirm `frontend/e2e/export.spec.ts` (empty + image-layer + pen-stroke cases) still passes — the vector layer only adds drawing commands after `addImage`. That is the final gate for the vector/SVG export goal.
+
+**Gotchas:**
+- jsPDF 4.1.0: `polyline()` and `context2d.ellipse` DON'T exist (only `context2d.arc`); use `moveTo/lineTo/curveTo` + manual bezier for rotated ellipses/arcs. `ellipse(x,y,rx,ry,style)` has no rotation arg.
+- jsPDF `setGState({opacity})` works for the highlighter translucency; `text(text,x,y,{baseline:'middle'})` is valid.
+- The Konva stroke is a filled perfect-freehand outline — the vector layer must reuse `getStroke`, not just connect points, or strokes look thin/wrong next to the raster.
+- Keep the `drawElementsToPdf` call gated on `elements.length > 0` so the existing exportAsPDF tests (no elements arg) stay behavior-identical.
+
 ### Iteration 1 (Aug 12, 2026)
 
 **Changed:**
