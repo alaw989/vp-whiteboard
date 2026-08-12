@@ -40,6 +40,19 @@ describe('buildIndexQuery', () => {
   it('URL-encodes special characters in search', () => {
     expect(buildIndexQuery({ search: 'a b&c' })).toBe('/api/whiteboards?search=a+b%26c')
   })
+
+  it('adds include_archived=1 when viewing archived boards', () => {
+    expect(buildIndexQuery({ includeArchived: true })).toBe('/api/whiteboards?include_archived=1')
+  })
+
+  it('omits include_archived by default / when false', () => {
+    expect(buildIndexQuery({ includeArchived: false })).toBe('/api/whiteboards')
+  })
+
+  it('combines includeArchived with search + sort', () => {
+    expect(buildIndexQuery({ search: 'beam', sort: 'alpha', includeArchived: true }))
+      .toBe('/api/whiteboards?search=beam&sort=alpha&include_archived=1')
+  })
 })
 
 describe('getElementBounds', () => {

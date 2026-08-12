@@ -12,7 +12,11 @@ class WhiteboardController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Whiteboard::active();
+        // Default listing hides archived boards; `?include_archived=1` brings
+        // them back so the dashboard's Archived view can list + restore them.
+        $query = $request->boolean('include_archived')
+            ? Whiteboard::query()
+            : Whiteboard::active();
 
         $sort = $request->query('sort', 'recent');
         if ($sort === 'alpha') {

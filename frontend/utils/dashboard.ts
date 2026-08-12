@@ -19,6 +19,8 @@ export type DashboardSort = 'recent' | 'alpha'
 export interface IndexQueryOptions {
   search?: string
   sort?: DashboardSort
+  /** Pass `include_archived=1` so archived boards appear in the listing. */
+  includeArchived?: boolean
 }
 
 /**
@@ -32,6 +34,7 @@ export function buildIndexQuery(opts: IndexQueryOptions = {}): string {
   const search = opts.search?.trim()
   if (search) params.set('search', search)
   if (opts.sort && opts.sort !== 'recent') params.set('sort', opts.sort)
+  if (opts.includeArchived) params.set('include_archived', '1')
   const qs = params.toString()
   return qs ? `/api/whiteboards?${qs}` : '/api/whiteboards'
 }

@@ -91,3 +91,23 @@ Board dashboard (backlog #1): add search, sort (recent/alphabetical), thumbnails
 - `ellipse` bounds are computed from `getElementGeometry`'s 48 sampled boundary points, so rotated ellipses get a correct (rotation-aware) box for free — no per-type rotation math needed.
 
 **Next (still open):** wire `index.vue`: search input (debounced ~250ms server-side `?search=` refetch), Recent/Alphabetical sort control (server-side `?sort=`), Archive menu item calling `POST /api/whiteboards/{id}/archive` (+ unarchive path — likely an Archived toggle restoring from a filtered view), and a per-card `<canvas>` using `getCanvasBounds` + `drawThumbnail` (fallback to the `mdi:clipboard-text` icon when bounds are null). Optional `dashboard.spec.ts` e2e. Then run the manual smoke from the Goal's Verification section.
+
+### Iteration 4 (this session) — Wire the dashboard UI in `index.vue`
+
+**Changed:**
+- `app/Http/Controllers/Api/WhiteboardController.php@index()`: added `?include_archived=1` (boolean) — bypasses the `active()` scope so the Archived view can list + restore archived boards. Composes with search/sort/project_id/created_by/limit.
+- `tests/Feature/WhiteboardApiTest.php`: +2 tests — `include_archived=1` returns archived boards (deterministic updated_at ordering), and respects search+sort together.
+- `frontend/utils/dashboard.ts`: `buildIndexQuery` gained an `includeArchived` option → emits `include_archived=1`; still omits it (byte-identical URL) for the default view.
+- `frontend/utils/dashboard.test.ts`: +3 tests (includeArchived alone, false/default omission, combined with search+sort).
+- `frontend/types/index.ts`: `Whiteboard` type gained `archived_at?: string | null`.
+- NEW `frontend/components/whiteboard/WhiteboardThumbnail.vue`: client-side canvas preview — sizes the canvas to its CSS box × devicePixelRatio, calls `drawThumbnail`, shows the `mdi:clipboard-text` icon fallback when nothing is drawable. SSR-safe (renders in `onMounted`/`nextTick`, guards `window`).
+- `frontend/pages/index.vue`: wired the whole feature — debounced (250ms) search input (`data-testid="board-search"`), Recent/A–Z sort control (`data-testid="sort-recent"`/`sort-alpha`), Archived/Active toggle (`data-testid="archived-toggle-off/on"`), Archive menu item (active view) / Unarchive menu item (archived view), per-card `<WhiteboardThumbnail>`, and a search-aware empty state ("No Matching Whiteboards" / "Nothing has been archived yet."). `refresh()` now uses `buildIndexQuery({ search, sort, includeArchived })`. Rename + delete flows and the card menu untouched.
+
+**Verification (green):** `npm run typecheck` clean; `npm test` 736/736 (56 files; +3); `npm run coverage` exit 0 (dashboard.ts 99.05/82.17/100, overall thresholds 82/82/84.5/86.5 pass); `php artisan test` 75 passed (443 assertions; +2); backend statements 78.48% ≥ 73 gate; `npm run build` completes. No `server/` (Nitro) routes touched → no `~/utils` import trap.
+
+**Gotchas:**
+- Vue `v-if`/`v-else-if`/`v-else` chain pitfall: the initial edit put the toolbar between the error block and the empty/list blocks with its own `v-if`, which silently BROKE the chain (empty state would only render while `pending||error`). Fixed by wrapping toolbar + empty + grid in a `<template v-else>`.
+- The Archived toggle deliberately reuses the same `refresh()` + `buildIndexQuery` path; toggling to Archived changes the query to `include_archived=1` but keeps search/sort so a user can find a specific archived board.
+- `mdi:archive-restore` does NOT exist in the bundled icon set — used `mdi:archive-arrow-up` (archive) / `mdi:archive-arrow-down` (unarchive) instead.
+
+**Next (still open):** optional `dashboard.spec.ts` e2e (search filters, sort flips order, archive hides card, unarchive restores) — valuable but optional; verify existing e2e stays green first (login helper waits for `/(whiteboards?|$)/` and `createWhiteboard` uses `/whiteboard/new` — both untouched). Then run the manual smoke from the Goal's Verification section (2 boards, search, sort, archive, unarchive, non-owner 403).

@@ -51,28 +51,70 @@
         </button>
       </div>
 
-      <!-- Empty State -->
-      <div v-else-if="whiteboards.length === 0" class="text-center py-16">
-        <div class="bg-white rounded-xl shadow-sm p-8 max-w-md mx-auto">
-          <Icon name="mdi:clipboard-text-outline" class="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h2 class="text-xl font-semibold text-gray-900 mb-2">No Whiteboards Yet</h2>
-          <p class="text-gray-600 mb-6">
-            Create your first collaborative whiteboard to start collaborating with your team.
-          </p>
-          <NuxtLink to="/whiteboard/new" class="btn-primary">
-            <Icon name="mdi:plus" class="w-5 h-5" />
-            Create Whiteboard
-          </NuxtLink>
+      <template v-else>
+        <!-- Toolbar: search + sort + archived toggle -->
+        <div class="flex flex-wrap items-center gap-3 mb-6">
+          <div class="relative flex-1 min-w-[200px]">
+            <Icon name="mdi:magnify" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              v-model="search"
+              type="search"
+              placeholder="Search whiteboards..."
+              data-testid="board-search"
+              class="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              v-for="opt in sortOptions"
+              :key="opt.value"
+              :data-testid="`sort-${opt.value}`"
+              :class="[
+                'px-3 py-2 text-sm rounded-lg border transition-colors',
+                sort === opt.value
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              ]"
+              @click="setSort(opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+          <button
+            :data-testid="archivedToggleTestid"
+            :class="[
+              'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border transition-colors',
+              showArchived
+                ? 'bg-amber-100 text-amber-800 border-amber-300'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+            ]"
+            @click="toggleArchived"
+          >
+            <Icon name="mdi:archive-outline" class="w-4 h-4" />
+            {{ showArchived ? 'Active' : 'Archived' }}
+          </button>
         </div>
-      </div>
 
-      <!-- Whiteboard List -->
-      <div v-else class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div
-          v-for="whiteboard in whiteboards"
-          :key="whiteboard.id"
-          class="card card-hover-lift group relative"
-        >
+        <!-- Empty State -->
+        <div v-if="whiteboards.length === 0" class="text-center py-16">
+          <div class="bg-white rounded-xl shadow-sm p-8 max-w-md mx-auto">
+            <Icon name="mdi:clipboard-text-outline" class="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 class="text-xl font-semibold text-gray-900 mb-2">{{ emptyTitle }}</h2>
+            <p class="text-gray-600 mb-6">{{ emptyMessage }}</p>
+            <NuxtLink v-if="!showArchived" to="/whiteboard/new" class="btn-primary">
+              <Icon name="mdi:plus" class="w-5 h-5" />
+              Create Whiteboard
+            </NuxtLink>
+          </div>
+        </div>
+
+        <!-- Whiteboard List -->
+        <div v-else class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div
+            v-for="whiteboard in whiteboards"
+            :key="whiteboard.id"
+            class="card card-hover-lift group relative"
+          >
           <!-- Rename mode: show input outside the link -->
           <div v-if="renamingId === whiteboard.id" class="p-6">
             <div class="flex items-start justify-between mb-4">
@@ -105,6 +147,11 @@
             :to="`/whiteboard/${whiteboard.id}`"
             class="block p-6"
           >
+            <WhiteboardThumbnail
+              :elements="whiteboard.canvas_state?.elements"
+              :name="whiteboard.name"
+              class="mb-4"
+            />
             <div class="flex items-start justify-between mb-4">
               <div class="flex-1">
                 <h3 class="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
@@ -147,6 +194,22 @@
                 Rename
               </button>
               <button
+                v-if="showArchived"
+                class="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                @click.stop="handleUnarchive(whiteboard)"
+              >
+                <Icon name="mdi:archive-arrow-down" class="w-4 h-4" />
+                Unarchive
+              </button>
+              <button
+                v-else
+                class="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                @click.stop="handleArchive(whiteboard)"
+              >
+                <Icon name="mdi:archive-arrow-up" class="w-4 h-4" />
+                Archive
+              </button>
+              <button
                 class="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                 @click.stop="confirmDelete(whiteboard)"
               >
@@ -157,6 +220,7 @@
           </div>
         </div>
       </div>
+      </template>
 
       <!-- Delete Confirmation Modal -->
       <Teleport to="body">
@@ -202,6 +266,8 @@
 
 <script setup lang="ts">
 import type { Whiteboard, ApiResponse } from '~/types'
+import type { DashboardSort } from '~/utils/dashboard'
+import { buildIndexQuery } from '~/utils/dashboard'
 import { toastSuccess, toastError } from '~/composables/useToast'
 import { useApprovals } from '~/composables/useApprovals'
 
@@ -213,11 +279,40 @@ const whiteboards = ref<Whiteboard[]>([])
 const pending = ref(true)
 const error = ref<string | null>(null)
 
+// Search + sort + archive visibility
+const search = ref('')
+const sort = ref<DashboardSort>('recent')
+const showArchived = ref(false)
+const sortOptions: { value: DashboardSort; label: string }[] = [
+  { value: 'recent', label: 'Recent' },
+  { value: 'alpha', label: 'A–Z' },
+]
+
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+const archivedToggleTestid = computed(() => (showArchived.value ? 'archived-toggle-on' : 'archived-toggle-off'))
+
+const emptyTitle = computed(() => (search.value.trim() ? 'No Matching Whiteboards' : 'No Whiteboards Yet'))
+
+const emptyMessage = computed(() => {
+  if (search.value.trim()) {
+    return `No whiteboards match "${search.value.trim()}".`
+  }
+  if (showArchived.value) {
+    return 'Nothing has been archived yet.'
+  }
+  return 'Create your first collaborative whiteboard to start collaborating with your team.'
+})
+
 async function refresh() {
   pending.value = true
   error.value = null
   try {
-    const res = await $api<ApiResponse<Whiteboard[]>>('/api/whiteboards')
+    const res = await $api<ApiResponse<Whiteboard[]>>(buildIndexQuery({
+      search: search.value,
+      sort: sort.value,
+      includeArchived: showArchived.value,
+    }))
     whiteboards.value = res.success ? (res.data || []) : []
   } catch (e) {
     // Auth errors are handled by the global middleware — don't flash an error
@@ -228,6 +323,21 @@ async function refresh() {
     pending.value = false
   }
 }
+
+function setSort(value: DashboardSort) {
+  sort.value = value
+  refresh()
+}
+
+function toggleArchived() {
+  showArchived.value = !showArchived.value
+  refresh()
+}
+
+watch(search, () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(refresh, 250)
+})
 
 onMounted(() => {
   refresh()
@@ -307,6 +417,28 @@ async function handleDelete(id: string) {
     toastError('Failed to delete whiteboard')
   } finally {
     deleting.value = false
+  }
+}
+
+async function handleArchive(whiteboard: Whiteboard) {
+  menuOpenId.value = null
+  try {
+    await $api(`/api/whiteboards/${whiteboard.id}/archive`, { method: 'POST' })
+    toastSuccess('Whiteboard archived')
+    await refresh()
+  } catch {
+    toastError('Failed to archive whiteboard')
+  }
+}
+
+async function handleUnarchive(whiteboard: Whiteboard) {
+  menuOpenId.value = null
+  try {
+    await $api(`/api/whiteboards/${whiteboard.id}/unarchive`, { method: 'POST' })
+    toastSuccess('Whiteboard restored')
+    await refresh()
+  } catch {
+    toastError('Failed to restore whiteboard')
   }
 }
 
