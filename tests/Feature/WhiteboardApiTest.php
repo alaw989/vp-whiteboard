@@ -188,4 +188,236 @@ class WhiteboardApiTest extends TestCase
         $response->assertOk();
         $this->assertDatabaseHas('whiteboards', ['id' => $whiteboard->id, 'name' => 'Renamed']);
     }
+
+    public function test_owner_can_archive_whiteboard(): void
+    {
+        $owner = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id]);
+
+        $response = $this->actingAs($owner)->postJson("/api/whiteboards/{$whiteboard->id}/archive");
+
+        $response->assertOk();
+        $this->assertNotNull($response->json('data.archived_at'));
+        $this->assertDatabaseHas('whiteboards', ['id' => $whiteboard->id]);
+        $this->assertNotNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_owner_can_unarchive_whiteboard(): void
+    {
+        $owner = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id, 'archived_at' => now()]);
+
+        $response = $this->actingAs($owner)->postJson("/api/whiteboards/{$whiteboard->id}/unarchive");
+
+        $response->assertOk();
+        $this->assertNull($response->json('data.archived_at'));
+        $this->assertNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_archive_unarchive_round_trip_restores_board(): void
+    {
+        $owner = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id]);
+
+        $this->actingAs($owner)->postJson("/api/whiteboards/{$whiteboard->id}/archive")->assertOk();
+        $this->actingAs($owner)->postJson("/api/whiteboards/{$whiteboard->id}/unarchive")->assertOk();
+
+        $this->assertNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_archived_whiteboards_hidden_from_default_index(): void
+    {
+        $user = User::factory()->create();
+        $active = Whiteboard::factory()->create(['user_id' => $user->id]);
+        Whiteboard::factory()->create(['user_id' => $user->id, 'archived_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $active->id);
+    }
+
+    public function test_unauthenticated_user_cannot_archive_whiteboard(): void
+    {
+        $whiteboard = Whiteboard::factory()->create();
+
+        $this->postJson("/api/whiteboards/{$whiteboard->id}/archive")->assertUnauthorized();
+        $this->assertNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_non_owner_cannot_archive_whiteboard(): void
+    {
+        $owner = User::factory()->create();
+        $intruder = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id]);
+
+        $response = $this->actingAs($intruder)->postJson("/api/whiteboards/{$whiteboard->id}/archive");
+
+        $response->assertForbidden();
+        $this->assertNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_non_owner_cannot_unarchive_whiteboard(): void
+    {
+        $owner = User::factory()->create();
+        $intruder = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id, 'archived_at' => now()]);
+
+        $response = $this->actingAs($intruder)->postJson("/api/whiteboards/{$whiteboard->id}/unarchive");
+
+        $response->assertForbidden();
+        $this->assertNotNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_legacy_creator_can_archive_guest_whiteboard(): void
+    {
+        $user = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create([
+            'user_id' => null,
+            'created_by' => (string) $user->id,
+        ]);
+
+        $response = $this->actingAs($user)->postJson("/api/whiteboards/{$whiteboard->id}/archive");
+
+        $response->assertOk();
+        $this->assertNotNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_archiving_nonexistent_whiteboard_returns_404(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->postJson('/api/whiteboards/nonexistent-id/archive')->assertNotFound();
+        $this->actingAs($user)->postJson('/api/whiteboards/nonexistent-id/unarchive')->assertNotFound();
+    }
+
+    public function test_index_search_filters_by_name(): void
+    {
+        $user = User::factory()->create();
+        Whiteboard::factory()->create(['name' => 'Q4 Design Review']);
+        Whiteboard::factory()->create(['name' => 'Site Layout']);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?search=design');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Q4 Design Review');
+    }
+
+    public function test_index_search_treats_percent_as_literal_character(): void
+    {
+        $user = User::factory()->create();
+        Whiteboard::factory()->create(['name' => 'Design 100% Complete']);
+        Whiteboard::factory()->create(['name' => 'Design 100 Complete']);
+        Whiteboard::factory()->create(['name' => 'Design Review']);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?search=100%25');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Design 100% Complete');
+    }
+
+    public function test_index_search_treats_underscore_as_literal_character(): void
+    {
+        $user = User::factory()->create();
+        Whiteboard::factory()->create(['name' => 'floor_plan']);
+        Whiteboard::factory()->create(['name' => 'floorXplan']);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?search=floor_plan');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'floor_plan');
+    }
+
+    public function test_index_search_returns_empty_when_no_match(): void
+    {
+        $user = User::factory()->create();
+        Whiteboard::factory()->create(['name' => 'Site Layout']);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?search=nonexistent');
+
+        $response->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_index_sort_recent_is_default_updated_at_desc(): void
+    {
+        $user = User::factory()->create();
+        $old = Whiteboard::factory()->create(['name' => 'Alpha', 'updated_at' => now()->subDays(2)]);
+        $new = Whiteboard::factory()->create(['name' => 'Beta', 'updated_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards');
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.id', $new->id)
+            ->assertJsonPath('data.1.id', $old->id);
+    }
+
+    public function test_index_sort_alpha_orders_by_name_asc(): void
+    {
+        $user = User::factory()->create();
+        Whiteboard::factory()->create(['name' => 'Zebra', 'updated_at' => now()]);
+        Whiteboard::factory()->create(['name' => 'Alpha', 'updated_at' => now()->subDays(1)]);
+        Whiteboard::factory()->create(['name' => 'Mango', 'updated_at' => now()->subDays(2)]);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?sort=alpha');
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.name', 'Alpha')
+            ->assertJsonPath('data.1.name', 'Mango')
+            ->assertJsonPath('data.2.name', 'Zebra');
+    }
+
+    public function test_index_unknown_sort_falls_back_to_recent(): void
+    {
+        $user = User::factory()->create();
+        $old = Whiteboard::factory()->create(['name' => 'Alpha', 'updated_at' => now()->subDays(2)]);
+        $new = Whiteboard::factory()->create(['name' => 'Beta', 'updated_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?sort=bogus');
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.id', $new->id)
+            ->assertJsonPath('data.1.id', $old->id);
+    }
+
+    public function test_index_search_excludes_archived_boards(): void
+    {
+        $user = User::factory()->create();
+        Whiteboard::factory()->create(['name' => 'Archive Me', 'archived_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?search=archive');
+
+        $response->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_index_include_archived_returns_only_archived_boards(): void
+    {
+        $user = User::factory()->create();
+        Whiteboard::factory()->create(['user_id' => $user->id, 'updated_at' => now()]);
+        $archived = Whiteboard::factory()->create(['user_id' => $user->id, 'archived_at' => now(), 'updated_at' => now()->subMinute()]);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?include_archived=1');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $archived->id);
+    }
+
+    public function test_index_include_archived_respects_search_and_sort(): void
+    {
+        $user = User::factory()->create();
+        Whiteboard::factory()->create(['name' => 'Zeta Old', 'archived_at' => now(), 'updated_at' => now()->subDays(5)]);
+        $archivedAlpha = Whiteboard::factory()->create(['name' => 'Alpha New', 'archived_at' => now(), 'updated_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?include_archived=1&sort=alpha&search=Alpha');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $archivedAlpha->id);
+    }
 }
