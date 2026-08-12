@@ -27,7 +27,12 @@ class WhiteboardController extends Controller
         }
 
         if ($search = $request->query('search')) {
-            $query->where('name', 'like', '%'.$search.'%');
+            // Escape LIKE wildcards so a literal `%` or `_` in the needle is
+            // matched literally instead of acting as a wildcard. The explicit
+            // ESCAPE clause keeps behavior consistent on SQLite (tests) and
+            // MySQL (prod) — backslash is NOT an implicit escape on SQLite.
+            $needle = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
+            $query->whereRaw("name LIKE ? ESCAPE '\\'", ['%'.$needle.'%']);
         }
         if ($request->has('project_id')) {
             $query->where('project_id', $request->project_id);

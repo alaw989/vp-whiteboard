@@ -305,6 +305,33 @@ class WhiteboardApiTest extends TestCase
             ->assertJsonPath('data.0.name', 'Q4 Design Review');
     }
 
+    public function test_index_search_treats_percent_as_literal_character(): void
+    {
+        $user = User::factory()->create();
+        Whiteboard::factory()->create(['name' => 'Design 100% Complete']);
+        Whiteboard::factory()->create(['name' => 'Design 100 Complete']);
+        Whiteboard::factory()->create(['name' => 'Design Review']);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?search=100%25');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Design 100% Complete');
+    }
+
+    public function test_index_search_treats_underscore_as_literal_character(): void
+    {
+        $user = User::factory()->create();
+        Whiteboard::factory()->create(['name' => 'floor_plan']);
+        Whiteboard::factory()->create(['name' => 'floorXplan']);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards?search=floor_plan');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'floor_plan');
+    }
+
     public function test_index_search_returns_empty_when_no_match(): void
     {
         $user = User::factory()->create();

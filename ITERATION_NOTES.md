@@ -145,3 +145,18 @@ Board dashboard (backlog #1): add search, sort (recent/alphabetical), thumbnails
 - Cleanup is scoped strictly to `dash-%` names, so it can never touch real/user boards (current DB has 1638 boards, none `dash-*`).
 
 **Next (still open):** nothing product-facing remains for backlog #1 — the dashboard feature is complete (backend search/sort/archive/archive-hidden + frontend search/sort/archive/archived-view/thumbnails + 75 backend / 736 frontend / 4 dashboard e2e tests). Only the optional manual smoke checklist from the Goal's Verification section is unimplemented (non-owner 403 is already covered by `test_non_owner_cannot_archive`/`test_non_owner_cannot_unarchive`); everything else ships pending the loop gate.
+
+### Iteration 7 (this session) — Escape LIKE wildcards in dashboard `?search=`
+
+**Changed:**
+- `app/Http/Controllers/Api/WhiteboardController.php@index()`: the search needle is now escaped before the LIKE pattern — `\`, `%`, `_` become `\\`, `\%`, `\_` — and the query uses an explicit `ESCAPE '\'` clause via `whereRaw`. Previously a user searching for `50%` or `floor_plan` got wildcard semantics (`%` matched anything, `_` matched any single char) instead of literal matching. This closes the gotcha flagged in Iteration 2.
+- `tests/Feature/WhiteboardApiTest.php`: +2 tests — `test_index_search_treats_percent_as_literal_character` (`search=100%25` matches only `Design 100% Complete`, not `Design 100 Complete`/`Design Review`) and `test_index_search_treats_underscore_as_literal_character` (`search=floor_plan` matches only `floor_plan`, not `floorXplan`).
+
+**Verification (green):** `php artisan test` 77 passed (448 assertions); backend statements 78.56% ≥ 73 gate (clover parse). `npm run typecheck` clean; `npm test` 736/736; `npm run coverage` exit 0 (thresholds 82/82/84.5/86.5 pass). Dashboard e2e unaffected (spec searches plain names, no `%`/`_` needles).
+
+**Gotchas:**
+- SQLite (tests) does NOT treat backslash as an implicit LIKE escape — the explicit `ESCAPE '\'` clause is required there AND keeps MySQL (prod) consistent. My first attempt emitted `ESCAPE '\\'` (PHP double-quote over-escape) and SQLite rejected it with "ESCAPE expression must be a single character"; the fix is `"name LIKE ? ESCAPE '\\'"` in PHP which produces a single `'\'` in SQL.
+- Escape order matters: `\` must be replaced before `%`/`_` so a literal backslash in the needle doesn't accidentally escape the `%`/`_` escape sequences added by the same pass (str_replace does a single simultaneous pass here, so `\\`→`\\\\` and `%`→`\%` compose correctly).
+- Backend coverage rose 78.48 → 78.56% statements (the 2 new tests cover the new branch).
+
+**Next (still open):** nothing product-facing remains for backlog #1 — the dashboard feature is complete (backend search/sort/archive/archive-hidden + frontend search/sort/archive/archived-view/thumbnails + 77 backend / 736 frontend / 4 dashboard e2e tests, plus the LIKE-wildcard hardening). Only the optional manual smoke checklist from the Goal's Verification section is unimplemented; everything else ships pending the loop gate.
