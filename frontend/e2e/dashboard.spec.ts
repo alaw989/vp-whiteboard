@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { login, seedDashboardBoards } from './helpers'
+import { cleanupDashboardBoards, login, seedDashboardBoards } from './helpers'
 
 /**
  * Dashboard (index.vue) search / sort / archive / thumbnail coverage.
@@ -20,6 +20,17 @@ function openCardMenu(page: Page, name: string) {
 }
 
 test.describe('Whiteboard dashboard', () => {
+  test.beforeEach(() => {
+    // Tidy the dev DB of any dash-* fixtures from prior/interrupted runs so
+    // search assertions below stay scoped to boards seeded by THIS test.
+    cleanupDashboardBoards()
+  })
+  test.afterAll(() => {
+    // Leave the dev DB as clean as we found it (the last test's fixtures
+    // would otherwise accumulate across runs).
+    cleanupDashboardBoards()
+  })
+
   test('search filters the card grid and shows an empty state on no match', async ({ page }) => {
     const token = Date.now().toString(36)
     seedDashboardBoards(token)

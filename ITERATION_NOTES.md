@@ -130,4 +130,18 @@ Board dashboard (backlog #1): add search, sort (recent/alphabetical), thumbnails
 - e2e dashboard tests each seed a UNIQUE `Date.now()`-based token and search it first, because the index route returns ALL boards (no per-user filter) and the dev DB accumulates boards across runs. Leftover `dash-*` seed boards were cleaned from the dev DB after the run.
 - `openCardMenu` helper hovers the card first — the overflow dots button is `opacity-0 group-hover:opacity-100`, so hover is needed for realistic actionability.
 
-**Next (still open):** the Goal is functionally complete (backend search/sort/archive + frontend search/sort/archive/thumbnails + full test coverage incl. e2e). Remaining nice-to-haves from the Goal: the manual smoke checklist (non-owner 403 via a second user — covered by backend tests `test_non_owner_cannot_archive/unarchive`); consider deleting leftover `dash-*` fixture boards between e2e runs or adding cleanup if the dev DB grows. Backlog #1 dashboard is done pending the loop gate.
+**Next (still open):** the Goal is functionally complete (backend search/sort/archive + frontend search/sort/archive/thumbnails + full test coverage incl. e2e). Remaining nice-to-haves from the Goal: the manual smoke checklist (non-owner 403 via a second user — covered by backend tests `test_non_owner_cannot_archive/unarchive`). Backlog #1 dashboard is done pending the loop gate.
+
+### Iteration 6 (this session) — e2e fixture-board cleanup (`dash-*` accumulation)
+
+**Changed:**
+- `frontend/e2e/helpers.ts`: new `cleanupDashboardBoards()` — deletes every `Whiteboard` with `name LIKE 'dash-%'` via tinker (same recipe as `seedDashboardBoards`). Idempotent.
+- `frontend/e2e/dashboard.spec.ts`: `test.beforeEach(cleanupDashboardBoards)` (tidy any leftover/interrupted-run fixtures so search assertions stay scoped to THIS test's seeds) + `test.afterAll(cleanupDashboardBoards)` (leave the dev DB as clean as found — without it, the LAST test's 3 boards accumulate across runs; a `beforeEach`-only cleanup still left 3 behind after a green run).
+
+**Verification (green):** `npm run typecheck` clean; `npm test` 736/736; `php artisan test` 75 passed (442 assertions). `dashboard.spec.ts` 4/4 e2e pass (52s); after the run `dash-*` count back to 0 (verified via tinker), total board count unaffected.
+
+**Gotchas:**
+- The index route lists ALL boards (no per-user filter), so leftover `dash-*` fixtures from interrupted runs can skew a later dashboard run's search scoping — the `beforeEach` cleanup makes every run start from zero regardless of what a crashed prior run left behind.
+- Cleanup is scoped strictly to `dash-%` names, so it can never touch real/user boards (current DB has 1638 boards, none `dash-*`).
+
+**Next (still open):** nothing product-facing remains for backlog #1 — the dashboard feature is complete (backend search/sort/archive/archive-hidden + frontend search/sort/archive/archived-view/thumbnails + 75 backend / 736 frontend / 4 dashboard e2e tests). Only the optional manual smoke checklist from the Goal's Verification section is unimplemented (non-owner 403 is already covered by `test_non_owner_cannot_archive`/`test_non_owner_cannot_unarchive`); everything else ships pending the loop gate.

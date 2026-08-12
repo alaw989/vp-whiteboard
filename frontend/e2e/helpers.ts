@@ -134,6 +134,25 @@ echo App\\Models\\Whiteboard::where('name', 'like', 'dash-${token}%')->count();
   })
 }
 
+/**
+ * Delete every `dash-%` fixture board the dashboard spec seeded (or any that a
+ * previous/interrupted run left behind). The index route lists ALL boards (no
+ * per-user filter), so without cleanup the dev DB would accumulate dash-*
+ * rows across runs. Call at the START of each dashboard test so the DB is tidy
+ * even when a prior run crashed mid-test. Idempotent.
+ */
+export function cleanupDashboardBoards() {
+  const php = `
+App\\Models\\Whiteboard::where('name', 'like', 'dash-%')->delete();
+echo App\\Models\\Whiteboard::where('name', 'like', 'dash-%')->count();
+`.trim()
+  execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+    cwd: '..',
+    stdio: 'pipe',
+    encoding: 'utf8',
+  })
+}
+
 /** Create a fresh whiteboard and return its UUID (from the redirected URL). */
 export async function createWhiteboard(page: Page): Promise<string> {
   await page.goto('/whiteboard/new')
