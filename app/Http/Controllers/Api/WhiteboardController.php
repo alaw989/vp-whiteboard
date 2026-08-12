@@ -12,7 +12,7 @@ class WhiteboardController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Whiteboard::query()->orderBy('updated_at', 'desc');
+        $query = Whiteboard::active()->orderBy('updated_at', 'desc');
 
         if ($request->has('project_id')) {
             $query->where('project_id', $request->project_id);
@@ -149,6 +149,61 @@ class WhiteboardController extends Controller
         return response()->json([
             'success' => true,
         ]);
+    }
+
+    public function archive(Request $request, string $id): JsonResponse
+    {
+        return $this->setArchived($request, $id, true);
+    }
+
+    public function unarchive(Request $request, string $id): JsonResponse
+    {
+        return $this->setArchived($request, $id, false);
+    }
+
+    private function setArchived(Request $request, string $id, bool $archived): JsonResponse
+    {
+        $whiteboard = Whiteboard::find($id);
+
+        if (!$whiteboard) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Whiteboard not found',
+            ], 404);
+        }
+
+        if (! $this->ownsBoard($request, $whiteboard)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'You do not have permission to archive this whiteboard',
+            ], 403);
+        }
+
+        $whiteboard->update([
+            'archived_at' => $archived ? now() : null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $whiteboard->fresh(),
+        ]);
+    }
+
+    /**
+     * Owner check for archive/unarchive — same rule as update/destroy/share:
+     * the authenticated board owner, or the creator of a legacy guest board
+     * (admin bypass).
+     */
+    private function ownsBoard(Request $request, Whiteboard $whiteboard): bool
+    {
+        $user = $request->user();
+        if (! $user) {
+            return false;
+        }
+        if ($whiteboard->user_id) {
+            return (string) $whiteboard->user_id === (string) $user->id;
+        }
+        return $user->isAdmin() || (string) $whiteboard->created_by === (string) $user->id;
     }
 
     /**

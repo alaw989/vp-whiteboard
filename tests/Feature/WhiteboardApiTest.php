@@ -188,4 +188,107 @@ class WhiteboardApiTest extends TestCase
         $response->assertOk();
         $this->assertDatabaseHas('whiteboards', ['id' => $whiteboard->id, 'name' => 'Renamed']);
     }
+
+    public function test_owner_can_archive_whiteboard(): void
+    {
+        $owner = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id]);
+
+        $response = $this->actingAs($owner)->postJson("/api/whiteboards/{$whiteboard->id}/archive");
+
+        $response->assertOk();
+        $this->assertNotNull($response->json('data.archived_at'));
+        $this->assertDatabaseHas('whiteboards', ['id' => $whiteboard->id]);
+        $this->assertNotNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_owner_can_unarchive_whiteboard(): void
+    {
+        $owner = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id, 'archived_at' => now()]);
+
+        $response = $this->actingAs($owner)->postJson("/api/whiteboards/{$whiteboard->id}/unarchive");
+
+        $response->assertOk();
+        $this->assertNull($response->json('data.archived_at'));
+        $this->assertNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_archive_unarchive_round_trip_restores_board(): void
+    {
+        $owner = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id]);
+
+        $this->actingAs($owner)->postJson("/api/whiteboards/{$whiteboard->id}/archive")->assertOk();
+        $this->actingAs($owner)->postJson("/api/whiteboards/{$whiteboard->id}/unarchive")->assertOk();
+
+        $this->assertNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_archived_whiteboards_hidden_from_default_index(): void
+    {
+        $user = User::factory()->create();
+        $active = Whiteboard::factory()->create(['user_id' => $user->id]);
+        Whiteboard::factory()->create(['user_id' => $user->id, 'archived_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson('/api/whiteboards');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $active->id);
+    }
+
+    public function test_unauthenticated_user_cannot_archive_whiteboard(): void
+    {
+        $whiteboard = Whiteboard::factory()->create();
+
+        $this->postJson("/api/whiteboards/{$whiteboard->id}/archive")->assertUnauthorized();
+        $this->assertNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_non_owner_cannot_archive_whiteboard(): void
+    {
+        $owner = User::factory()->create();
+        $intruder = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id]);
+
+        $response = $this->actingAs($intruder)->postJson("/api/whiteboards/{$whiteboard->id}/archive");
+
+        $response->assertForbidden();
+        $this->assertNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_non_owner_cannot_unarchive_whiteboard(): void
+    {
+        $owner = User::factory()->create();
+        $intruder = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create(['user_id' => $owner->id, 'archived_at' => now()]);
+
+        $response = $this->actingAs($intruder)->postJson("/api/whiteboards/{$whiteboard->id}/unarchive");
+
+        $response->assertForbidden();
+        $this->assertNotNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_legacy_creator_can_archive_guest_whiteboard(): void
+    {
+        $user = User::factory()->create();
+        $whiteboard = Whiteboard::factory()->create([
+            'user_id' => null,
+            'created_by' => (string) $user->id,
+        ]);
+
+        $response = $this->actingAs($user)->postJson("/api/whiteboards/{$whiteboard->id}/archive");
+
+        $response->assertOk();
+        $this->assertNotNull($whiteboard->fresh()->archived_at);
+    }
+
+    public function test_archiving_nonexistent_whiteboard_returns_404(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->postJson('/api/whiteboards/nonexistent-id/archive')->assertNotFound();
+        $this->actingAs($user)->postJson('/api/whiteboards/nonexistent-id/unarchive')->assertNotFound();
+    }
 }

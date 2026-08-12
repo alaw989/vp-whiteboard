@@ -20,11 +20,21 @@ class Whiteboard extends Model
         'created_by',
         'share_token',
         'canvas_state',
+        'archived_at',
     ];
 
     protected $casts = [
         'canvas_state' => 'array',
+        'archived_at' => 'datetime',
     ];
+
+    /**
+     * Exclude archived whiteboards from the default listing.
+     */
+    public function scopeActive($query)
+    {
+        return $query->whereNull('archived_at');
+    }
 
     public function user()
     {

@@ -39,3 +39,22 @@ Board dashboard (backlog #1): add search, sort (recent/alphabetical), thumbnails
 - Loop gate: `cd frontend && npm run typecheck && npm test && cd .. && php artisan test` (690 frontend + 58 backend must stay green). Frontend coverage via `npm run coverage` (≥ 82/82/84.5/86.5). Backend coverage via clover parse (≥ 73).
 - e2e: run `npm run test:e2e` before shipping (clean stack, TEST=1). Existing 65-67 specs must stay green; new dashboard.spec.ts (if added) too.
 - Manual smoke (local stack): create 2 boards, verify dashboard shows both; search filters; sort flips order; archive hides a card; unarchive brings it back; non-owner 403 via a second user.
+
+## State
+
+### Iteration 1 (this session) — Backend archive support (part 1 of backlog #1)
+
+**Changed:**
+- New migration `database/migrations/2026_08_11_000000_add_archived_at_to_whiteboards_table.php` — nullable `archived_at` timestamp on `whiteboards`.
+- `app/Models/Whiteboard.php`: `archived_at` added to `$fillable` + cast `datetime`; new `scopeActive()` (`whereNull('archived_at')`).
+- `app/Http/Controllers/Api/WhiteboardController.php`: `index()` now uses `Whiteboard::active()` (archived boards hidden from default list, existing project_id/created_by/limit params preserved). Added `archive()` / `unarchive()` (delegating to a private `setArchived()`) + a private `ownsBoard()` helper (owner OR legacy guest-board creator with string-cast compare — admin bypass). Returns 404 unknown id, 403 non-owner.
+- `routes/api.php`: `POST /whiteboards/{id}/archive` + `/unarchive` added inside the existing `auth:sanctum` whiteboards group.
+- `tests/Feature/WhiteboardApiTest.php`: +9 tests — owner archive, owner unarchive, round-trip, archived-hidden-from-index, unauthenticated 401, non-owner 403 (archive + unarchive), legacy creator can archive, nonexistent 404.
+
+**Verification (green):** `php artisan test` 67 passed (419 assertions); `npm run typecheck` clean; `npm test` 690/690. Backend coverage measured 78.14% statements (clover parse) vs 73% gate. Migration applies fresh in-memory via RefreshDatabase (no factory changes needed — column nullable).
+
+**Gotchas:**
+- The ownership rule's `created_by === $user->id` strict compare was a pre-existing bug (string `created_by` vs int `$user->id` never matches). Fixed in the new `ownsBoard()` with `(string)` casts on both sides — mirrors how `user_id` is already string-cast in `update()`. The old inline check in `update()`/`destroy()` was left untouched to keep this diff focused.
+- No `server/` (Nitro) routes touched, so no `~/utils` import trap.
+
+**Next (still open):** (1) `?search=` (LIKE on name) + `?sort=recent|alpha` on backend `index()` + tests; (2) frontend `index.vue`: search input + Recent/Alphabetical sort control + Archive menu item calling `/archive` + unarchive path; (3) client-side canvas thumbnails from `canvas_state.elements` in a pure helper + unit tests; (4) optional `dashboard.spec.ts` e2e. See Goal for full spec.
