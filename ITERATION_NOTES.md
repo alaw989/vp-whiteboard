@@ -176,6 +176,18 @@ Board dashboard (backlog #1): add search, sort (recent/alphabetical), thumbnails
 
 **Next (still open):** nothing product-facing remains for backlog #1 — the dashboard feature is complete (backend search/sort/archive/archive-hidden + frontend search/sort/archive/archived-view/thumbnails + 77 backend / 739 frontend / 4 dashboard e2e tests, plus LIKE-wildcard hardening and the stale-response guard). Only the optional manual smoke checklist from the Goal's Verification section is unimplemented; everything else ships pending the loop gate.
 
+### Iteration 10 (this session) — Fix dashboard listener + debounce-timer leaks on unmount
+
+**Changed:**
+- `frontend/pages/index.vue`: (a) the `document.addEventListener('click', ...)` that closes the card overflow menu on outside click was registered in `onMounted` but never removed — every dashboard visit added a permanent document-level listener (leak; menu-close handler kept firing for the lifetime of the SPA session). Now registered via a named `handleDocumentClick` and removed in `onUnmounted` (matches the existing pattern in WhiteboardToolbar/LayerSelector/WhiteboardCanvas). (b) The 250ms search-debounce `searchTimer` was never cleared on unmount — a pending timer could fire `refresh()` after the page was torn down (extra `/api/whiteboards` request + `pending` flag flip on a dead component). `onUnmounted` now clears it too.
+
+**Verification (green):** `npm run typecheck` clean; `npm test` 744/744 (56 files); `npm run coverage` exit 0 (all-files 84.47 stmts ≥82, 84.83 branches ≥84.5, 87.15 funcs ≥86.5, 84.47 lines ≥82); `php artisan test` 77 passed (448 assertions). No backend change. No `server/` (Nitro) routes touched → no `~/utils` import trap.
+
+**Gotchas:**
+- The cleanup is a lifecycle-only change in an `.vue` file, which is excluded from the vitest coverage scope (components are covered by the playwright suite), so no new unit tests were warranted; the dashboard e2e spec (4 tests) exercises this page and remains the regression guard.
+
+**Next (still open):** nothing product-facing remains for backlog #1 — the dashboard feature is complete (backend search/sort/archive/archive-hidden + frontend search/sort/archive/archived-view/thumbnails + 77 backend / 744 frontend / 4 dashboard e2e tests, plus LIKE-wildcard hardening, the stale-response guard, consistent empty-state copy, and now leak-free unmount cleanup). Only the optional manual smoke checklist from the Goal's Verification section is unimplemented; everything else ships pending the loop gate.
+
 ### Iteration 9 (this session) — Fix misleading Archived-view empty-state title
 
 **Changed:**

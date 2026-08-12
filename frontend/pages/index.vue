@@ -447,10 +447,20 @@ async function handleUnarchive(whiteboard: Whiteboard) {
 }
 
 // Close menu on outside click
+function handleDocumentClick() {
+  menuOpenId.value = null
+}
+
 onMounted(() => {
-  document.addEventListener('click', () => {
-    menuOpenId.value = null
-  })
+  document.addEventListener('click', handleDocumentClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleDocumentClick)
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
 })
 
 async function handleLogout() {
