@@ -4,6 +4,7 @@
 // when the exported PDF is zoomed or printed (the raster PNG is kept as the
 // background for image/document layers). No Konva imports — fully unit-testable.
 import type jsPDF from 'jspdf'
+import { GState } from 'jspdf'
 import { getStroke } from 'perfect-freehand'
 import type {
   ArcElement,
@@ -170,9 +171,9 @@ function drawStroke(pdf: jsPDF, data: StrokeElement): void {
   if (outline.length < 2) return
   setStrokeStyle(pdf, data.color, 1)
   setFillStyle(pdf, data.color)
-  pdf.setGState({ opacity: data.tool === 'highlighter' ? 0.5 : 1 })
+  pdf.setGState(new GState({ opacity: data.tool === 'highlighter' ? 0.5 : 1 }))
   fillStrokePolyline(pdf, outline.map(([x, y]) => ({ x, y })), true)
-  pdf.setGState({ opacity: 1 })
+  pdf.setGState(new GState({ opacity: 1 }))
 }
 
 function drawLine(pdf: jsPDF, data: LineElement): void {

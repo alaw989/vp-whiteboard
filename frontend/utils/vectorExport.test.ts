@@ -177,14 +177,14 @@ describe('stroke (pen/highlighter)', () => {
     const pdf = makePdf()
     draw(pdf, element('stroke', { points, color: '#000', size: 8, tool: 'pen', smooth: true }))
     expect(pdf.fillStroke).toHaveBeenCalledTimes(1)
-    expect(pdf.setGState).toHaveBeenCalledWith({ opacity: 1 })
+    expect(pdf.setGState).toHaveBeenCalledWith(expect.objectContaining({ opacity: 1 }))
     expect(pdf.moveTo.mock.calls.length).toBeGreaterThan(0)
   })
 
   it('renders highlighters at 50% opacity', () => {
     const pdf = makePdf()
     draw(pdf, element('stroke', { points, color: '#ff0', size: 12, tool: 'highlighter', smooth: true }))
-    expect(pdf.setGState).toHaveBeenCalledWith({ opacity: 0.5 })
+    expect(pdf.setGState).toHaveBeenCalledWith(expect.objectContaining({ opacity: 0.5 }))
   })
 
   it('skips degenerate strokes with fewer than 2 points', () => {

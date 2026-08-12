@@ -34,6 +34,23 @@ Vector/SVG export (backlog #1): add a vector layer to PDF export so shapes stay 
 
 ## State
 
+### Iteration 3 (Aug 12, 2026)
+
+**Changed — fixed a real bug: strokes were silently dropped from the vector PDF layer.**
+- **Root cause:** `drawStroke` called `pdf.setGState({ opacity: ... })` with a **plain object**. jsPDF 4.1.0's `setGState` requires a `GState` instance (`t.equals is not a function` throws at runtime). Every pen/highlighter stroke threw inside the per-element try/catch in `drawElementsToPdf` and was silently skipped — the vector layer emitted NOTHING for strokes, so exported PDFs fell back to the raster for pen marks (still a valid PDF, which is why the e2e `%PDF` magic + size assertions and the original smoke test stayed green).
+- **Fix (`frontend/utils/vectorExport.ts`):** `import { GState } from 'jspdf'`; `drawStroke` now calls `pdf.setGState(new GState({ opacity: tool === 'highlighter' ? 0.5 : 1 }))` and resets with `new GState({ opacity: 1 })`.
+- **Regression test (`frontend/utils/vectorExport.smoke.test.ts`):** new test "actually renders a pen and highlighter stroke into the PDF content stream" — draws both with a REAL jsPDF, decompresses the FlateDecode content streams (`inflateSync`), and asserts: a fill+stroke path op (`\bB\b`) is emitted, the ExtGState dict contains `/ca 0.5`, and the content stream references it via a `gs` operator. **Verified it fails against the old code** (reverted call → test red) and passes with the fix. Also added `pdfRawText`/`pdfStreamText` helpers (raw output for object dicts; zlib-decompressed streams for operators).
+- **Tests updated:** the two `setGState` mock assertions in `vectorExport.test.ts` now use `expect.objectContaining({ opacity: ... })` since the arg is a `GState` instance (which carries extra `id`/`objectNumber` fields).
+
+**Verification:** `npm run typecheck` clean; `npm test` 806/806 (was 805; +1 smoke test); `npm run coverage` exit 0 (All files 85.46 lines / 85.86 branches / 87.97 funcs ≥ gates 82/82/84.5/86.5); `vectorExport.ts` still 100 stmts / 99.11 branches / 100 funcs. `php artisan test` 77 passed — backend untouched.
+
+**Next:** The only remaining uncovered line is `outline.length < 2` (line 171, unreachable with real perfect-freehand on ≥2 points). Final gate: run `npm run test:e2e` on a clean stack (Nuxt `TEST=1`) to confirm `frontend/e2e/export.spec.ts` still passes — the vector layer now actually draws strokes, so the pen-stroke case produces a PDF with both raster + vector content.
+
+**Gotchas:**
+- jsPDF 4.1.0 `setGState` needs `new GState({...})`, NOT a plain object — a plain object throws at runtime and the element is silently skipped (masked by `drawElementsToPdf`'s per-element try/catch). The old smoke test only asserted `%PDF` magic + size, so it couldn't catch missing strokes.
+- jsPDF maps `GState({ opacity })` → `/ca` (fill+stroke alpha) in an ExtGState object dict and references it with a `gs` operator in the content stream — assert `/ca 0.5` against raw output and `gs` against the DECOMPRESSED stream (`compress: true` FlateDecodes content).
+- jsPDF emits `B` for `fillStroke()` (what strokes use), not `f`.
+
 ### Iteration 2 (Aug 12, 2026)
 
 **Changed:**
