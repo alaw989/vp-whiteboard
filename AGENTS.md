@@ -185,8 +185,8 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 
 ## Loop-driven work (opencode-loop) — operational notes
 
-- One goal per run: `~/.local/bin/opencode-loop 20 --goal "<goal>" --check "cd frontend && npm run typecheck && npm test"`. The loop makes one focused improvement per iteration, commits atomically, and halts after `STALL_LIMIT` (3) consecutive no-progress iterations.
-- The harness is **legacy single-branch mode ONLY** — the former `--pr` per-iteration PR lifecycle was removed (flag rejected). One commit per iteration on a pre-created branch; push only with `--push`.
+- One goal per run: `~/.local/bin/opencode-loop 20 --goal "<goal>" --check "cd frontend && npm run typecheck && npm test"`. The loop makes one focused improvement per iteration and halts after `STALL_LIMIT` (3) consecutive no-progress iterations.
+- The harness is **legacy single-branch mode ONLY** — the former `--pr` per-iteration PR lifecycle was removed (flag rejected). By default the work is left **UNCOMMITTED** for the operator to review and commit; pass `--commit` to restore per-iteration atomic commits (`--push` is ignored while uncommitted).
 - The worktree must be clean at start; it refuses to run on `master`/`main`/`develop`. Branches are now **stacked locally** — goal N branches off goal N−1's local branch, NOT off `develop` (see the operator-gated local-first protocol below).
 - Launch **detached**: `setsid nohup ~/.local/bin/opencode-loop ... > logs/opencode-loop-run.out 2>&1 < /dev/null &`. A plain `&` job dies if the launching shell's process group is reaped (e.g. a monitoring command hitting its timeout). Never `pkill -f "opencode-loop"` or `pkill -f "server/ws-server.js"` broadly — the pattern matches the invoking shell itself.
 - The `--check` runs from the repo root (harness fixed Aug 2026) and writes to `logs/opencode-loop-*/iter-N.check.log`. A failed check is a real gate — do NOT ship a stalled iteration without re-running the check yourself.
@@ -199,9 +199,9 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 
 1. **Stack locally** — create `feat/<slug>` or `fix/<slug>` off the **previous goal's local branch** (or off `develop` if it's the first goal of the stack). Write `ITERATION_NOTES.md` with the Goal (first line MUST byte-match the `--goal` string you will pass) + a Context section (root causes, repro, verification, gotchas). Commit it so the tree is clean.
 2. Launch the loop detached: `setsid nohup ~/.local/bin/opencode-loop 20 --goal "<exact goal>" --check "cd frontend && npm run typecheck && npm test" > logs/opencode-loop-run.out 2>&1 < /dev/null &`.
-3. Monitor; on ALL_DONE (or stall/halt), re-verify `npm run typecheck && npm test` + run `npm run test:e2e` yourself.
+3. Monitor; on ALL_DONE (or stall/halt), re-verify `npm run typecheck && npm test` + run `npm run test:e2e` yourself. **The loop leaves work uncommitted** — review `git status`/`git diff` and commit the goal's work (or stack the next goal from it) only when you intend to keep it.
 4. **Harden after EVERY goal** before stacking the next: `pint --test` → `composer test` → `npm run test` → `phpstan analyse` → `npm run build` → coverage pre-check (`composer coverage` + `npx vitest run --coverage`). Fix anything red.
-5. **No push/PR/deploy per goal** — multiple goals land locally first, stacked. Shipping is **operator-gated, one major feature per PR**: when the operator says ship, push the branch, run the full gate, create **ONE PR** to `develop` and **STOP to notify the operator** before merging. Merge in stacked order, deploy, live-verify per the CI/CD protocol.
+5. **No push/PR/deploy per goal** — multiple goals land locally first, stacked. Shipping is **operator-gated, one major feature per PR**: when the operator says ship, commit the goal's uncommitted work, push the branch, run the full gate, create **ONE PR** to `develop` and **STOP to notify the operator** before merging. Merge in stacked order, deploy, live-verify per the CI/CD protocol.
 6. Backlog ✅ marks happen **at merge time** (not loop completion); continue to the next item when asked.
 
 **Backlog (in priority order):**
