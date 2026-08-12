@@ -99,9 +99,9 @@
         <div v-if="whiteboards.length === 0" class="text-center py-16">
           <div class="bg-white rounded-xl shadow-sm p-8 max-w-md mx-auto">
             <Icon name="mdi:clipboard-text-outline" class="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h2 class="text-xl font-semibold text-gray-900 mb-2">{{ emptyTitle }}</h2>
-            <p class="text-gray-600 mb-6">{{ emptyMessage }}</p>
-            <NuxtLink v-if="!showArchived" to="/whiteboard/new" class="btn-primary">
+            <h2 class="text-xl font-semibold text-gray-900 mb-2">{{ emptyState.title }}</h2>
+            <p class="text-gray-600 mb-6">{{ emptyState.message }}</p>
+            <NuxtLink v-if="emptyState.showCreate" to="/whiteboard/new" class="btn-primary">
               <Icon name="mdi:plus" class="w-5 h-5" />
               Create Whiteboard
             </NuxtLink>
@@ -267,7 +267,7 @@
 <script setup lang="ts">
 import type { Whiteboard, ApiResponse } from '~/types'
 import type { DashboardSort } from '~/utils/dashboard'
-import { buildIndexQuery, createLatestWins } from '~/utils/dashboard'
+import { buildIndexQuery, createLatestWins, getDashboardEmptyState } from '~/utils/dashboard'
 import { toastSuccess, toastError } from '~/composables/useToast'
 import { useApprovals } from '~/composables/useApprovals'
 
@@ -297,17 +297,9 @@ const latestWins = createLatestWins()
 
 const archivedToggleTestid = computed(() => (showArchived.value ? 'archived-toggle-on' : 'archived-toggle-off'))
 
-const emptyTitle = computed(() => (search.value.trim() ? 'No Matching Whiteboards' : 'No Whiteboards Yet'))
-
-const emptyMessage = computed(() => {
-  if (search.value.trim()) {
-    return `No whiteboards match "${search.value.trim()}".`
-  }
-  if (showArchived.value) {
-    return 'Nothing has been archived yet.'
-  }
-  return 'Create your first collaborative whiteboard to start collaborating with your team.'
-})
+const emptyState = computed(() =>
+  getDashboardEmptyState({ search: search.value, showArchived: showArchived.value }),
+)
 
 async function refresh() {
   const requestId = latestWins.next()

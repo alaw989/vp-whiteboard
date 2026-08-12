@@ -5,6 +5,7 @@ import {
   createLatestWins,
   drawThumbnail,
   getCanvasBounds,
+  getDashboardEmptyState,
   getElementBounds,
 } from '~/utils/dashboard'
 
@@ -81,6 +82,53 @@ describe('createLatestWins', () => {
     expect(guard.isLatest(a)).toBe(false)
     expect(guard.isLatest(b)).toBe(false)
     expect(guard.isLatest(c)).toBe(true)
+  })
+})
+
+describe('getDashboardEmptyState', () => {
+  it('defaults to a fresh-account empty state with a create CTA', () => {
+    expect(getDashboardEmptyState()).toEqual({
+      title: 'No Whiteboards Yet',
+      message: 'Create your first collaborative whiteboard to start collaborating with your team.',
+      showCreate: true,
+    })
+    expect(getDashboardEmptyState({ showArchived: false })).toEqual({
+      title: 'No Whiteboards Yet',
+      message: 'Create your first collaborative whiteboard to start collaborating with your team.',
+      showCreate: true,
+    })
+  })
+
+  it('shows the search-miss state with the trimmed query echoed back', () => {
+    expect(getDashboardEmptyState({ search: 'foundation' })).toEqual({
+      title: 'No Matching Whiteboards',
+      message: 'No whiteboards match "foundation".',
+      showCreate: true,
+    })
+  })
+
+  it('treats a whitespace-only search as no search at all', () => {
+    expect(getDashboardEmptyState({ search: '   ', showArchived: true })).toEqual({
+      title: 'No Archived Whiteboards',
+      message: 'Nothing has been archived yet.',
+      showCreate: false,
+    })
+  })
+
+  it('shows the archived-empty state with no create CTA', () => {
+    expect(getDashboardEmptyState({ showArchived: true })).toEqual({
+      title: 'No Archived Whiteboards',
+      message: 'Nothing has been archived yet.',
+      showCreate: false,
+    })
+  })
+
+  it('keeps the search-miss title while searching within the archived view, without a create CTA', () => {
+    expect(getDashboardEmptyState({ search: '  slab  ', showArchived: true })).toEqual({
+      title: 'No Matching Whiteboards',
+      message: 'No whiteboards match "slab".',
+      showCreate: false,
+    })
   })
 })
 

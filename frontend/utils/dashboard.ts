@@ -38,6 +38,42 @@ export function createLatestWins(): { next(): number; isLatest(id: number): bool
   }
 }
 
+export interface DashboardEmptyState {
+  title: string
+  message: string
+  /** Whether the empty state offers a "Create Whiteboard" CTA. */
+  showCreate: boolean
+}
+
+/**
+ * Empty-state copy for the dashboard grid. Each view (search hit vs archived
+ * vs fresh account) gets distinct, non-contradictory title + message. The
+ * create CTA only appears in the active view (archived boards can't be created
+ * from the archive list).
+ */
+export function getDashboardEmptyState(opts: { search?: string; showArchived?: boolean } = {}): DashboardEmptyState {
+  const query = opts.search?.trim()
+  if (query) {
+    return {
+      title: 'No Matching Whiteboards',
+      message: `No whiteboards match "${query}".`,
+      showCreate: !opts.showArchived,
+    }
+  }
+  if (opts.showArchived) {
+    return {
+      title: 'No Archived Whiteboards',
+      message: 'Nothing has been archived yet.',
+      showCreate: false,
+    }
+  }
+  return {
+    title: 'No Whiteboards Yet',
+    message: 'Create your first collaborative whiteboard to start collaborating with your team.',
+    showCreate: true,
+  }
+}
+
 export interface IndexQueryOptions {
   search?: string
   sort?: DashboardSort

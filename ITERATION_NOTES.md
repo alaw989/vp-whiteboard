@@ -175,3 +175,17 @@ Board dashboard (backlog #1): add search, sort (recent/alphabetical), thumbnails
 - Existing e2e (dashboard.spec.ts, 4 tests) unaffected — it fills the whole query at once, so the overlap race never fires; this guard is defensive hardening for realistic typing.
 
 **Next (still open):** nothing product-facing remains for backlog #1 — the dashboard feature is complete (backend search/sort/archive/archive-hidden + frontend search/sort/archive/archived-view/thumbnails + 77 backend / 739 frontend / 4 dashboard e2e tests, plus LIKE-wildcard hardening and the stale-response guard). Only the optional manual smoke checklist from the Goal's Verification section is unimplemented; everything else ships pending the loop gate.
+
+### Iteration 9 (this session) — Fix misleading Archived-view empty-state title
+
+**Changed:**
+- `frontend/utils/dashboard.ts`: new pure helper `getDashboardEmptyState({ search, showArchived })` returns `{ title, message, showCreate }` for the grid's empty state — each view (search-miss / archived / fresh account) gets distinct, non-contradictory copy, and the Create CTA only renders in the active view. Fixes a real UX bug: the Archived view (toggle on, nothing archived) showed title "No Whiteboards Yet" next to message "Nothing has been archived yet." — now "No Archived Whiteboards".
+- `frontend/pages/index.vue`: replaced the `emptyTitle`/`emptyMessage` computeds + `v-if="!showArchived"` on the CTA with a single `emptyState` computed from `getDashboardEmptyState` (behavior-preserving except the Archived-view title fix).
+- `frontend/utils/dashboard.test.ts`: +5 tests (`getDashboardEmptyState`): fresh-account default (with/without explicit `showArchived:false`), search-miss title + trimmed-query echo, whitespace-only search treated as no search, archived-empty state with no CTA, and search-within-archived (search title wins, still no CTA).
+
+**Verification (green):** `npm run typecheck` clean; `npm test` 744/744 (56 files; +5); `npm run coverage` exit 0 (all-files 84.47 stmts ≥82, 84.83 branches ≥84.5, 87.15 funcs ≥86.5, 84.47 lines ≥82; `dashboard.ts` itself 99.18/83.48/100); `php artisan test` 77 passed (448 assertions). No backend change. No `server/` (Nitro) routes touched → no `~/utils` import trap.
+
+**Gotchas:**
+- The search-miss state must keep the Create CTA in the ACTIVE view (original template used `v-if="!showArchived"` regardless of search) — `showCreate: !opts.showArchived` in every branch preserves that exactly; the e2e empty-state test (`No Matching Whiteboards`) still passes since title/message copy is unchanged for the active+search case.
+
+**Next (still open):** nothing product-facing remains for backlog #1 — the dashboard feature is complete (backend search/sort/archive/archive-hidden + frontend search/sort/archive/archived-view/thumbnails + 77 backend / 744 frontend / 4 dashboard e2e tests, plus LIKE-wildcard hardening, the stale-response guard, and now consistent empty-state copy). Only the optional manual smoke checklist from the Goal's Verification section is unimplemented; everything else ships pending the loop gate.
