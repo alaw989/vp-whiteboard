@@ -34,6 +34,19 @@ Vector/SVG export (backlog #1): add a vector layer to PDF export so shapes stay 
 
 ## State
 
+### Iteration 4 (Aug 12, 2026)
+
+**Changed — closed the last coverage gap: `vectorExport.ts` is now 100/100/100.**
+- **New `frontend/utils/vectorExport.degenerate.test.ts`** (1 test): `vi.mock('perfect-freehand')` to return `[]`, then asserts `drawElementToPdf` skips a stroke whose perfect-freehand outline has < 2 points (the `outline.length < 2` guard on line 171 — unreachable with real getStroke on ≥2 points, so it needs the module mock). Asserts `moveTo`/`lineTo`/`fillStroke` are all untouched. Separate file so the real-`getStroke` behavior in `vectorExport.test.ts` (63 tests) and `vectorExport.smoke.test.ts` is unaffected.
+
+**Verification:** `npm run typecheck` clean; `npm test` 807/807 (was 806; +1); `npm run coverage` exit 0 — `vectorExport.ts` **100 stmts / 100 branches / 100 funcs** (previously 99.11 branches), All files 85.46 lines / 85.92 branches / 87.97 funcs ≥ gates 82/82/84.5/86.5. Backend untouched.
+
+**Next:** The module is complete and fully covered. Final gate remains the post-loop e2e run (`npm run test:e2e` on a clean stack with Nuxt `TEST=1`) to confirm `frontend/e2e/export.spec.ts` (empty + image-layer + pen-stroke cases) still passes with the vector layer drawing real content on top of the raster.
+
+**Gotchas:**
+- The `outline.length < 2` guard can only be exercised by mocking `perfect-freehand` (real `getStroke` returns ≥2 points on ≥2 input points). Put the mock in its own test file with `vi.mock` BEFORE the `import { drawElementToPdf }` so hoisting applies cleanly; keep the mock's `getStroke` signature `(): number[][]` typed so typecheck stays green.
+- Per-element try/catch in `drawElementsToPdf` means any real renderer throw is silently skipped — a malformed stroke never aborts the export (why the pre-fix `setGState` bug was invisible to the e2e `%PDF` magic + size assertions).
+
 ### Iteration 3 (Aug 12, 2026)
 
 **Changed — fixed a real bug: strokes were silently dropped from the vector PDF layer.**
