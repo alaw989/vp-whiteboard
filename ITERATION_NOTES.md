@@ -57,4 +57,18 @@ Board dashboard (backlog #1): add search, sort (recent/alphabetical), thumbnails
 - The ownership rule's `created_by === $user->id` strict compare was a pre-existing bug (string `created_by` vs int `$user->id` never matches). Fixed in the new `ownsBoard()` with `(string)` casts on both sides — mirrors how `user_id` is already string-cast in `update()`. The old inline check in `update()`/`destroy()` was left untouched to keep this diff focused.
 - No `server/` (Nitro) routes touched, so no `~/utils` import trap.
 
-**Next (still open):** (1) `?search=` (LIKE on name) + `?sort=recent|alpha` on backend `index()` + tests; (2) frontend `index.vue`: search input + Recent/Alphabetical sort control + Archive menu item calling `/archive` + unarchive path; (3) client-side canvas thumbnails from `canvas_state.elements` in a pure helper + unit tests; (4) optional `dashboard.spec.ts` e2e. See Goal for full spec.
+**Next (still open):** (1) ✅ DONE in Iteration 2 — backend `?search=` + `?sort=` + tests; (2) frontend `index.vue`: search input + Recent/Alphabetical sort control + Archive menu item calling `/archive` + unarchive path; (3) client-side canvas thumbnails from `canvas_state.elements` in a pure helper + unit tests; (4) optional `dashboard.spec.ts` e2e. See Goal for full spec.
+
+### Iteration 2 (this session) — Backend search + sort on `index()`
+
+**Changed:**
+- `app/Http/Controllers/Api/WhiteboardController.php@index()`: now reads `?sort=` (default `recent` → `orderBy('updated_at','desc')`; `alpha` → `orderBy('name','asc')`, any other value falls back to recent) and `?search=` (LIKE `%search%` on `name`). Both compose with the existing `project_id`/`created_by`/`limit` params and the `active()` (archived-hidden) scope.
+- `tests/Feature/WhiteboardApiTest.php`: +6 tests — search filters by name (case-insensitive LIKE), search empty result, recent default order (updated_at desc), alpha order (name asc), unknown sort falls back to recent, search excludes archived boards.
+
+**Verification (green):** `php artisan test --filter=WhiteboardApiTest` 29 passed (65 assertions). Full `php artisan test` run pending the loop gate.
+
+**Gotchas:**
+- Sort validation is lenient by design: anything other than `alpha` is treated as `recent`, matching the Goal ("recent = updated_at desc; alpha = name asc"). Test pins the fallback behavior.
+- `?search=` uses raw LIKE with no escaping of `%`/`_` in the needle — acceptable for this feature (dashboard search, auth-protected route); flag if a wildcard-injection concern arises.
+
+**Next (still open):** frontend `index.vue` — search input (debounced server-side `?search=` refetch to stay consistent with sort) + Recent/Alphabetical sort control + Archive menu item calling `POST /archive` + an unarchive path (likely an "Archived" toggle or restore from a filtered view); then client-side canvas thumbnails from `canvas_state.elements` in a pure helper (`utils/dashboard.ts`) + unit tests; optional `dashboard.spec.ts` e2e.

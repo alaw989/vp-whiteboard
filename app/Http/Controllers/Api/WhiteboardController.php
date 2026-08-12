@@ -12,8 +12,18 @@ class WhiteboardController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Whiteboard::active()->orderBy('updated_at', 'desc');
+        $query = Whiteboard::active();
 
+        $sort = $request->query('sort', 'recent');
+        if ($sort === 'alpha') {
+            $query->orderBy('name', 'asc');
+        } else {
+            $query->orderBy('updated_at', 'desc');
+        }
+
+        if ($search = $request->query('search')) {
+            $query->where('name', 'like', '%'.$search.'%');
+        }
         if ($request->has('project_id')) {
             $query->where('project_id', $request->project_id);
         }
