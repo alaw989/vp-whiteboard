@@ -186,7 +186,8 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 ## Loop-driven work (opencode-loop) — operational notes
 
 - One goal per run: `~/.local/bin/opencode-loop 20 --goal "<goal>" --check "cd frontend && npm run typecheck && npm test"`. The loop makes one focused improvement per iteration, commits atomically, and halts after `STALL_LIMIT` (3) consecutive no-progress iterations.
-- Branch off `develop`; the worktree must be clean at start; it refuses to run on `master`/`main`/`develop`.
+- The harness is **legacy single-branch mode ONLY** — the former `--pr` per-iteration PR lifecycle was removed (flag rejected). One commit per iteration on a pre-created branch; push only with `--push`.
+- The worktree must be clean at start; it refuses to run on `master`/`main`/`develop`. Branches are now **stacked locally** — goal N branches off goal N−1's local branch, NOT off `develop` (see the operator-gated local-first protocol below).
 - Launch **detached**: `setsid nohup ~/.local/bin/opencode-loop ... > logs/opencode-loop-run.out 2>&1 < /dev/null &`. A plain `&` job dies if the launching shell's process group is reaped (e.g. a monitoring command hitting its timeout). Never `pkill -f "opencode-loop"` or `pkill -f "server/ws-server.js"` broadly — the pattern matches the invoking shell itself.
 - The `--check` runs from the repo root (harness fixed Aug 2026) and writes to `logs/opencode-loop-*/iter-N.check.log`. A failed check is a real gate — do NOT ship a stalled iteration without re-running the check yourself.
 - The loop **re-seeds** `ITERATION_NOTES.md` (wiping any extra Context section) whenever the `--goal` arg doesn't byte-match the Goal section's first line — make them identical, or put critical context inside the goal string, or re-add the Context section after seeding.
@@ -194,14 +195,14 @@ Every change ships through this exact pipeline. Run tests locally before submitt
 
 ## Backlog & session resume (the loop-driven continuous improvement program)
 
-**Trigger phrase:** when the user says something like *"let's get to work on the next item in the backlog with the opencode-loop"* (or just "next item in the backlog"), DO THIS: pick the **next open item** in the backlog below, and run the standard loop workflow for it:
+**Trigger phrase:** when the user says something like *"let's get to work on the next item in the backlog with the opencode-loop"* (or just "next item in the backlog"), DO THIS: pick the **next open item** in the backlog below, and run the operator-gated local-first loop workflow for it:
 
-1. `git checkout develop && git pull origin develop`; create `fix/<slug>` or `feat/<slug>` branch off develop.
-2. Write `ITERATION_NOTES.md` with the Goal (first line MUST byte-match the `--goal` string you will pass) + a Context section (root causes, repro, verification, gotchas). Commit it so the tree is clean.
-3. Launch the loop detached: `setsid nohup ~/.local/bin/opencode-loop 20 --goal "<exact goal>" --check "cd frontend && npm run typecheck && npm test" > logs/opencode-loop-run.out 2>&1 < /dev/null &`.
-4. Monitor; on ALL_DONE (or stall/halt), re-verify `npm run typecheck && npm test` + run `npm run test:e2e` yourself before shipping.
-5. Ship per the CI/CD protocol: push branch → PR to `develop` → wait `test` + `backend-test` → merge → watch staging deploy → verify on staging (relay bound, WS works) → PR `develop`→`master` → merge → watch prod deploy → verify.
-6. Mark the item done below (move to "Shipped") and continue to the next item when asked.
+1. **Stack locally** — create `feat/<slug>` or `fix/<slug>` off the **previous goal's local branch** (or off `develop` if it's the first goal of the stack). Write `ITERATION_NOTES.md` with the Goal (first line MUST byte-match the `--goal` string you will pass) + a Context section (root causes, repro, verification, gotchas). Commit it so the tree is clean.
+2. Launch the loop detached: `setsid nohup ~/.local/bin/opencode-loop 20 --goal "<exact goal>" --check "cd frontend && npm run typecheck && npm test" > logs/opencode-loop-run.out 2>&1 < /dev/null &`.
+3. Monitor; on ALL_DONE (or stall/halt), re-verify `npm run typecheck && npm test` + run `npm run test:e2e` yourself.
+4. **Harden after EVERY goal** before stacking the next: `pint --test` → `composer test` → `npm run test` → `phpstan analyse` → `npm run build` → coverage pre-check (`composer coverage` + `npx vitest run --coverage`). Fix anything red.
+5. **No push/PR/deploy per goal** — multiple goals land locally first, stacked. Shipping is **operator-gated, one major feature per PR**: when the operator says ship, push the branch, run the full gate, create **ONE PR** to `develop` and **STOP to notify the operator** before merging. Merge in stacked order, deploy, live-verify per the CI/CD protocol.
+6. Backlog ✅ marks happen **at merge time** (not loop completion); continue to the next item when asked.
 
 **Backlog (in priority order):**
 1. **Vector/SVG export** — emit shapes as a vector layer in the PDF (crisp at any zoom) alongside the raster PNG/PDF.
