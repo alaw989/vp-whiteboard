@@ -1,3 +1,5 @@
+import { shareResolverReason, type ShareInvalidReason } from '~/utils/shareStatus'
+
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const laravelUrl = (config.public.laravelUrl as string) || 'http://localhost:8000'
