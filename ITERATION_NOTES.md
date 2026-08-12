@@ -34,6 +34,20 @@ Vector/SVG export (backlog #1): add a vector layer to PDF export so shapes stay 
 
 ## State
 
+### Iteration 5 (Aug 12, 2026)
+
+**Changed — final gate passed: ran the export e2e spec on a clean stack.**
+- Confirmed ports 3000/3001/8002 free, then `npx playwright test e2e/export.spec.ts` (playwright boots its own stack: `php artisan serve :8002` + Nuxt `TEST=1` on :3000 + WS relay on :3001). **3/3 passed** — empty canvas, uploaded-image document layer (no taint toast), and drawn pen stroke all produce a valid `%PDF` with non-trivial size and `.png`/`.pdf` filenames. The vector layer draws real content on top of the raster in the pen-stroke case and the PDF stays valid (matches the smoke test, which proved strokes are no longer silently skipped after the Iteration 3 `GState` fix).
+- No code changes this iteration — this was the sole remaining gate.
+
+**Verification:** export e2e 3/3 green. `npm run typecheck` + `npm test` + `npm run coverage` already green at iteration 4 (807 tests, `vectorExport.ts` 100/100/100, gates 82/82/84.5/86.5); backend untouched (77).
+
+**Next:** None — Goal fully achieved. Vector/SVG export (backlog #1) is complete: vector layer added (`frontend/utils/vectorExport.ts`), wired into `exportAsPDF` (optional 3rd `elements` param, gated on `length > 0`), page passes `elements.value`, API/filename/progress/toast behavior unchanged, full unit + branch coverage, e2e contract green. Ship per the operator-gated protocol (one PR to `develop`, full gate, then promote to `master`).
+
+**Gotchas:**
+- The e2e webServer boots a REAL Nuxt + Laravel + WS relay; the stack is clean only when :3000/:3001/:8002 are free (a stale Nuxt on :3000 collides with the fresh one). `TEST=1` keeps the devtools overlay off the toolbar.
+- The export spec's assertions are deliberately coarse (`%PDF` magic + size > 100) — the vector layer's correctness is owned by the unit tests (63 in `vectorExport.test.ts` + smoke + degenerate-mock), not e2e.
+
 ### Iteration 4 (Aug 12, 2026)
 
 **Changed — closed the last coverage gap: `vectorExport.ts` is now 100/100/100.**
