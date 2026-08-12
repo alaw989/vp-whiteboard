@@ -31,3 +31,23 @@ Vector/SVG export (backlog #1): add a vector layer to PDF export so shapes stay 
 - No `server/routes/*` changes — if any helper is added under `server/` it needs explicit imports (rate-limit loop lesson).
 - Do NOT change `ExportFormat`/`ExportOptions` shape, `generateFilename`, or the dialog testids (`export-format-pdf`, `export-submit`).
 - jsPDF coordinate system: unit 'px', origin top-left (same as Konva) — no scale flip needed.
+
+## State
+
+### Iteration 1 (Aug 12, 2026)
+
+**Changed:**
+- **New `frontend/utils/vectorExport.ts`** — pure, Konva-free module (`drawElementsToPdf(pdf, elements)` + `drawElementToPdf(pdf, element)` + exported `arcToCubics`/`ellipseToCubics`). Draws every vectorizable element type as jsPDF primitives on top of the raster: line, rectangle (neg-width normalized, S/FD), circle (S/FD), ellipse (native when unrotated; bezier path when rotated), polyline (closed via `close()`), arc (via existing `arcToPolylinePoints`), fillet-arc (shortest-sweep bezier matching the canvas), revision-cloud (via existing `revisionCloudPath`), arrow (shaft + filled `triangle` head), dimension (dim/extension lines + ticks + rotated `courier` text), stamp (`roundedRect` FD + centered bold text), text, text-annotation (leader line + text), measurement-distance (line + 2 anchor circles + label). Strokes use `perfect-freehand`'s `getStroke` (same as the canvas) filled as a polygon; highlighter draws at `setGState({opacity:0.5})`. `image`/`measurement-area`/unknown types fall through (already in the raster). Malformed elements are skipped via per-element try/catch so one bad element can't abort the export.
+- **`frontend/composables/useExport.ts`** — `exportAsPDF(stage, options, elements = [])` gains an optional 3rd `elements` param; after `pdf.addImage` it calls `drawElementsToPdf` when `elements.length > 0`. Progress/toast/error/filename behavior unchanged. `ExportFormat`/`ExportOptions` untouched.
+- **`frontend/pages/whiteboard/[id].vue`** — `confirmExport` passes `elements.value` to `exportAsPDF`.
+- **Tests:** `frontend/utils/vectorExport.test.ts` (29 tests, mock jsPDF) covering all types + unknown fallback + malformed-skip + bezier math; `frontend/utils/vectorExport.smoke.test.ts` (1 test) proves a real jsPDF instance + vector layer still yields `%PDF` magic with size > 100 (e2e contract); `useExport.test.ts` +2 (vector layer called with pdf+elements; skipped when no elements).
+
+**Verification:** `npm run typecheck` clean; `npm test` 787/787 (was 755; +29 vector, +1 smoke, +2 useExport); `npm run coverage` exit 0 (All files 85.01 lines / 84.66 branches / 87.62 funcs ≥ gates). Backend untouched (still 77). e2e `%PDF` magic contract verified via the real-jsPDF smoke test; full `npm run test:e2e` still needs the clean Nuxt `TEST=1` stack per the loop's post-run verification.
+
+**Next:** Run the full e2e suite on a clean stack to confirm `frontend/e2e/export.spec.ts` (empty + image-layer + pen-stroke cases) still passes — the vector layer only adds drawing commands after `addImage`, so the PDF stays valid, but e2e is the final gate. Optionally bump vectorExport branch coverage (79.6) toward the overall gate.
+
+**Gotchas:**
+- jsPDF 4.1.0: `polyline()` and `context2d.ellipse` DON'T exist (only `context2d.arc`); use `moveTo/lineTo/curveTo` + manual bezier for rotated ellipses/arcs. `ellipse(x,y,rx,ry,style)` has no rotation arg.
+- jsPDF `setGState({opacity})` works for the highlighter translucency; `text(text,x,y,{baseline:'middle'})` is valid.
+- The Konva stroke is a filled perfect-freehand outline — the vector layer must reuse `getStroke`, not just connect points, or strokes look thin/wrong next to the raster.
+- Keep the `drawElementsToPdf` call gated on `elements.length > 0` so the existing exportAsPDF tests (no elements arg) stay behavior-identical.
