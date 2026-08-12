@@ -44,8 +44,24 @@ function render() {
   drawable.value = drawThumbnail(el, props.elements ?? [])
 }
 
+let resizeObserver: ResizeObserver | null = null
+
 onMounted(() => {
   nextTick(render)
+  // Re-render when the card's box size changes so the backing store stays at
+  // the current CSS size × DPI — the responsive grid reflows on viewport
+  // resize (md:grid-cols-2 lg:grid-cols-3), and browser zoom / moving the
+  // window across monitors changes devicePixelRatio. Without this the canvas
+  // keeps its mount-time size and the preview goes blurry or stale.
+  if (typeof ResizeObserver !== 'undefined' && canvasEl.value) {
+    resizeObserver = new ResizeObserver(() => nextTick(render))
+    resizeObserver.observe(canvasEl.value)
+  }
+})
+
+onUnmounted(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
 })
 
 watch(

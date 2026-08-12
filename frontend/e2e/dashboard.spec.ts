@@ -141,5 +141,12 @@ test.describe('Whiteboard dashboard', () => {
     // …while a board with no drawable elements keeps the canvas hidden and
     // shows the fallback icon instead (drawable=false → invisible class).
     await expect(empty.locator('canvas').first()).toBeHidden()
+
+    // A viewport resize reflows the responsive grid (lg:grid-cols-3 →
+    // md:grid-cols-2) and the thumbnail's ResizeObserver must re-render — the
+    // canvas stays visible/backed rather than going stale or blurry.
+    await page.setViewportSize({ width: 800, height: 900 })
+    await expect(withContent.locator('canvas').first()).toBeVisible({ timeout: 10000 })
+    await expect(empty.locator('canvas').first()).toBeHidden()
   })
 })
