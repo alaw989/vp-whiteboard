@@ -1,18 +1,20 @@
 <template>
   <div
-    class="w-full h-24 rounded-lg bg-slate-50 overflow-hidden flex items-center justify-center"
+    class="w-full h-24 rounded-lg bg-slate-50 overflow-hidden relative"
   >
     <canvas
-      v-if="drawable"
       ref="canvasEl"
       class="w-full h-full"
+      :class="drawable ? '' : 'invisible'"
       :aria-label="`Thumbnail preview of ${name}`"
     />
     <div
-      v-else
-      class="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center"
+      v-if="!drawable"
+      class="absolute inset-0 flex items-center justify-center"
     >
-      <Icon name="mdi:clipboard-text" class="w-5 h-5 text-blue-600" />
+      <div class="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+        <Icon name="mdi:clipboard-text" class="w-5 h-5 text-blue-600" />
+      </div>
     </div>
   </div>
 </template>

@@ -111,3 +111,23 @@ Board dashboard (backlog #1): add search, sort (recent/alphabetical), thumbnails
 - `mdi:archive-restore` does NOT exist in the bundled icon set — used `mdi:archive-arrow-up` (archive) / `mdi:archive-arrow-down` (unarchive) instead.
 
 **Next (still open):** optional `dashboard.spec.ts` e2e (search filters, sort flips order, archive hides card, unarchive restores) — valuable but optional; verify existing e2e stays green first (login helper waits for `/(whiteboards?|$)/` and `createWhiteboard` uses `/whiteboard/new` — both untouched). Then run the manual smoke from the Goal's Verification section (2 boards, search, sort, archive, unarchive, non-owner 403).
+
+### Iteration 5 (this session) — Dashboard e2e spec + 3 real bugs it caught
+
+**Changed:**
+- NEW `frontend/e2e/dashboard.spec.ts` — 4 tests covering the whole feature end-to-end with a seeded, deterministic fixture (`seedDashboardBoards` in `helpers.ts` creates `dash-{token}-alpha/-beta/-empty` owned by the e2e owner with known `updated_at` ordering): search filters + search-aware empty state, sort flips Recent/A–Z order, archive hides a card + archived view lists + unarchives it, thumbnail canvas vs icon fallback.
+- **Bug fix 1 — thumbnails NEVER rendered (real product bug the e2e caught):** `WhiteboardThumbnail.vue` used `canvas v-if="drawable"` — a chicken-and-egg: on mount the canvas didn't exist so `canvasEl` was null, `render()` early-returned, and `drawable` never flipped true. Every dashboard card silently showed the icon fallback. Fixed by always rendering the canvas (`:class="drawable ? '' : 'invisible'"`) with the fallback icon absolutely overlaid when not drawable (`v-if="!drawable"`). `visibility:hidden` (not `display:none`) preserves layout so `clientWidth` is measurable on mount.
+- **Bug fix 2 — `include_archived=1` returned EVERYTHING:** the Archived view showed active boards too, so the "Nothing has been archived yet." empty state never appeared and unarchive didn't remove a card from the list. `WhiteboardController@index` now uses a new `Whiteboard::archived()` scope (`whereNotNull('archived_at')`); default view still `active()`. Tests updated: `test_index_include_archived_returns_archived_boards` → `..._returns_only_archived_boards` (count 1, only archived), `test_index_include_archived_respects_search_and_sort` seeds both boards archived so search/sort compose.
+- **Bug fix 3 — seed fixture `updated_at` never persisted:** `$alpha->update(['updated_at' => ...])` was silently dropped (mass-assignment guard — `updated_at` isn't in `$fillable`). `seedDashboardBoards` uses direct attribute assignment + `save()` instead (confirmed working via tinker probe).
+
+**Verification (green):**
+- `npm run typecheck` clean; `npm test` 736/736; `npm run coverage` exit 0 (stmts 84.4 ≥82, branches 84.76 ≥84.5, funcs 87.06 ≥86.5, lines 84.4 ≥82).
+- `php artisan test` 75 passed (442 assertions); backend statements 75.07% ≥ 73 gate (clover parse).
+- e2e: `dashboard.spec.ts` 4/4; **full suite 71/71** (up from 67 — all pre-existing specs green, no flakes this run).
+
+**Gotchas:**
+- The thumbnail canvas is now ALWAYS in the DOM (hidden via `invisible`), so e2e/unit assertions must check visibility (`toBeVisible`/`toBeHidden`), NOT element count.
+- e2e dashboard tests each seed a UNIQUE `Date.now()`-based token and search it first, because the index route returns ALL boards (no per-user filter) and the dev DB accumulates boards across runs. Leftover `dash-*` seed boards were cleaned from the dev DB after the run.
+- `openCardMenu` helper hovers the card first — the overflow dots button is `opacity-0 group-hover:opacity-100`, so hover is needed for realistic actionability.
+
+**Next (still open):** the Goal is functionally complete (backend search/sort/archive + frontend search/sort/archive/thumbnails + full test coverage incl. e2e). Remaining nice-to-haves from the Goal: the manual smoke checklist (non-owner 403 via a second user — covered by backend tests `test_non_owner_cannot_archive/unarchive`); consider deleting leftover `dash-*` fixture boards between e2e runs or adding cleanup if the dev DB grows. Backlog #1 dashboard is done pending the loop gate.

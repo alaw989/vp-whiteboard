@@ -88,6 +88,52 @@ echo App\\Models\\User::where('email', '${email}')->value('status');
   })
 }
 
+/**
+ * Seed deterministic whiteboards for the dashboard spec (search/sort/archive
+ * tests need known names + updated_at ordering). Creates three boards owned by
+ * the e2e owner:
+ *   - `dash-{token}-alpha`: has one rectangle element (thumbnail renders), updated 2h ago
+ *   - `dash-{token}-beta`:  has one rectangle element, updated 1h ago
+ *   - `dash-{token}-empty`: empty canvas_state (thumbnail falls back to icon)
+ * Pass a UNIQUE token per test (e.g. Date.now()) so search assertions stay
+ * scoped even though the boards accumulate in the dev DB across runs.
+ * Idempotent per token (each token creates fresh rows).
+ */
+export function seedDashboardBoards(token: string) {
+  const php = `
+$owner = App\\Models\\User::where('email', '${E2E_OWNER_EMAIL}')->first();
+if (!$owner) { echo 'no-owner'; return; }
+$canvas = ['version' => 1, 'elements' => [
+  ['id' => 'e1', 'type' => 'rectangle', 'userId' => 'u1', 'userName' => 'E2E', 'timestamp' => 1,
+   'data' => ['x' => 10, 'y' => 10, 'width' => 100, 'height' => 60, 'stroke' => '#000000', 'strokeWidth' => 2]],
+]];
+$alpha = App\\Models\\Whiteboard::create([
+  'user_id' => $owner->id, 'name' => 'dash-${token}-alpha', 'created_by' => (string) $owner->id,
+  'canvas_state' => $canvas, 'share_token' => \\Illuminate\\Support\\Str::random(8),
+]);
+$alpha->updated_at = now()->subHours(2);
+$alpha->save();
+$beta = App\\Models\\Whiteboard::create([
+  'user_id' => $owner->id, 'name' => 'dash-${token}-beta', 'created_by' => (string) $owner->id,
+  'canvas_state' => $canvas, 'share_token' => \\Illuminate\\Support\\Str::random(8),
+]);
+$beta->updated_at = now()->subHours(1);
+$beta->save();
+$empty = App\\Models\\Whiteboard::create([
+  'user_id' => $owner->id, 'name' => 'dash-${token}-empty', 'created_by' => (string) $owner->id,
+  'canvas_state' => ['version' => 1, 'elements' => []], 'share_token' => \\Illuminate\\Support\\Str::random(8),
+]);
+$empty->updated_at = now()->subHours(3);
+$empty->save();
+echo App\\Models\\Whiteboard::where('name', 'like', 'dash-${token}%')->count();
+`.trim()
+  execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+    cwd: '..',
+    stdio: 'pipe',
+    encoding: 'utf8',
+  })
+}
+
 /** Create a fresh whiteboard and return its UUID (from the redirected URL). */
 export async function createWhiteboard(page: Page): Promise<string> {
   await page.goto('/whiteboard/new')

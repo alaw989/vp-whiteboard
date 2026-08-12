@@ -36,6 +36,14 @@ class Whiteboard extends Model
         return $query->whereNull('archived_at');
     }
 
+    /**
+     * Only archived whiteboards (the dashboard's Archived view).
+     */
+    public function scopeArchived($query)
+    {
+        return $query->whereNotNull('archived_at');
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);

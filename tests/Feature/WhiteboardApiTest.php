@@ -368,30 +368,29 @@ class WhiteboardApiTest extends TestCase
             ->assertJsonCount(0, 'data');
     }
 
-    public function test_index_include_archived_returns_archived_boards(): void
+    public function test_index_include_archived_returns_only_archived_boards(): void
     {
         $user = User::factory()->create();
-        $active = Whiteboard::factory()->create(['user_id' => $user->id, 'updated_at' => now()]);
+        Whiteboard::factory()->create(['user_id' => $user->id, 'updated_at' => now()]);
         $archived = Whiteboard::factory()->create(['user_id' => $user->id, 'archived_at' => now(), 'updated_at' => now()->subMinute()]);
 
         $response = $this->actingAs($user)->getJson('/api/whiteboards?include_archived=1');
 
         $response->assertOk()
-            ->assertJsonCount(2, 'data')
-            ->assertJsonPath('data.0.id', $active->id)
-            ->assertJsonPath('data.1.id', $archived->id);
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $archived->id);
     }
 
     public function test_index_include_archived_respects_search_and_sort(): void
     {
         $user = User::factory()->create();
-        $archivedZeta = Whiteboard::factory()->create(['name' => 'Zeta Old', 'archived_at' => now(), 'updated_at' => now()->subDays(5)]);
-        $activeAlpha = Whiteboard::factory()->create(['name' => 'Alpha New', 'user_id' => $user->id, 'updated_at' => now()]);
+        Whiteboard::factory()->create(['name' => 'Zeta Old', 'archived_at' => now(), 'updated_at' => now()->subDays(5)]);
+        $archivedAlpha = Whiteboard::factory()->create(['name' => 'Alpha New', 'archived_at' => now(), 'updated_at' => now()]);
 
         $response = $this->actingAs($user)->getJson('/api/whiteboards?include_archived=1&sort=alpha&search=Alpha');
 
         $response->assertOk()
             ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.id', $activeAlpha->id);
+            ->assertJsonPath('data.0.id', $archivedAlpha->id);
     }
 }
