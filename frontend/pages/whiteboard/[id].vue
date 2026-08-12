@@ -39,6 +39,25 @@
       </div>
 
       <div class="flex items-center gap-3">
+        <!-- Save State (auto-save persistence indicator — distinct from WS health) -->
+        <div
+          data-testid="save-state-badge"
+          role="status"
+          aria-live="polite"
+          :class="[
+            'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-300',
+            saveStateVisuals.classes
+          ]"
+          :title="saveStateTitle"
+        >
+          <Icon
+            :name="saveStateVisuals.icon"
+            class="w-3.5 h-3.5"
+            :class="saveStateVisuals.iconSpin && 'animate-spin'"
+          />
+          <span>{{ saveStateVisuals.text }}</span>
+        </div>
+
         <!-- Connection Status -->
         <div
           :class="[
@@ -398,6 +417,7 @@ import { toastSuccess, toastError } from '~/composables/useToast'
 import { useCommandEngine } from '~/composables/useCommandEngine'
 import { useLayers } from '~/composables/useLayers'
 import { usePDFRendering } from '~/composables/usePDFRendering'
+import { useSaveState } from '~/composables/useSaveState'
 
 // Canvas instance type combining composable return with exposed methods
 type CanvasInstanceType = ReturnType<typeof useCollaborativeCanvas> & {
@@ -783,7 +803,10 @@ watch(whiteboardData, (data) => {
     canvasInstance.value.importState(data.data.canvas_state)
     // Initial load from API — don't mark as dirty (the import triggers
     // the elements watcher, but there's nothing new to save).
-    nextTick(() => { dirty = false })
+    nextTick(() => {
+      dirty = false
+      saveState.reset()
+    })
   }
 
   // Re-render PDF document layers that need rendering
@@ -843,6 +866,44 @@ const saveInterval = ref<ReturnType<typeof setInterval> | null>(null)
 let saveInProgress = false
 let dirty = false
 
+// Save-state indicator — pure state machine driving the header badge. It is
+// passive: it only reflects the existing auto-save flow (it never triggers
+// saves or changes the cadence).
+const saveState = useSaveState()
+
+const saveStateVisuals = computed(() => {
+  const visuals = {
+    saving: {
+      text: 'Saving…',
+      icon: 'mdi:loading',
+      iconSpin: true,
+      classes: 'bg-blue-900/50 text-blue-400 border border-blue-700',
+    },
+    saved: {
+      text: 'Saved',
+      icon: 'mdi:check-circle',
+      iconSpin: false,
+      classes: 'bg-green-900/50 text-green-400 border border-green-700',
+    },
+    offline: {
+      text: `Offline – retrying (${saveState.retryCount.value})`,
+      icon: 'mdi:alert-circle',
+      iconSpin: false,
+      classes: 'bg-red-900/50 text-red-400 border border-red-700',
+    },
+  }
+  return visuals[saveState.state.value]
+})
+
+const saveStateTitle = computed(() => {
+  const lastFailed = saveState.lastFailedAt.value
+  if (saveState.state.value === 'offline' && lastFailed !== null) {
+    return `Last save failed at ${new Date(lastFailed).toLocaleTimeString()} — retrying automatically`
+  }
+  if (saveState.state.value === 'saving') return 'Saving your changes…'
+  return 'All changes saved'
+})
+
 async function saveCanvasState() {
   const instance = canvasInstance.value
   if (!instance || saveInProgress) return
@@ -851,6 +912,7 @@ async function saveCanvasState() {
   if (!dirty) return
 
   saveInProgress = true
+  saveState.onSaveStart()
   try {
     const state = instance.exportState()
     await $api(`/api/whiteboards/${whiteboardId}`, {
@@ -858,8 +920,10 @@ async function saveCanvasState() {
       body: { canvas_state: state },
     })
     dirty = false
+    saveState.onSaveSuccess()
   } catch (e) {
     console.warn('[auto-save] failed to persist canvas state:', e)
+    saveState.onSaveFailure()
   } finally {
     saveInProgress = false
   }
@@ -875,6 +939,7 @@ onMounted(() => {
     () => canvasInstance.value?.elements,
     () => {
       dirty = true
+      saveState.markDirty()
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(saveCanvasState, 2000)
     },
@@ -885,7 +950,10 @@ onMounted(() => {
   // so auto-save persists them within the next 30s interval tick.
   const docLayers = canvasInstance.value?.yDocumentLayers
   if (docLayers) {
-    const onDocLayersChange = () => { dirty = true }
+    const onDocLayersChange = () => {
+      dirty = true
+      saveState.markDirty()
+    }
     docLayers.observe(onDocLayersChange)
     onUnmounted(() => { docLayers.unobserve(onDocLayersChange) })
   }
