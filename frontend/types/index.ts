@@ -6,6 +6,7 @@ export interface Whiteboard {
   created_by: string
   created_at: string
   updated_at: string
+  archived_at?: string | null
   canvas_state?: CanvasState
 }
 
