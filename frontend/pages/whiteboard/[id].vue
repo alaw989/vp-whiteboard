@@ -1027,7 +1027,7 @@ async function confirmExport(format: 'png' | 'pdf') {
   if (format === 'png') {
     await exportAsPNG(stage, { filename })
   } else if (format === 'pdf') {
-    await exportAsPDF(stage, { filename })
+    await exportAsPDF(stage, { filename }, elements.value)
   }
 
   // Close dialog after export completes
