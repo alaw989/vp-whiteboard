@@ -14,6 +14,7 @@ import {
   isAuthed,
   clearAuthCache,
   isEntryPoint,
+  logBinaryRelay,
   HEARTBEAT_TIMEOUT_MS,
   EMPTY_ROOM_CLEANUP_DELAY_MS,
   removeClientFromRoom,
@@ -166,6 +167,26 @@ describe('ws-server — relayClientMessage (frame routing = live-edit propagatio
     expect(b.sent).toEqual([])
   })
 
+  it('treats a client pong (server-heartbeat reply) as a keepalive — refreshes lastPong and does NOT forward to peers', () => {
+    // The relay's runHeartbeat sends {type:'ping'} every 30s and expects the
+    // client to answer. That reply (a client {type:'pong'}) must refresh the
+    // socket's lastPong so the server heartbeat actually keeps the connection
+    // alive — a backgrounded tab whose own 25s keepalive timer is throttled by
+    // the browser would otherwise be pruned at the 60s heartbeat timeout.
+    const a = fakeWs('a')
+    const b = fakeWs('b')
+    const room = new Set([a, b])
+    a.lastPong = 0
+
+    const result = relayClientMessage(a, Buffer.from(JSON.stringify({ type: 'pong' })), room)
+
+    if (result.kind !== 'json') throw new Error('expected json frame')
+    expect(result.type).toBe('pong')
+    expect(a.lastPong).toBeGreaterThan(0)
+    expect(a.sent).toEqual([])
+    expect(b.sent).toEqual([])
+  })
+
   it('relays a binary Yjs frame verbatim to all other OPEN peers — regression for dropped deltas', () => {
     // A SYNC_DELTA frame (0x02 type byte + Yjs update payload). Its bytes are
     // not valid UTF-8 JSON, so it MUST be treated as binary and relayed, never
@@ -269,6 +290,49 @@ describe('ws-server — runHeartbeat (server-side stale-connection pruning)', ()
     expect(healthy.terminated).toBe(false)
     expect(stale.terminated).toBe(true)
     expect(closed.terminated).toBe(false)
+  })
+})
+
+describe('ws-server — logBinaryRelay (rate-limited binary logging → no 4.9GB log)', () => {
+  function fakeWs(id: string) {
+    return { id, roomId: `room-${id}` }
+  }
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('logs large (full-state) frames immediately on every occurrence', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const ws = fakeWs('a')
+    const t0 = 1_000_000
+
+    expect(logBinaryRelay(ws, 1024, 2, t0)).toBe(true)
+    expect(logBinaryRelay(ws, 2048, 1, t0 + 10)).toBe(true)
+    expect(logBinaryRelay(ws, 500_000, 3, t0 + 20)).toBe(true)
+    expect(spy).toHaveBeenCalledTimes(3)
+  })
+
+  it('summarizes small (delta/cursor) frames at most once per window per connection', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const ws = fakeWs('a')
+    const t0 = 1_000_000
+
+    expect(logBinaryRelay(ws, 120, 1, t0)).toBe(true) // first small frame logs
+    expect(logBinaryRelay(ws, 121, 1, t0 + 500)).toBe(false) // within window — silent
+    expect(logBinaryRelay(ws, 122, 1, t0 + 1000)).toBe(false)
+    expect(logBinaryRelay(ws, 123, 1, t0 + 2000)).toBe(true) // window elapsed — summary
+    expect(spy).toHaveBeenCalledTimes(2)
+  })
+
+  it('rate-limits each connection independently', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const a = fakeWs('a')
+    const b = fakeWs('b')
+    const t0 = 1_000_000
+
+    logBinaryRelay(a, 100, 1, t0)
+    expect(logBinaryRelay(a, 100, 1, t0 + 100)).toBe(false) // a throttled
+    expect(logBinaryRelay(b, 100, 1, t0 + 100)).toBe(true) // b still logs
+    expect(spy).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -819,6 +883,81 @@ describe('ws-server — isAuthed (connection gate: owners + share viewers)', () 
     await expect(isAuthed(creds, 'room-1', undefined, req(), API_URL)).resolves.toBe(true)
 
     expect(calls).toHaveLength(1)
+  })
+
+  it('does NOT cache a verdict when Laravel is unreachable (status 0) — a later recovery is picked up on the very next connection', async () => {
+    // The relay fails CLOSED (deny) on a fetch error/timeout, but that verdict
+    // must not be cached: a transient Laravel blip during a deploy would
+    // otherwise poison the auth cache for AUTH_CACHE_TTL_MS and reject every
+    // subsequent connection with the same credential.
+    let failing = true
+    const calls: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (failing) throw new Error('connect ECONNREFUSED')
+      calls.push(url)
+      return {
+        status: 200,
+        json: async () => ({ success: true, data: { whiteboard_id: 'room-1' } }),
+      }
+    })
+    const creds = 'vp_share_token=tok-recover'
+
+    await expect(isAuthed(creds, 'room-1', undefined, req(), API_URL)).resolves.toBe(false)
+    expect(calls).toHaveLength(0)
+
+    // Laravel comes back: the SAME credential must succeed immediately.
+    failing = false
+    await expect(isAuthed(creds, 'room-1', undefined, req(), API_URL)).resolves.toBe(true)
+    expect(calls).toEqual([`${API_URL}/api/shares/tok-recover`])
+  })
+
+  it('caches a NEGATIVE verdict only briefly, so a transient rejection does not lock out a credential for the full minute', async () => {
+    // A 500 (or any non-200) from the share resolver produces ok:false. That
+    // verdict must expire after a SHORT window (NEGATIVE_AUTH_CACHE_TTL_MS),
+    // not AUTH_CACHE_TTL_MS, so a momentary failure self-heals instead of
+    // blocking every share-viewer connection for 60s.
+    vi.useFakeTimers()
+    try {
+      const calls = mockFetch({
+        [`${API_URL}/api/shares/tok-neg`]: { status: 500 },
+      })
+      const creds = 'vp_share_token=tok-neg'
+
+      await expect(isAuthed(creds, 'room-1', undefined, req(), API_URL)).resolves.toBe(false)
+      expect(calls).toHaveLength(1)
+
+      // Within the short negative window the cached verdict is reused.
+      await expect(isAuthed(creds, 'room-1', undefined, req(), API_URL)).resolves.toBe(false)
+      expect(calls).toHaveLength(1)
+
+      // After the negative TTL expires the credential is re-checked (a recovery
+      // is observed), whereas the positive cache would have held for 60s.
+      vi.advanceTimersByTime(6000)
+      await expect(isAuthed(creds, 'room-1', undefined, req(), API_URL)).resolves.toBe(false)
+      expect(calls).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('caches a positive verdict for the full AUTH_CACHE_TTL_MS but the negative cache stays short', async () => {
+    vi.useFakeTimers()
+    try {
+      const calls = mockFetch({
+        [`${API_URL}/api/user`]: { status: 200, body: { id: 7 } },
+      })
+      const creds = 'laravel_session=pos-then-neg'
+
+      await expect(isAuthed(creds, 'room-1', undefined, req(), API_URL)).resolves.toBe(true)
+      expect(calls).toHaveLength(1)
+
+      // Positive verdict still served from cache well past the negative TTL.
+      vi.advanceTimersByTime(30_000)
+      await expect(isAuthed(creds, 'room-1', undefined, req(), API_URL)).resolves.toBe(true)
+      expect(calls).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

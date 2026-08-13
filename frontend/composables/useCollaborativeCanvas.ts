@@ -175,6 +175,32 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
   let heartbeatInterval: ReturnType<typeof setInterval> | null = null
 
+  /**
+   * Send the client keepalive ping (answered by the relay with a pong that
+   * refreshes lastPong). Shared by the interval heartbeat and the
+   * visibilitychange handler so a backgrounded tab that had its timers
+   * throttled by the browser can re-ping the moment it becomes visible —
+   * otherwise the relay's 60s heartbeat prunes the socket.
+   */
+  function sendKeepalivePing() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }))
+    }
+  }
+
+  // Background-tab resilience: browsers throttle setInterval to ~1/min in
+  // hidden tabs, so the 25s heartbeat below stalls and the relay drops the
+  // connection at its 60s timeout. Re-ping immediately when the tab is
+  // visible again (fires before the next interval tick).
+  const onVisibilityChange = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      sendKeepalivePing()
+    }
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibilityChange)
+  }
+
   // Exponential backoff for reconnect (created once so attempt counter persists)
   const reconnectBackoff = createExponentialBackoff({
     baseDelay: 1000,
@@ -244,9 +270,7 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
         // Keepalive heartbeat — so the WS relay can detect silent disconnects
         if (heartbeatInterval) clearInterval(heartbeatInterval)
         heartbeatInterval = setInterval(() => {
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'ping' }))
-          }
+          sendKeepalivePing()
         }, 25000)
       }
 
@@ -258,10 +282,16 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
 
         // The relay closes with 4001 when we carry no valid credential
         // (logged-out viewer of a raw link, or an expired/revoked share
-        // token). Retrying is futile until the user logs in or opens a share
-        // link, so stop the reconnect loop (which otherwise hammered the
-        // relay with ~1/sec rejected handshakes) and let the UI explain.
-        if (!shouldReconnectOnClose(event.code)) {
+        // token). Retry a BOUNDED number of times — a single 4001 can be
+        // transient (relay rejected everyone while Laravel was briefly down),
+        // so a short retry self-heals; but stop once the budget is exhausted so
+        // we don't hammer the relay with rejected handshakes, and let the UI
+        // explain the auth-required state.
+        const code = event.code
+        if (code === 4001) authRetryCount++
+        else authRetryCount = 0
+
+        if (!shouldReconnectOnClose(code, authRetryCount)) {
           authRejected.value = true
           // Also cancel any reconnect backoff timer already pending (scheduled
           // by an earlier transient close). Leaving it armed would make the
@@ -464,6 +494,14 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
   const authRejected = ref(false)
   const currentUser = ref({ id: userId, name: userName, color: getUserColor(userId) })
   const connectedUsers = ref<Map<string, UserPresence>>(new Map())
+
+  // Consecutive 4001 (auth-rejected) closes seen. Bounded retry: incremented on
+  // each 4001, reset on any NON-4001 close. We deliberately do NOT reset on
+  // `open` — the relay fires `open` immediately before a rejected connection's
+  // `close(4001)`, so resetting on open would erase the count every attempt and
+  // make the "bounded" retry effectively unbounded. A genuine long-lived
+  // session ends with a non-4001 close (1000/1006), which resets the budget.
+  let authRetryCount = 0
 
   // Undo/redo manager
   const undoManager = new Y.UndoManager([yElements], {
@@ -816,6 +854,10 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
     // Clean up WebSocket connection
     cleanupWebSocket()
 
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+
     // Stop garbage collection interval
     if (stopGarbageCollection) {
       stopGarbageCollection()
@@ -1020,11 +1062,19 @@ export function useCollaborativeCanvas(whiteboardId: string, userId: string, use
  *
  * A close code of 4001 means the relay rejected us for lack of a valid
  * credential (logged-out viewer of a raw whiteboard link, or an expired /
- * revoked share token). Reconnecting is futile until the user logs in or
- * opens a share link, so the caller stops the loop instead.
+ * revoked share token). Retrying forever is futile AND hammered the relay with
+ * rejected handshakes (the pre-#49 reconnect loop), so the loop is BOUNDED:
+ * up to `MAX_AUTH_RETRIES` consecutive 4001 rejections are retried (a single
+ * 4001 can be transient — e.g. the relay rejected every credential while
+ * Laravel was briefly down mid-deploy — and a short retry self-heals without a
+ * manual reload), after which the caller stops and surfaces the auth-required
+ * notice. Non-4001 codes always reconnect, regardless of retry count.
  */
-export function shouldReconnectOnClose(code?: number): boolean {
-  return code !== 4001
+export const MAX_AUTH_RETRIES = 3
+
+export function shouldReconnectOnClose(code?: number, authRetries = 0): boolean {
+  if (code !== 4001) return true
+  return authRetries < MAX_AUTH_RETRIES
 }
 
 // Helper: Get consistent color for user
