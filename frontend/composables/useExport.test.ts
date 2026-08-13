@@ -19,11 +19,15 @@ const { addImageMock, outputMock, instances, JsPDFMock } = vi.hoisted(() => {
 
 vi.mock('jspdf', () => ({ default: JsPDFMock }))
 vi.mock('~/composables/useToast', () => ({ toastError: vi.fn() }))
+vi.mock('~/utils/vectorExport', () => ({ drawElementsToPdf: vi.fn() }))
 
 import { useExport, getTimestamp, generateFilename } from './useExport'
 import { toastError } from '~/composables/useToast'
+import { drawElementsToPdf } from '~/utils/vectorExport'
+import type { CanvasElement, LineElement } from '~/types'
 
 const toastErrorMock = vi.mocked(toastError)
+const drawElementsToPdfMock = vi.mocked(drawElementsToPdf)
 let lastClickTarget: HTMLAnchorElement | null = null
 
 function makeStage(
@@ -39,6 +43,7 @@ beforeEach(() => {
   toastErrorMock.mockClear()
   addImageMock.mockClear()
   outputMock.mockClear()
+  drawElementsToPdfMock.mockClear()
   instances.length = 0
   vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-pdf')
   vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
@@ -262,5 +267,29 @@ describe('exportAsPDF', () => {
     expect(lastClickTarget?.download).toMatch(/\.pdf$/)
     expect(error.value).toBeNull()
     expect(isExporting.value).toBe(false)
+  })
+
+  it('draws the crisp vector layer on top of the raster when elements are provided', async () => {
+    const stage = makeStage(800, 600)
+    const { exportAsPDF } = useExport()
+    const lineData: LineElement = { start: [0, 0], end: [10, 10], color: '#000', size: 2 }
+    const elements: CanvasElement[] = [
+      { id: 'a', type: 'line', userId: 'u', userName: 't', timestamp: 1, data: lineData },
+    ]
+
+    await exportAsPDF(stage, { filename: 'vec.pdf' }, elements)
+
+    expect(drawElementsToPdfMock).toHaveBeenCalledTimes(1)
+    expect(drawElementsToPdfMock).toHaveBeenCalledWith(instances[0], elements)
+    expect(lastClickTarget?.download).toBe('vec.pdf')
+  })
+
+  it('skips the vector layer when no elements are provided', async () => {
+    const stage = makeStage(800, 600)
+    const { exportAsPDF } = useExport()
+
+    await exportAsPDF(stage)
+
+    expect(drawElementsToPdfMock).not.toHaveBeenCalled()
   })
 })

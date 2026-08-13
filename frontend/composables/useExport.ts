@@ -1,7 +1,8 @@
 import { ref, readonly } from 'vue'
 import type { Stage } from 'konva/lib/Stage'
 import jsPDF from 'jspdf'
-import type { ExportFormat, ExportOptions, ExportState } from '~/types'
+import type { CanvasElement, ExportFormat, ExportOptions, ExportState } from '~/types'
+import { drawElementsToPdf } from '~/utils/vectorExport'
 import { toastError } from '~/composables/useToast'
 
 // Generate ISO timestamp for filename
@@ -78,10 +79,11 @@ export function useExport() {
     }
   }
 
-  // Export canvas as PDF with embedded image
+  // Export canvas as PDF with embedded image + crisp vector geometry on top
   async function exportAsPDF(
     stage: Stage | null,
-    options: Partial<ExportOptions> = {}
+    options: Partial<ExportOptions> = {},
+    elements: CanvasElement[] = []
   ): Promise<void> {
     if (!stage) {
       error.value = 'Canvas not available'
@@ -123,6 +125,11 @@ export function useExport() {
 
       // Add canvas image to PDF
       pdf.addImage(dataUrl, 'PNG', 0, 0, width, height)
+
+      // Draw crisp vector geometry on top so shapes stay sharp at any zoom
+      if (elements.length > 0) {
+        drawElementsToPdf(pdf, elements)
+      }
 
       progress.value = 90
 
