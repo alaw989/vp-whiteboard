@@ -36,8 +36,16 @@ const AUTH_TIMEOUT_MS = parseInt(process.env.WS_AUTH_TIMEOUT_MS || '3000', 10)
 const SESSION_COOKIE = process.env.SESSION_COOKIE || 'laravel_session'
 
 // Cache session→verdict briefly so repeat connections don't hit Laravel each time.
-const authCache = new Map() // laravel_session value -> { ok, exp }
+const authCache = new Map() // credential -> { ok, exp }
 const AUTH_CACHE_TTL_MS = 60_000
+// NEGATIVE verdicts (Laravel answered, but said no) are cached much shorter
+// than positives. A single transient 401/500 from Laravel — e.g. during a
+// deploy that restarts it mid-flight — must not lock every viewer of that
+// credential out for the full minute: after this short window the credential
+// is re-checked and a recovered Laravel is seen immediately. Fetches that
+// FAIL (status 0, Laravel unreachable) are NOT cached at all — they fail
+// closed for that one connection only (see isAuthed).
+const NEGATIVE_AUTH_CACHE_TTL_MS = 5_000
 
 function parseCookies(cookieHeader) {
   const cookies = {}
@@ -131,7 +139,11 @@ export async function isAuthed(cookieHeader, roomId, queryShareToken, req, larav
     if (cached && cached.exp > now) return cached.ok
     const { status } = await fetchJson(`${laravelUrl}/api/user`, cookieHeader, AUTH_TIMEOUT_MS, clientOrigin, clientReferer)
     const ok = status === 200
-    authCache.set('sess:' + session, { ok, exp: now + AUTH_CACHE_TTL_MS })
+    if (status > 0) {
+      // Cache positives for the full TTL, negatives only briefly so a transient
+      // Laravel failure self-heals instead of locking the credential out.
+      authCache.set('sess:' + session, { ok, exp: now + (ok ? AUTH_CACHE_TTL_MS : NEGATIVE_AUTH_CACHE_TTL_MS) })
+    }
     if (ok) return true
   }
 
@@ -146,7 +158,9 @@ export async function isAuthed(cookieHeader, roomId, queryShareToken, req, larav
     const url = `${laravelUrl}/api/shares/${encodeURIComponent(shareToken)}`
     const { status, data } = await fetchJson(url, cookieHeader, AUTH_TIMEOUT_MS, clientOrigin, clientReferer)
     const ok = status === 200 && data && data.success && data.data && data.data.whiteboard_id === roomId
-    authCache.set(key, { ok, exp: now + AUTH_CACHE_TTL_MS })
+    if (status > 0) {
+      authCache.set(key, { ok, exp: now + (ok ? AUTH_CACHE_TTL_MS : NEGATIVE_AUTH_CACHE_TTL_MS) })
+    }
     if (ok) return true
   }
 
@@ -193,6 +207,14 @@ export function relayClientMessage(ws, data, room) {
       return { kind: 'json', type: 'ping', forwarded: 0 }
     }
 
+    if (json.type === 'pong') {
+      // A client's reply to the server-side heartbeat. This is NOT a message
+      // for the room — refreshing lastPong is what keeps the connection alive,
+      // so answer in-place and never relay it to peers.
+      ws.lastPong = Date.now()
+      return { kind: 'json', type: 'pong', forwarded: 0 }
+    }
+
     // Forward other JSON messages (presence, cursor, etc.) to the room
     const payload = JSON.stringify(json)
     let forwarded = 0
@@ -221,6 +243,46 @@ export function relayClientMessage(ws, data, room) {
 
 export const HEARTBEAT_INTERVAL_MS = 30_000
 export const HEARTBEAT_TIMEOUT_MS = 60_000
+
+// Binary-frame logging is rate-limited per connection. Under active
+// collaboration (cursor/active-stroke deltas every frame), logging EVERY
+// binary frame grew the pm2 out log to 4.9GB / 72M lines in prod. We still log
+// large frames (full-state syncs — the diagnostic signal) and at most one
+// "small frames flowing" summary per connection per window.
+const BINARY_LOG_MIN_BYTES = 1024
+const BINARY_LOG_INTERVAL_MS = 2000
+const binaryLogLastLogged = new Map() // ws -> timestamp of last summary line
+
+/**
+ * Rate-limited logger for relayed binary (Yjs) frames.
+ *
+ * - Frames >= BINARY_LOG_MIN_BYTES (full-state syncs, big deltas) are logged
+ *   immediately — that's the signal worth seeing.
+ * - Smaller frames (cursor deltas, active-stroke points) are summarized at most
+ *   once per BINARY_LOG_INTERVAL_MS per connection.
+ *
+ * Exported so the throttling contract is unit-testable.
+ *
+ * @param {object} ws the sending socket (carries roomId)
+ * @param {number} bytes the relayed frame size
+ * @param {number} relayed how many peers received it
+ * @param {number} [now] injectable clock (tests)
+ * @returns {boolean} whether a log line was emitted
+ */
+export function logBinaryRelay(ws, bytes, relayed, now = Date.now()) {
+  if (bytes >= BINARY_LOG_MIN_BYTES) {
+    console.log(`[Yjs WS] 📨 Binary: room=${ws.roomId || '?'}, size=${bytes}B, relayed to ${relayed}`)
+    binaryLogLastLogged.set(ws, now)
+    return true
+  }
+  const last = binaryLogLastLogged.get(ws) || 0
+  if (now - last >= BINARY_LOG_INTERVAL_MS) {
+    console.log(`[Yjs WS] 📨 Binary: room=${ws.roomId || '?'}, small frames flowing, relayed to ${relayed}`)
+    binaryLogLastLogged.set(ws, now)
+    return true
+  }
+  return false
+}
 
 /**
  * Run one server-side heartbeat pass: ping every live client and terminate any
@@ -339,7 +401,7 @@ wss.on('connection', async (ws, req) => {
   ws.on('message', (data) => {
     const result = relayClientMessage(ws, data, getRoom(ws.roomId || roomId))
     if (result.kind === 'binary' && result.bytes > 0) {
-      console.log(`[Yjs WS] 📨 Binary: room=${ws.roomId || roomId}, size=${result.bytes}B, relayed to ${result.relayed}`)
+      logBinaryRelay(ws, result.bytes, result.relayed)
     }
   })
 
@@ -451,6 +513,7 @@ export function removeClientFromRoom(ws, rooms, totalConnectionsRef, broadcastTo
   const room = rooms.get(roomId)
   if (room) room.delete(ws)
   const roomSize = room ? room.size : 0
+  binaryLogLastLogged.delete(ws)
 
   let broadcastUserLeft = false
   if (roomSize > 0 && ws.userId) {

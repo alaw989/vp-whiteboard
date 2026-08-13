@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import {
   shouldReconnectOnClose,
+  MAX_AUTH_RETRIES,
   encodeSyncFrame,
   decodeSyncFrame,
   applyRemoteSyncFrame,
@@ -18,10 +19,22 @@ describe('useCollaborativeCanvas — WebSocket reconnect policy', () => {
     expect(shouldReconnectOnClose(undefined)).toBe(true)
   })
 
-  it('does NOT reconnect when the relay rejects with 4001 (auth required)', () => {
-    // 4001 = "Authentication required": a logged-out viewer of a raw link or
-    // an expired/revoked share token. Auto-retrying just hammers the relay.
-    expect(shouldReconnectOnClose(4001)).toBe(false)
+  it('retries a bounded number of times on 4001 (auth required) before giving up', () => {
+    // 4001 = "Authentication required". Auto-retrying forever hammers the relay
+    // with rejected handshakes, but a SINGLE 4001 can be transient (the relay
+    // briefly rejected every credential while Laravel was mid-deploy). So the
+    // client retries a small number of times, then stops and surfaces the
+    // auth-required banner — bounded, not permanent-give-up on the first 4001.
+    expect(shouldReconnectOnClose(4001, 0)).toBe(true)
+    expect(shouldReconnectOnClose(4001, 1)).toBe(true)
+    expect(shouldReconnectOnClose(4001, MAX_AUTH_RETRIES - 1)).toBe(true)
+    expect(shouldReconnectOnClose(4001, MAX_AUTH_RETRIES)).toBe(false)
+    expect(shouldReconnectOnClose(4001, 99)).toBe(false)
+  })
+
+  it('non-4001 codes always reconnect regardless of the retry count', () => {
+    expect(shouldReconnectOnClose(1006, MAX_AUTH_RETRIES)).toBe(true)
+    expect(shouldReconnectOnClose(1000, 99)).toBe(true)
   })
 })
 
@@ -609,7 +622,41 @@ describe('useCollaborativeCanvas — reconnect resume (mocked WebSocket)', () =>
     expect(FakeWebSocket.instances).toHaveLength(4)
   })
 
-  it('a 4001 rejection DURING the reconnect backoff cancels the pending timer — no socket is created after the backoff elapses', async () => {
+  it('a 4001 rejection retries up to MAX_AUTH_RETRIES times, then stops and flags authRejected — no unbounded hammering', async () => {
+    const a = useCollaborativeCanvas('board-1', 'user-a', 'A')
+    const a0 = FakeWebSocket.instances[0]!
+    a0._open()
+    expect(FakeWebSocket.instances).toHaveLength(1)
+
+    // Rejection #1: bounded retry starts — authRejected stays false.
+    a0._close(4001)
+    expect(a.authRejected.value).toBe(false)
+
+    // Rejection #2: still within budget.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    const a1 = FakeWebSocket.instances[1]!
+    a1._open()
+    a1._close(4001)
+    expect(a.authRejected.value).toBe(false)
+
+    // Rejection #3: budget exhausted → authRejected, no further socket.
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(FakeWebSocket.instances).toHaveLength(3)
+    const a2 = FakeWebSocket.instances[2]!
+    a2._open()
+    a2._close(4001)
+    expect(a.authRejected.value).toBe(true)
+    expect(a.connectionStatus.value).toBe('disconnected')
+
+    // No further sockets are ever created — the loop is bounded.
+    await vi.advanceTimersByTimeAsync(30 * 1000)
+    expect(FakeWebSocket.instances).toHaveLength(3)
+
+    a.cleanup()
+  })
+
+  it('a 4001 rejection DURING the reconnect backoff cancels the stale timer and retries cleanly (no double socket from the old timer)', async () => {
     const a = useCollaborativeCanvas('board-1', 'user-a', 'A')
     const a0 = FakeWebSocket.instances[0]!
     a0._open()
@@ -620,20 +667,62 @@ describe('useCollaborativeCanvas — reconnect resume (mocked WebSocket)', () =>
     expect(a.authRejected.value).toBe(false)
     expect(a.connectionStatus.value).toBe('connecting')
 
-    // The relay then rejects the attempt with 4001 (auth required). This must
-    // cancel the still-pending backoff timer, not just flag authRejected —
-    // otherwise the stale timer fires initWebSocket() once the backoff elapses
-    // and re-creates a socket doomed to be rejected again.
+    // The relay then rejects the pending attempt with 4001 (auth required).
+    // Bounded retry: authRejected stays false (we may still recover) and the
+    // still-pending backoff proceeds to create exactly one reconnect socket —
+    // the count incremented, and scheduleReconnect reuses the pending timer
+    // rather than double-scheduling (no accumulation).
     a0._close(4001)
-    expect(a.authRejected.value).toBe(true)
-    expect(a.connectionStatus.value).toBe('disconnected')
+    expect(a.authRejected.value).toBe(false)
 
-    // Even after the original backoff window fully elapses, no new socket is
-    // created: the stale timer was cleared on the 4001 rejection.
-    await vi.advanceTimersByTimeAsync(30 * 1000)
-    expect(FakeWebSocket.instances).toHaveLength(1)
+    // After the original backoff window, exactly ONE reconnect socket appears
+    // (the fresh retry) — no accumulation from the stale timer.
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    let current = FakeWebSocket.instances[1]!
+    current._open()
+
+    // Exhaust the retry budget with repeated 4001s → authRejected and silence.
+    for (let i = 0; i <= MAX_AUTH_RETRIES; i++) {
+      current._close(4001)
+      await vi.advanceTimersByTimeAsync(10_000)
+      if (a.authRejected.value) break
+      current = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!
+      current._open()
+    }
+    expect(a.authRejected.value).toBe(true)
+    const finalCount = FakeWebSocket.instances.length
+    await vi.advanceTimersByTimeAsync(60 * 1000)
+    expect(FakeWebSocket.instances).toHaveLength(finalCount)
 
     a.cleanup()
+  })
+
+  it('sends an immediate keepalive ping when the tab becomes visible again (background-tab resume)', async () => {
+    // Browsers throttle setInterval to ~1/min in hidden tabs, so the 25s
+    // heartbeat stalls and the relay's 60s timeout would prune the socket.
+    // The composable must re-ping the moment the tab regains visibility.
+    const a = useCollaborativeCanvas('board-1', 'user-a', 'A')
+    const a0 = FakeWebSocket.instances[0]!
+    a0._open()
+    a0.sent.splice(0) // clear the initial sync frames
+
+    // Simulate the tab becoming visible again.
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    expect(a0.sent).toContain(JSON.stringify({ type: 'ping' }))
+    a.cleanup()
+  })
+
+  it('removes the visibilitychange listener on cleanup (no listener leak per composable instance)', async () => {
+    const removeSpy = vi.spyOn(document, 'removeEventListener')
+    const a = useCollaborativeCanvas('board-1', 'user-a', 'A')
+    const a0 = FakeWebSocket.instances[0]!
+    a0._open()
+
+    a.cleanup()
+
+    expect(removeSpy).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
   })
 
   it('cancelActiveStroke removes the active stroke WITHOUT committing it to elements', () => {
